@@ -14,7 +14,17 @@ import {
   YAxis,
   Area,
 } from 'recharts';
-import { Thermometer, Droplets, Zap } from 'lucide-react';
+import {
+  Thermometer,
+  Droplets,
+  Zap,
+  Battery,
+  BatteryWarning,
+  CheckCircle2,
+  AlertTriangle,
+  Wifi,
+  WifiOff,
+} from 'lucide-react';
 import type { DashboardPayload } from '@/types';
 
 interface ClimateTabProps {
@@ -69,8 +79,160 @@ export function ClimateTab({ data }: ClimateTabProps) {
 
   const activeCorrelationRoom = data.rooms.find((r) => String(r.id) === correlationRoomId);
 
+  const climateHealth = useMemo(() => {
+    const sensors = data.devices.filter((d) => {
+      if (!d.isMonitored) return false;
+      if (data.selectedRoomId !== 'all' && String(d.roomId) !== data.selectedRoomId) {
+        return false;
+      }
+      return (
+        d.category === 'climate' ||
+        Boolean(d.dpConfig?.temp) ||
+        Boolean(d.dpConfig?.humidity) ||
+        d.lastTempC !== null ||
+        d.lastHumidityPct !== null
+      );
+    });
+
+    const onlineCount = sensors.filter((d) => d.isOnline).length;
+    const withBattery = sensors.filter(
+      (d): d is typeof d & { lastBatteryPct: number } =>
+        d.lastBatteryPct !== null && Number.isFinite(d.lastBatteryPct)
+    );
+    const lowBatteryCount = withBattery.filter((d) => d.lastBatteryPct <= 20).length;
+    const avgBatteryPct =
+      withBattery.length > 0
+        ? Math.round(withBattery.reduce((s, d) => s + d.lastBatteryPct, 0) / withBattery.length)
+        : null;
+    const minBatteryPct =
+      withBattery.length > 0 ? Math.min(...withBattery.map((d) => d.lastBatteryPct)) : null;
+
+    return {
+      sensors,
+      totalCount: sensors.length,
+      onlineCount,
+      lowBatteryCount,
+      avgBatteryPct,
+      minBatteryPct,
+    };
+  }, [data.devices, data.selectedRoomId]);
+
+  const { kpis } = data;
+
   return (
     <div className="space-y-6">
+      {/* 4 KPIs Climat & Piles */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
+              Température Moyenne
+            </span>
+            <div className="rounded-lg bg-emerald-500/15 p-2 text-emerald-400">
+              <Thermometer className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-3xl font-bold tracking-tight text-white">
+              {kpis.avgTempC !== null ? `${kpis.avgTempC.toFixed(1)} °C` : '—'}
+            </span>
+          </div>
+          <p className="mt-2 text-xs text-slate-400">
+            {climateRooms.length} pièce(s) équipée(s)
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
+              Humidité Moyenne
+            </span>
+            <div className="rounded-lg bg-sky-500/15 p-2 text-sky-400">
+              <Droplets className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-3xl font-bold tracking-tight text-white">
+              {kpis.avgHumidityPct !== null ? `${kpis.avgHumidityPct.toFixed(0)} %` : '—'}
+            </span>
+          </div>
+          <p className="mt-2 text-xs text-slate-400">
+            Zone saine recommandée : 40 % – 60 %
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
+              Confort Thermique
+            </span>
+            <div
+              className={`rounded-lg p-2 ${
+                kpis.climateAlertsCount > 0
+                  ? 'bg-amber-500/15 text-amber-400'
+                  : 'bg-emerald-500/15 text-emerald-400'
+              }`}
+            >
+              {kpis.climateAlertsCount > 0 ? (
+                <AlertTriangle className="h-4 w-4" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" />
+              )}
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-white">
+              {kpis.climateAlertsCount > 0
+                ? `${kpis.climateAlertsCount} alerte(s)`
+                : 'Zone optimale'}
+            </span>
+          </div>
+          <p className="mt-2 text-xs text-slate-400">
+            {kpis.climateAlertsCount > 0
+              ? 'Pièce(s) hors seuils cibles'
+              : 'Toutes les pièces dans leurs cibles'}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
+              Connectivité &amp; Piles
+            </span>
+            <div
+              className={`rounded-lg p-2 ${
+                climateHealth.lowBatteryCount > 0
+                  ? 'bg-rose-500/15 text-rose-400'
+                  : 'bg-emerald-500/15 text-emerald-400'
+              }`}
+            >
+              {climateHealth.lowBatteryCount > 0 ? (
+                <BatteryWarning className="h-4 w-4" />
+              ) : (
+                <Battery className="h-4 w-4" />
+              )}
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-3xl font-bold tracking-tight text-white">
+              {climateHealth.onlineCount} / {climateHealth.totalCount}
+            </span>
+            <span className="text-xs text-slate-400">en ligne</span>
+          </div>
+          <p
+            className={`mt-2 text-xs ${
+              climateHealth.lowBatteryCount > 0 ? 'text-rose-300' : 'text-slate-400'
+            }`}
+          >
+            {climateHealth.lowBatteryCount > 0
+              ? `${climateHealth.lowBatteryCount} batterie(s) faible(s) (≤ 20%)`
+              : climateHealth.avgBatteryPct !== null
+                ? `Piles : moy. ${climateHealth.avgBatteryPct}% (min ${climateHealth.minBatteryPct}%)`
+                : 'Aucun niveau de pile remonté'}
+          </p>
+        </div>
+      </div>
+
       {/* Multi-courbes Température */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -276,6 +438,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
                 <th className="px-4 py-3">Amplitude</th>
                 <th className="px-4 py-3">Humidité (Moy / Min-Max)</th>
                 <th className="px-4 py-3">Point de rosée</th>
+                <th className="px-4 py-3">Piles sondes</th>
                 <th className="px-4 py-3">État</th>
               </tr>
             </thead>
@@ -285,6 +448,15 @@ export function ClimateTab({ data }: ClimateTabProps) {
                   rs.maxTempC !== null && rs.minTempC !== null
                     ? (rs.maxTempC - rs.minTempC).toFixed(1)
                     : null;
+                const roomClimateSensors = rs.devices.filter(
+                  (d) =>
+                    d.isMonitored &&
+                    (d.category === 'climate' ||
+                      Boolean(d.dpConfig?.temp) ||
+                      Boolean(d.dpConfig?.humidity) ||
+                      d.lastTempC !== null ||
+                      d.lastHumidityPct !== null)
+                );
                 return (
                   <tr key={rs.room.id} className="hover:bg-slate-800/30">
                     <td className="px-4 py-3 font-medium text-white flex items-center gap-2">
@@ -312,6 +484,39 @@ export function ClimateTab({ data }: ClimateTabProps) {
                     </td>
                     <td className="px-4 py-3 font-mono text-slate-300">
                       {rs.dewPointC !== null ? `${rs.dewPointC.toFixed(1)} °C` : '—'}
+                    </td>
+                    <td className="px-4 py-3 font-mono">
+                      {roomClimateSensors.length === 0 ? (
+                        <span className="text-slate-500">—</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {roomClimateSensors.map((s) => {
+                            const pct = s.lastBatteryPct;
+                            const badgeColor =
+                              pct === null
+                                ? 'border-slate-700 bg-slate-800 text-slate-400'
+                                : pct <= 20
+                                  ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                                  : pct <= 40
+                                    ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                                    : 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300';
+                            return (
+                              <span
+                                key={s.id}
+                                title={s.customName || s.name}
+                                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${badgeColor}`}
+                              >
+                                {s.isOnline ? (
+                                  <Wifi className="h-2.5 w-2.5" />
+                                ) : (
+                                  <WifiOff className="h-2.5 w-2.5" />
+                                )}
+                                {pct !== null ? `${pct}%` : 'N/A'}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-[11px] text-slate-200">
