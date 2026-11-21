@@ -441,34 +441,68 @@ export interface TuyaAutomationsResult {
   warning?: string;
 }
 
+function formatPropertyValue(v: unknown): string {
+  return typeof v === 'boolean' ? (v ? 'ON' : 'OFF') : String(v);
+}
+
 function formatPropertyPairs(props: Record<string, unknown>): string {
   const entries = Object.entries(props);
   if (entries.length === 0) return 'Action exécutée';
-  return entries
-    .map(([k, v]) => {
-      if (typeof v === 'boolean') return `${k}: ${v ? 'ON' : 'OFF'}`;
-      return `${k}: ${String(v)}`;
-    })
-    .join(', ');
+
+  if (typeof props.function_code === 'string' && 'function_value' in props) {
+    const primary = `${props.function_code}: ${formatPropertyValue(props.function_value)}`;
+    const extras = entries
+      .filter(([k]) => k !== 'function_code' && k !== 'function_value')
+      .map(([k, v]) => `${k}: ${formatPropertyValue(v)}`);
+    return [primary, ...extras].join(', ');
+  }
+
+  return entries.map(([k, v]) => `${k}: ${formatPropertyValue(v)}`).join(', ');
+}
+
+function parseRuleEnabled(raw: Record<string, unknown>): boolean {
+  if (typeof raw.enabled === 'boolean') return raw.enabled;
+  if (typeof raw.status === 'boolean') return raw.status;
+  if (typeof raw.status === 'number') return raw.status !== 0;
+  if (typeof raw.status === 'string') {
+    const s = raw.status.trim().toLowerCase();
+    if (['disable', 'disabled', 'false', '0', 'off', 'inactive'].includes(s)) return false;
+    if (['enable', 'enabled', 'true', '1', 'on', 'active'].includes(s)) return true;
+  }
+  return true;
 }
 
 function normalizeCondition(raw: Record<string, unknown>): AutomationCondition {
   const entityType = raw.entity_type;
+  const entityTypeLower = typeof entityType === 'string' ? entityType.trim().toLowerCase() : '';
   const display = (raw.display ?? raw.rule ?? {}) as Record<string, unknown>;
-  const exprList = Array.isArray(raw.expr) ? (raw.expr as Array<Record<string, unknown>>) : [];
-  const firstExpr = exprList[0] ?? {};
+  const firstExpr: Record<string, unknown> = Array.isArray(raw.expr)
+    ? ((raw.expr[0] as Record<string, unknown> | undefined) ?? {})
+    : raw.expr && typeof raw.expr === 'object'
+      ? (raw.expr as Record<string, unknown>)
+      : {};
 
   const code =
+    (typeof firstExpr.status_code === 'string' ? firstExpr.status_code : null) ??
     (typeof firstExpr.code === 'string' ? firstExpr.code : null) ??
+    (typeof firstExpr.weather_code === 'string' ? firstExpr.weather_code : null) ??
     (typeof display.code === 'string' ? display.code : null) ??
     (typeof raw.cond_type === 'string' ? raw.cond_type : null);
 
   const operator =
+    (typeof firstExpr.comparator === 'string' ? firstExpr.comparator : null) ??
     (typeof firstExpr.operator === 'string' ? firstExpr.operator : null) ??
     (typeof display.operator === 'string' ? display.operator : null) ??
     null;
 
-  const rawVal = firstExpr.value ?? display.value ?? firstExpr.status_value ?? null;
+  const rawVal =
+    firstExpr.status_value ??
+    firstExpr.value ??
+    firstExpr.weather_value ??
+    firstExpr.time ??
+    display.value ??
+    display.time ??
+    null;
   const value: string | number | boolean | null =
     typeof rawVal === 'string' || typeof rawVal === 'number' || typeof rawVal === 'boolean'
       ? rawVal
@@ -486,24 +520,44 @@ function normalizeCondition(raw: Record<string, unknown>): AutomationCondition {
   let category: AutomationConditionCategory = 'other';
   if (
     entityType === 4 ||
-    entityType === 'timer' ||
     entityType === 6 ||
+    entityTypeLower === 'timer' ||
+    entityTypeLower === 'time' ||
+    entityTypeLower === 'schedule' ||
     code === 'timer' ||
     code === 'time' ||
+    typeof firstExpr.time === 'string' ||
     typeof display.time === 'string'
   ) {
     category = 'timer';
-  } else if (entityType === 3 || entityType === 'weather' || entityType === 10) {
+  } else if (
+    entityType === 3 ||
+    entityType === 10 ||
+    entityTypeLower === 'weather' ||
+    entityTypeLower === 'weather_report'
+  ) {
     category = 'weather';
-  } else if (entityType === 5 || entityType === 'geofence') {
+  } else if (
+    entityType === 5 ||
+    entityTypeLower === 'geofence' ||
+    entityTypeLower === 'location'
+  ) {
     category = 'geofence';
-  } else if (entityType === 1 || entityType === 'device' || Boolean(raw.dev_id) || Boolean(code)) {
+  } else if (
+    entityType === 1 ||
+    entityTypeLower === 'device' ||
+    entityTypeLower === 'device_report' ||
+    entityTypeLower === 'device_status' ||
+    Boolean(raw.dev_id) ||
+    Boolean(code)
+  ) {
     category = 'device';
   }
 
   let summary = '';
   if (category === 'timer') {
     const timeVal =
+      (typeof firstExpr.time === 'string' ? firstExpr.time : null) ??
       (typeof display.time === 'string' ? display.time : null) ??
       (value !== null ? String(value) : null) ??
       'Planifié';
@@ -572,12 +626,24 @@ function normalizeAction(raw: Record<string, unknown>): AutomationAction {
   let summary = '';
   if (category === 'delay') {
     const mins = propObj.minutes ?? propObj.minute ?? 0;
-    const secs = propObj.seconds ?? propObj.second ?? 0;
-    summary = `Temporisation : ${mins ? `${mins} min ` : ''}${secs ? `${secs} s` : ''}`.trim();
+    const secs = propObj.seconds ?? propObj.second ?? propObj.delay_seconds ?? 0;
+    const timeFallback = typeof propObj.time === 'string' ? propObj.time : null;
+    const parts = [mins ? `${mins} min` : '', secs ? `${secs} s` : ''].filter(Boolean);
+    summary =
+      parts.length > 0
+        ? `Temporisation : ${parts.join(' ')}`
+        : timeFallback
+          ? `Temporisation : ${timeFallback}`
+          : 'Temporisation';
   } else if (category === 'notification') {
     summary = 'Notification Push Smart Life';
   } else if (category === 'rule') {
-    summary = `Exécuter scénario${entityName ? ` (${entityName})` : ''}`;
+    const verb = execLower.includes('enable')
+      ? 'Activer scénario'
+      : execLower.includes('disable')
+        ? 'Désactiver scénario'
+        : 'Exécuter scénario';
+    summary = `${verb}${entityName ? ` (${entityName})` : ''}`;
   } else {
     summary = formatPropertyPairs(propObj);
   }
@@ -596,15 +662,28 @@ function normalizeEffectiveTime(raw: Record<string, unknown>): AutomationEffecti
   const eff = (raw.effective_time ?? null) as Record<string, unknown> | null;
   if (!eff || typeof eff !== 'object') return null;
 
+  const startTime =
+    typeof eff.start_time === 'string'
+      ? eff.start_time
+      : typeof eff.start === 'string'
+        ? eff.start
+        : '00:00';
+  const endTime =
+    typeof eff.end_time === 'string'
+      ? eff.end_time
+      : typeof eff.end === 'string'
+        ? eff.end
+        : '23:59';
+
   return {
-    allDay: Boolean(eff.all_day ?? (eff.start_time === '00:00' && eff.end_time === '23:59')),
-    startTime: typeof eff.start_time === 'string' ? eff.start_time : '00:00',
-    endTime: typeof eff.end_time === 'string' ? eff.end_time : '23:59',
+    allDay: Boolean(eff.all_day ?? (startTime === '00:00' && endTime === '23:59')),
+    startTime,
+    endTime,
     loops: typeof eff.loops === 'string' ? eff.loops : '1111111',
   };
 }
 
-function normalizeTuyaRule(
+export function normalizeTuyaRule(
   raw: Record<string, unknown>,
   homeId: string,
   defaultType: AutomationRuleType,
@@ -620,14 +699,19 @@ function normalizeTuyaRule(
       ? 'scene'
       : 'automation';
 
-  const enabled =
-    typeof raw.enabled === 'boolean'
-      ? raw.enabled
-      : raw.status !== 0 && raw.status !== false && raw.status !== 'disabled';
+  const enabled = parseRuleEnabled(raw);
 
   const rawMatch = raw.match_type ?? raw.cond_type;
-  const matchType: AutomationMatchType =
-    rawRuleType === 'scene' ? 'manual' : rawMatch === 2 ? 'all' : 'any';
+  let matchType: AutomationMatchType = 'any';
+  if (rawRuleType === 'scene') {
+    matchType = 'manual';
+  } else if (typeof raw.decision_expr === 'string' && raw.decision_expr.trim()) {
+    const exprLower = raw.decision_expr.trim().toLowerCase();
+    matchType =
+      exprLower === 'and' || (exprLower.includes('&') && !exprLower.includes('|')) ? 'all' : 'any';
+  } else {
+    matchType = rawMatch === 2 ? 'all' : 'any';
+  }
 
   const rawConditions = Array.isArray(raw.conditions)
     ? (raw.conditions as Array<Record<string, unknown>>)

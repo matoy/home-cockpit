@@ -24,6 +24,7 @@ import {
   fetchTuyaRoomMapping,
   formatMacAddress,
   getTuyaConfig,
+  normalizeTuyaRule,
   type TuyaRawDevice,
 } from './tuya-client';
 import type {
@@ -156,18 +157,42 @@ function mapDbLog(row: typeof collectionLogs.$inferSelect): CollectionLogRecord 
 }
 
 function mapDbAutomation(row: typeof automations.$inferSelect): AutomationRecord {
+  const ruleType: AutomationRuleType = row.ruleType === 'scene' ? 'scene' : 'automation';
+  const syncedAtIso = row.syncedAt.toISOString();
+
+  if (row.rawPayload && typeof row.rawPayload === 'object' && !Array.isArray(row.rawPayload)) {
+    const normalized = normalizeTuyaRule(
+      row.rawPayload as Record<string, unknown>,
+      row.homeId ?? '',
+      ruleType,
+      syncedAtIso
+    );
+    if (normalized) {
+      return {
+        ...normalized,
+        id: row.id,
+        homeId: row.homeId,
+        name: normalized.name || row.name,
+        conditions: normalized.conditions.length > 0 ? normalized.conditions : (row.conditions ?? []),
+        actions: normalized.actions.length > 0 ? normalized.actions : (row.actions ?? []),
+        rawPayload: row.rawPayload,
+        syncedAt: syncedAtIso,
+      };
+    }
+  }
+
   return {
     id: row.id,
     homeId: row.homeId,
     name: row.name,
-    ruleType: row.ruleType === 'scene' ? 'scene' : 'automation',
+    ruleType,
     enabled: row.enabled,
     matchType: (row.matchType as AutomationMatchType) || 'any',
     effectiveTime: row.effectiveTime ?? null,
     conditions: row.conditions ?? [],
     actions: row.actions ?? [],
     rawPayload: row.rawPayload ?? null,
-    syncedAt: row.syncedAt.toISOString(),
+    syncedAt: syncedAtIso,
   };
 }
 
