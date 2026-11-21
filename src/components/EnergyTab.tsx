@@ -291,6 +291,14 @@ export function EnergyTab({ data }: EnergyTabProps) {
                         style={{ backgroundColor: color }}
                       />
                       <span className="font-medium text-slate-200 truncate">{item.name}</span>
+                      {item.excludeFromTotals && (
+                        <span
+                          title="Appareil en cascade : affiché pour info mais exclu des totaux"
+                          className="rounded border border-amber-500/30 bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-amber-300 shrink-0"
+                        >
+                          Cascade
+                        </span>
+                      )}
                       {item.roomName && (
                         <span className="text-[10px] text-slate-500">({item.roomName})</span>
                       )}

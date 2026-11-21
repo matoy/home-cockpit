@@ -277,7 +277,19 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                           </div>
                           <div className="flex items-center gap-2 shrink-0 text-slate-400 font-mono text-[11px]">
                             {dev.lastPowerW !== null && (
-                              <span className="text-indigo-300">{dev.lastPowerW.toFixed(0)}W</span>
+                              <span
+                                className={
+                                  dev.excludeFromTotals ? 'text-amber-300/80' : 'text-indigo-300'
+                                }
+                                title={
+                                  dev.excludeFromTotals
+                                    ? 'En cascade : exclu du total de la pièce et de la maison'
+                                    : undefined
+                                }
+                              >
+                                {dev.lastPowerW.toFixed(0)}W
+                                {dev.excludeFromTotals ? ' (cascade)' : ''}
+                              </span>
                             )}
                             {dev.lastTempC !== null && (
                               <span className="text-emerald-300">{dev.lastTempC.toFixed(1)}°C</span>

@@ -124,6 +124,7 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
       customName: string | null;
       roomId: number | null;
       isMonitored: boolean;
+      excludeFromTotals: boolean;
       energyMode: EnergyMode;
       dpConfig: DpConfig;
     }>
@@ -416,13 +417,16 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                 <th className="px-4 py-3">Calcul kWh</th>
                 <th className="px-4 py-3">Dernières valeurs</th>
                 <th className="px-4 py-3">Suivi</th>
+                <th className="px-4 py-3" title="Décocher pour les prises en cascade afin d'éviter le double comptage">
+                  En cascade (Exclure)
+                </th>
                 <th className="px-4 py-3 text-right">Data Points</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80">
               {filteredDevices.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-xs text-slate-500">
+                  <td colSpan={9} className="px-4 py-8 text-center text-xs text-slate-500">
                     Aucun appareil dans ce filtre.
                   </td>
                 </tr>
@@ -534,6 +538,29 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                       }
                       className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-indigo-600 focus:ring-indigo-500"
                     />
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <label
+                      className="inline-flex items-center gap-1.5 cursor-pointer"
+                      title="Si coché, cet appareil est relevé mais exclu des totaux de la pièce et de la maison (anti double-comptage)"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={dev.excludeFromTotals}
+                        onChange={(e) =>
+                          void handleDeviceUpdate(dev.id, {
+                            excludeFromTotals: e.target.checked,
+                          })
+                        }
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-amber-500 focus:ring-amber-500"
+                      />
+                      {dev.excludeFromTotals && (
+                        <span className="rounded bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[10px] text-amber-300">
+                          Exclu
+                        </span>
+                      )}
+                    </label>
                   </td>
 
                   <td className="px-4 py-3 text-right">

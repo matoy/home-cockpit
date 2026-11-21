@@ -192,7 +192,7 @@ export function buildDashboardPayload(params: {
     const effectiveRoomId = r.roomId ?? dev?.roomId ?? null;
     if (effectiveRoomId === null) continue;
 
-    if (r.energyKwh !== null && r.energyKwh > 0) {
+    if (r.energyKwh !== null && r.energyKwh > 0 && !dev?.excludeFromTotals) {
       const costInfo = computeReadingCost(r.recordedAt, r.energyKwh, tariffs);
       roomEnergyTotals.set(effectiveRoomId, (roomEnergyTotals.get(effectiveRoomId) ?? 0) + r.energyKwh);
       roomCostTotals.set(effectiveRoomId, (roomCostTotals.get(effectiveRoomId) ?? 0) + costInfo.costEur);
@@ -216,7 +216,9 @@ export function buildDashboardPayload(params: {
     const monitoredDevices = roomDevices.filter((d) => d.isMonitored);
 
     const currentPowerW = round2(
-      monitoredDevices.reduce((sum, d) => sum + (d.lastPowerW ?? 0), 0)
+      monitoredDevices
+        .filter((d) => !d.excludeFromTotals)
+        .reduce((sum, d) => sum + (d.lastPowerW ?? 0), 0)
     );
 
     const tempValues = monitoredDevices
@@ -305,7 +307,7 @@ export function buildDashboardPayload(params: {
   >();
   const energyByDeviceAcc = new Map<
     string,
-    { id: string; name: string; color: string; roomName: string; energyKwh: number; costEur: number; powerSamples: number[]; maxPowerW: number }
+    { id: string; name: string; color: string; roomName: string; excludeFromTotals: boolean; energyKwh: number; costEur: number; powerSamples: number[]; maxPowerW: number }
   >();
 
   // Pour le talon nocturne (02h00 - 05h00 Paris)
@@ -362,44 +364,52 @@ export function buildDashboardPayload(params: {
     const costInfo = computeReadingCost(dt, energy, tariffs);
 
     if (energy > 0 || (r.powerW !== null && r.powerW >= 0)) {
-      periodEnergyKwh += energy;
-      periodCostEur += costInfo.costEur;
+      const countsInTotals = !dev.excludeFromTotals;
 
-      if (costInfo.periodType === 'HP') {
-        hpEnergyKwh += energy;
-        hpCostEur += costInfo.costEur;
-      } else if (costInfo.periodType === 'HC') {
-        hcEnergyKwh += energy;
-        hcCostEur += costInfo.costEur;
-      } else {
-        baseEnergyKwh += energy;
-        baseCostEur += costInfo.costEur;
+      if (countsInTotals) {
+        periodEnergyKwh += energy;
+        periodCostEur += costInfo.costEur;
+
+        if (costInfo.periodType === 'HP') {
+          hpEnergyKwh += energy;
+          hpCostEur += costInfo.costEur;
+        } else if (costInfo.periodType === 'HC') {
+          hcEnergyKwh += energy;
+          hcCostEur += costInfo.costEur;
+        } else {
+          baseEnergyKwh += energy;
+          baseCostEur += costInfo.costEur;
+        }
+
+        // Room breakdown
+        const roomAcc = energyByRoomAcc.get(roomKey) ?? {
+          id: roomKey,
+          name: roomName,
+          color: roomColor,
+          energyKwh: 0,
+          costEur: 0,
+          powerSamples: [],
+          maxPowerW: 0,
+        };
+        roomAcc.energyKwh += energy;
+        roomAcc.costEur += costInfo.costEur;
+        if (r.powerW !== null) {
+          roomAcc.powerSamples.push(r.powerW);
+          if (r.powerW > roomAcc.maxPowerW) roomAcc.maxPowerW = r.powerW;
+        }
+        energyByRoomAcc.set(roomKey, roomAcc);
+
+        bucket.byRoomEnergy[roomKey] = (bucket.byRoomEnergy[roomKey] ?? 0) + energy;
+        bucket.byRoomCost[roomKey] = (bucket.byRoomCost[roomKey] ?? 0) + costInfo.costEur;
       }
 
-      // Room breakdown
-      const roomAcc = energyByRoomAcc.get(roomKey) ?? {
-        id: roomKey,
-        name: roomName,
-        color: roomColor,
-        energyKwh: 0,
-        costEur: 0,
-        powerSamples: [],
-        maxPowerW: 0,
-      };
-      roomAcc.energyKwh += energy;
-      roomAcc.costEur += costInfo.costEur;
-      if (r.powerW !== null) {
-        roomAcc.powerSamples.push(r.powerW);
-        if (r.powerW > roomAcc.maxPowerW) roomAcc.maxPowerW = r.powerW;
-      }
-      energyByRoomAcc.set(roomKey, roomAcc);
-
-      // Device breakdown
+      // Device breakdown (toujours conservé pour le détail par appareil)
       const devAcc = energyByDeviceAcc.get(dev.id) ?? {
         id: dev.id,
         name: devName,
         color: roomColor,
         roomName,
+        excludeFromTotals: dev.excludeFromTotals,
         energyKwh: 0,
         costEur: 0,
         powerSamples: [],
@@ -413,9 +423,7 @@ export function buildDashboardPayload(params: {
       }
       energyByDeviceAcc.set(dev.id, devAcc);
 
-      // Bucket energy & cost
-      bucket.byRoomEnergy[roomKey] = (bucket.byRoomEnergy[roomKey] ?? 0) + energy;
-      bucket.byRoomCost[roomKey] = (bucket.byRoomCost[roomKey] ?? 0) + costInfo.costEur;
+      // Bucket energy & cost par appareil
       bucket.byDeviceEnergy[dev.id] = (bucket.byDeviceEnergy[dev.id] ?? 0) + energy;
       bucket.byDeviceCost[dev.id] = (bucket.byDeviceCost[dev.id] ?? 0) + costInfo.costEur;
 
@@ -425,18 +433,20 @@ export function buildDashboardPayload(params: {
         dp.count += 1;
         bucket.byDevicePower[dev.id] = dp;
 
-        const rdpMap = bucket.byRoomDevicePower[roomKey] ?? {};
-        const rdp = rdpMap[dev.id] ?? { sum: 0, count: 0 };
-        rdp.sum += r.powerW;
-        rdp.count += 1;
-        rdpMap[dev.id] = rdp;
-        bucket.byRoomDevicePower[roomKey] = rdpMap;
+        if (countsInTotals) {
+          const rdpMap = bucket.byRoomDevicePower[roomKey] ?? {};
+          const rdp = rdpMap[dev.id] ?? { sum: 0, count: 0 };
+          rdp.sum += r.powerW;
+          rdp.count += 1;
+          rdpMap[dev.id] = rdp;
+          bucket.byRoomDevicePower[roomKey] = rdpMap;
 
-        // Talon nocturne (02h00 - 05h00 heure de Paris)
-        const { dateStr, timeStr } = getParisDateAndTime(dt);
-        if (timeStr >= '02:00' && timeStr < '05:00') {
-          const halfSlot = `${dateStr} ${timeStr.slice(0, 3)}${Number(timeStr.slice(3, 5)) >= 30 ? '30' : '00'}`;
-          nightPowerBySlot.set(halfSlot, (nightPowerBySlot.get(halfSlot) ?? 0) + r.powerW);
+          // Talon nocturne (02h00 - 05h00 heure de Paris)
+          const { dateStr, timeStr } = getParisDateAndTime(dt);
+          if (timeStr >= '02:00' && timeStr < '05:00') {
+            const halfSlot = `${dateStr} ${timeStr.slice(0, 3)}${Number(timeStr.slice(3, 5)) >= 30 ? '30' : '00'}`;
+            nightPowerBySlot.set(halfSlot, (nightPowerBySlot.get(halfSlot) ?? 0) + r.powerW);
+          }
         }
       }
     }
@@ -549,6 +559,7 @@ export function buildDashboardPayload(params: {
       name: item.name,
       color: item.color,
       roomName: item.roomName,
+      excludeFromTotals: item.excludeFromTotals,
       energyKwh: round3(item.energyKwh),
       costEur: round2(item.costEur),
       avgPowerW:
@@ -561,7 +572,9 @@ export function buildDashboardPayload(params: {
     .sort((a, b) => b.energyKwh - a.energyKwh);
 
   const powerDevices = filteredDevices.filter(
-    (d) => d.category === 'power' || d.category === 'hybrid' || d.lastPowerW !== null
+    (d) =>
+      !d.excludeFromTotals &&
+      (d.category === 'power' || d.category === 'hybrid' || d.lastPowerW !== null)
   );
   const currentPowerW = round2(
     powerDevices.reduce((sum, d) => sum + (d.lastPowerW ?? 0), 0)

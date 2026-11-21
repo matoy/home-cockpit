@@ -105,6 +105,7 @@ function createInitialDemoState(): DemoState {
       macAddress: 'A4:C1:38:10:42:11',
       isOnline: true,
       isMonitored: true,
+      excludeFromTotals: false,
       energyMode: 'hybrid',
       dpConfig: {
         power: { code: 'cur_power', scale: 0.1 },
@@ -140,6 +141,7 @@ function createInitialDemoState(): DemoState {
       macAddress: '50:8A:06:22:19:01',
       isOnline: true,
       isMonitored: true,
+      excludeFromTotals: false,
       energyMode: 'hybrid',
       dpConfig: {
         temp: { code: 'va_temperature', scale: 0.1 },
@@ -172,6 +174,7 @@ function createInitialDemoState(): DemoState {
       macAddress: 'A4:C1:38:10:45:22',
       isOnline: true,
       isMonitored: true,
+      excludeFromTotals: false,
       energyMode: 'hybrid',
       dpConfig: {
         power: { code: 'cur_power', scale: 0.1 },
@@ -205,6 +208,7 @@ function createInitialDemoState(): DemoState {
       macAddress: '50:8A:06:22:19:01',
       isOnline: true,
       isMonitored: true,
+      excludeFromTotals: false,
       energyMode: 'hybrid',
       dpConfig: {
         temp: { code: 'temp_current', scale: 0.1 },
@@ -237,6 +241,7 @@ function createInitialDemoState(): DemoState {
       macAddress: 'A4:C1:38:10:42:11',
       isOnline: true,
       isMonitored: true,
+      excludeFromTotals: false,
       energyMode: 'hybrid',
       dpConfig: {
         power: { code: 'cur_power', scale: 0.1 },
@@ -270,6 +275,7 @@ function createInitialDemoState(): DemoState {
       macAddress: 'A4:C1:38:10:48:33',
       isOnline: true,
       isMonitored: true,
+      excludeFromTotals: false,
       energyMode: 'integration',
       dpConfig: {
         power: { code: 'cur_power', scale: 0.1 },
@@ -301,6 +307,7 @@ function createInitialDemoState(): DemoState {
       macAddress: '50:8A:06:22:19:01',
       isOnline: true,
       isMonitored: true,
+      excludeFromTotals: false,
       energyMode: 'hybrid',
       dpConfig: {
         temp: { code: 'va_temperature', scale: 0.1 },
@@ -333,6 +340,7 @@ function createInitialDemoState(): DemoState {
       macAddress: '50:8A:06:22:19:04',
       isOnline: true,
       isMonitored: true,
+      excludeFromTotals: false,
       energyMode: 'hybrid',
       dpConfig: {
         temp: { code: 'va_temperature', scale: 0.1 },
@@ -365,6 +373,7 @@ function createInitialDemoState(): DemoState {
       macAddress: '70:B3:D5:88:11:A1',
       isOnline: true,
       isMonitored: true,
+      excludeFromTotals: false,
       energyMode: 'hybrid',
       dpConfig: {
         contact: { code: 'doorcontact_state', scale: 1 },
@@ -395,6 +404,7 @@ function createInitialDemoState(): DemoState {
       macAddress: '70:B3:D5:88:11:A1',
       isOnline: true,
       isMonitored: true,
+      excludeFromTotals: false,
       energyMode: 'hybrid',
       dpConfig: {
         contact: { code: 'doorcontact_state', scale: 1 },
@@ -425,6 +435,7 @@ function createInitialDemoState(): DemoState {
       macAddress: '70:B3:D5:88:11:A1',
       isOnline: true,
       isMonitored: true,
+      excludeFromTotals: false,
       energyMode: 'hybrid',
       dpConfig: {
         contact: { code: 'doorcontact_state', scale: 1 },

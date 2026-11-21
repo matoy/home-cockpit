@@ -10,6 +10,7 @@ export async function PATCH(request: Request) {
       roomId?: number | null;
       category?: DeviceCategory;
       isMonitored?: boolean;
+      excludeFromTotals?: boolean;
       energyMode?: EnergyMode;
       dpConfig?: DpConfig;
     };

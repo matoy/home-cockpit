@@ -58,6 +58,7 @@ export interface DeviceRecord {
   macAddress: string | null;
   isOnline: boolean;
   isMonitored: boolean;
+  excludeFromTotals: boolean;
   energyMode: EnergyMode;
   dpConfig: DpConfig;
   lastRawStatus: RawDpStatus[] | null;
@@ -138,6 +139,7 @@ export interface EnergyBreakdownItem {
   name: string;
   color: string;
   roomName?: string;
+  excludeFromTotals?: boolean;
   energyKwh: number;
   costEur: number;
   avgPowerW: number;

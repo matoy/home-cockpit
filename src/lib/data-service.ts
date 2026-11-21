@@ -88,6 +88,7 @@ function mapDbDevice(row: typeof devices.$inferSelect): DeviceRecord {
     macAddress: row.macAddress,
     isOnline: row.isOnline,
     isMonitored: row.isMonitored,
+    excludeFromTotals: row.excludeFromTotals,
     energyMode: (row.energyMode as EnergyMode) || 'hybrid',
     dpConfig: row.dpConfig ?? {},
     lastRawStatus: row.lastRawStatus ?? null,
@@ -178,6 +179,7 @@ async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
           "mac_address" text,
           "is_online" boolean DEFAULT true NOT NULL,
           "is_monitored" boolean DEFAULT true NOT NULL,
+          "exclude_from_totals" boolean DEFAULT false NOT NULL,
           "energy_mode" text DEFAULT 'hybrid' NOT NULL,
           "dp_config" jsonb DEFAULT '{}'::jsonb NOT NULL,
           "last_raw_status" jsonb,
@@ -199,6 +201,9 @@ async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
       `);
       await db.execute(sql`
         ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "mac_address" text
+      `);
+      await db.execute(sql`
+        ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "exclude_from_totals" boolean DEFAULT false NOT NULL
       `);
       await db.execute(sql`
         CREATE TABLE IF NOT EXISTS "metric_readings" (
@@ -558,6 +563,7 @@ export async function syncTuyaDevices(): Promise<{
           macAddress: nextMac,
           isOnline: raw.online ?? true,
           isMonitored: true,
+          excludeFromTotals: false,
           energyMode: 'hybrid',
           dpConfig,
           lastRawStatus: rawStatus,
@@ -703,6 +709,7 @@ export async function syncTuyaDevices(): Promise<{
         macAddress: nextMac,
         isOnline: raw.online ?? true,
         isMonitored: true,
+        excludeFromTotals: false,
         energyMode: 'hybrid',
         dpConfig,
         lastRawStatus: rawStatus,
@@ -813,6 +820,7 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           macAddress: nextMac,
           isOnline: raw.online ?? true,
           isMonitored: true,
+          excludeFromTotals: false,
           energyMode: 'hybrid',
           dpConfig: detected.dpConfig,
           lastRawStatus: rawStatus,
@@ -1084,6 +1092,7 @@ export async function updateDevice(
     roomId: number | null;
     category: DeviceCategory;
     isMonitored: boolean;
+    excludeFromTotals: boolean;
     energyMode: EnergyMode;
     dpConfig: DpConfig;
   }>
