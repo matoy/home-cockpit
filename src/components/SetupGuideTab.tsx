@@ -138,9 +138,9 @@ export function SetupGuideTab({ data }: SetupGuideTabProps) {
           <li>
             À l&apos;écran <em>Authorize API Services</em>, assurez-vous d&apos;activer ces APIs gratuites :
             <ul className="list-disc list-inside ml-5 mt-1 text-slate-400 space-y-0.5">
-              <li><strong>IoT Core</strong> (indispensable pour lire les statuts en batch)</li>
+              <li><strong>IoT Core</strong> (indispensable : lecture des statuts en batch + pièces v2)</li>
               <li><strong>Authorization Token Management</strong></li>
-              <li><strong>Smart Home Family Management</strong> (requis pour importer vos pièces et affectations Smart Life)</li>
+              <li><strong>Smart Home Basic Service</strong> <em>(si disponible dans votre catalogue d&apos;APIs)</em></li>
             </ul>
           </li>
           <li>

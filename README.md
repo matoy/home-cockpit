@@ -31,9 +31,9 @@ Conçue pour un hébergement gratuit sur **Vercel (Plan Hobby)**, une base **Neo
    - **Development Method :** `Smart Home`
    - **Data Center :** `Central Europe` (`TUYA_REGION="eu"`) ou `Western Europe` (`TUYA_REGION="weu"`), selon votre compte Smart Life.
 3. À l'étape **Authorize API Services**, activez les services gratuits :
-   - **IoT Core**
+   - **IoT Core** *(lecture des statuts en batch et des pièces)*
    - **Authorization Token Management**
-   - **Smart Home Family Management** *(requis pour importer automatiquement vos pièces et affectations)*
+   - **Smart Home Basic Service** *(selon région, pour les endpoints `/v1.0/homes`)*
 4. Dans le projet créé, ouvrez **Devices** → **Link Tuya App Account** → **Add App Account** et scannez le QR code depuis votre application mobile **Smart Life** (ou **Tuya Smart**).
 5. Récupérez :
    - **UID** de votre compte lié → `TUYA_USER_UID`

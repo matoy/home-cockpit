@@ -247,6 +247,70 @@ interface TuyaRoomInfo {
   name?: string;
 }
 
+interface TuyaSpaceNode {
+  space_id?: number | string;
+  id?: number | string;
+  name?: string;
+}
+
+async function collectRoomsViaV2Space(
+  spaceId: string | null,
+  roomNamesSet: Set<string>,
+  deviceRoomMap: Map<string, string>
+): Promise<boolean> {
+  const path = spaceId
+    ? `/v2.0/cloud/space/child?space_id=${encodeURIComponent(spaceId)}`
+    : '/v2.0/cloud/space/child';
+  const res = await tuyaRequest<
+    Array<string | number | TuyaSpaceNode> | { data?: Array<string | number | TuyaSpaceNode> }
+  >(path);
+
+  const items = Array.isArray(res) ? res : res?.data ?? [];
+  if (items.length === 0) return false;
+
+  let foundAny = false;
+  for (const item of items) {
+    let childId = '';
+    let childName = '';
+
+    if (typeof item === 'string' || typeof item === 'number') {
+      childId = String(item);
+      const detail = await tuyaRequest<TuyaSpaceNode>(
+        `/v2.0/cloud/space/${encodeURIComponent(childId)}`
+      ).catch(() => null);
+      childName = detail?.name?.trim() ?? '';
+    } else {
+      const rawId = item.space_id ?? item.id;
+      childId = rawId !== undefined && rawId !== null ? String(rawId) : '';
+      childName = item.name?.trim() ?? '';
+      if (childId && !childName) {
+        const detail = await tuyaRequest<TuyaSpaceNode>(
+          `/v2.0/cloud/space/${encodeURIComponent(childId)}`
+        ).catch(() => null);
+        childName = detail?.name?.trim() ?? '';
+      }
+    }
+
+    if (!childId || !childName) continue;
+    foundAny = true;
+    roomNamesSet.add(childName);
+
+    const devRes = await tuyaRequest<
+      Array<{ id?: string }> | { data?: Array<{ id?: string }>; list?: Array<{ id?: string }> }
+    >(
+      `/v2.0/cloud/thing/space/device?is_recursion=false&page_size=50&space_ids=${encodeURIComponent(childId)}`
+    );
+    const devList = Array.isArray(devRes) ? devRes : devRes?.data ?? devRes?.list ?? [];
+    for (const d of devList) {
+      if (d.id) {
+        deviceRoomMap.set(d.id, childName);
+      }
+    }
+  }
+
+  return foundAny;
+}
+
 export async function fetchTuyaRoomMapping(
   rawDevices: TuyaRawDevice[]
 ): Promise<TuyaRoomMappingResult> {
@@ -285,7 +349,25 @@ export async function fetchTuyaRoomMapping(
   const roomNamesSet = new Set<string>();
   const deviceRoomMap = new Map<string, string>();
 
+  if (homeIds.size === 0) {
+    try {
+      await collectRoomsViaV2Space(null, roomNamesSet, deviceRoomMap);
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
   for (const homeId of homeIds) {
+    let loadedViaV2 = false;
+    try {
+      loadedViaV2 = await collectRoomsViaV2Space(homeId, roomNamesSet, deviceRoomMap);
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+
+    if (loadedViaV2) continue;
+
+    // Repli sur l'API Smart Home v1.0 si disponible
     try {
       const res = await tuyaRequest<
         TuyaRoomInfo[] | { rooms?: TuyaRoomInfo[] }
@@ -320,7 +402,7 @@ export async function fetchTuyaRoomMapping(
     return {
       roomNames: [],
       deviceRoomMap,
-      warning: `Impossible de lire les pièces Tuya (vérifiez que l'API gratuite "Smart Home Family Management" est activée sur iot.tuya.com) : ${lastError}`,
+      warning: `Pièces Tuya non importées (vérifiez IoT Core / Smart Home Basic Service sur iot.tuya.com) : ${lastError}`,
     };
   }
 
