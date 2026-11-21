@@ -1181,19 +1181,24 @@ export async function updateRoom(
     targetHumidityMax: number;
   }>
 ): Promise<RoomRecord | null> {
+  const normalized: typeof input = {
+    ...input,
+    ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+  };
+
   const db = getDb();
   if (!db) {
     const state = getDemoState();
     const room = state.rooms.find((r) => r.id === id);
     if (!room) return null;
-    Object.assign(room, input);
+    Object.assign(room, normalized);
     return room;
   }
 
   await ensureSchemaInitialized(db);
   const [updated] = await db
     .update(rooms)
-    .set(input)
+    .set(normalized)
     .where(eq(rooms.id, id))
     .returning();
   return updated ? mapDbRoom(updated) : null;

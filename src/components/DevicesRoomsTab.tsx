@@ -10,11 +10,13 @@ import {
   AlertCircle,
   X,
   Home,
+  Pencil,
+  Save,
   Wifi,
   WifiOff,
   Clock,
 } from 'lucide-react';
-import type { DashboardPayload, DeviceRecord, DpConfig, EnergyMode } from '@/types';
+import type { DashboardPayload, DeviceRecord, DpConfig, EnergyMode, RoomRecord } from '@/types';
 
 interface DevicesRoomsTabProps {
   data: DashboardPayload;
@@ -34,13 +36,16 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
-  // Création de pièce
+  // Création / édition de pièce
+  const [editingRoomId, setEditingRoomId] = useState<number | null>(null);
   const [roomName, setRoomName] = useState('');
   const [roomColor, setRoomColor] = useState(ROOM_COLORS[0]);
   const [tempMin, setTempMin] = useState('19');
   const [tempMax, setTempMax] = useState('22');
   const [humMin, setHumMin] = useState('40');
   const [humMax, setHumMax] = useState('60');
+  const [savingRoom, setSavingRoom] = useState(false);
+  const [roomFeedback, setRoomFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Inspecteur DP
   const [inspectDevice, setInspectDevice] = useState<DeviceRecord | null>(null);
@@ -94,27 +99,119 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
     }
   }
 
-  async function handleCreateRoom(e: FormEvent) {
-    e.preventDefault();
-    if (!roomName.trim()) return;
-    await fetch('/api/rooms', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: roomName.trim(),
-        color: roomColor,
-        targetTempMin: Number(tempMin) || 19,
-        targetTempMax: Number(tempMax) || 22,
-        targetHumidityMin: Number(humMin) || 40,
-        targetHumidityMax: Number(humMax) || 60,
-      }),
-    });
+  function resetRoomForm() {
+    setEditingRoomId(null);
     setRoomName('');
-    await onRefresh();
+    setRoomColor(ROOM_COLORS[0]);
+    setTempMin('19');
+    setTempMax('22');
+    setHumMin('40');
+    setHumMax('60');
+    setRoomFeedback(null);
+  }
+
+  function selectRoomForEdit(room: RoomRecord) {
+    setEditingRoomId(room.id);
+    setRoomName(room.name);
+    setRoomColor(room.color || ROOM_COLORS[0]);
+    setTempMin(String(room.targetTempMin));
+    setTempMax(String(room.targetTempMax));
+    setHumMin(String(room.targetHumidityMin));
+    setHumMax(String(room.targetHumidityMax));
+    setRoomFeedback(null);
+  }
+
+  async function handleSubmitRoom(e: FormEvent) {
+    e.preventDefault();
+    const trimmedName = roomName.trim();
+    if (!trimmedName) {
+      setRoomFeedback({ ok: false, text: 'Le nom de la pièce est requis.' });
+      return;
+    }
+
+    const parsedTempMin = tempMin.trim() === '' ? 19 : Number(tempMin);
+    const parsedTempMax = tempMax.trim() === '' ? 22 : Number(tempMax);
+    const parsedHumMin = humMin.trim() === '' ? 40 : Number(humMin);
+    const parsedHumMax = humMax.trim() === '' ? 60 : Number(humMax);
+
+    if (
+      !Number.isFinite(parsedTempMin) ||
+      !Number.isFinite(parsedTempMax) ||
+      !Number.isFinite(parsedHumMin) ||
+      !Number.isFinite(parsedHumMax)
+    ) {
+      setRoomFeedback({ ok: false, text: 'Veuillez saisir des valeurs numériques valides.' });
+      return;
+    }
+
+    if (parsedTempMin > parsedTempMax) {
+      setRoomFeedback({
+        ok: false,
+        text: 'La température min doit être inférieure ou égale à la température max.',
+      });
+      return;
+    }
+
+    if (parsedHumMin < 0 || parsedHumMax > 100 || parsedHumMin > parsedHumMax) {
+      setRoomFeedback({
+        ok: false,
+        text: "L'humidité cible doit être comprise entre 0 et 100 % (min ≤ max).",
+      });
+      return;
+    }
+
+    setSavingRoom(true);
+    setRoomFeedback(null);
+    try {
+      const isEditing = editingRoomId !== null;
+      const res = await fetch('/api/rooms', {
+        method: isEditing ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...(isEditing ? { id: editingRoomId } : {}),
+          name: trimmedName,
+          color: roomColor,
+          targetTempMin: parsedTempMin,
+          targetTempMax: parsedTempMax,
+          targetHumidityMin: parsedHumMin,
+          targetHumidityMax: parsedHumMax,
+        }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        throw new Error(json.error || "Échec de l'enregistrement de la pièce.");
+      }
+
+      await onRefresh();
+      if (isEditing) {
+        setRoomFeedback({ ok: true, text: `Pièce « ${trimmedName} » mise à jour.` });
+      } else {
+        resetRoomForm();
+        setRoomFeedback({ ok: true, text: `Pièce « ${trimmedName} » créée.` });
+      }
+    } catch (err) {
+      setRoomFeedback({
+        ok: false,
+        text: err instanceof Error ? err.message : "Erreur lors de l'enregistrement.",
+      });
+    } finally {
+      setSavingRoom(false);
+    }
   }
 
   async function handleDeleteRoom(id: number) {
-    await fetch(`/api/rooms?id=${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/rooms?id=${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      setRoomFeedback({
+        ok: false,
+        text: json.error || 'Échec de la suppression de la pièce.',
+      });
+      return;
+    }
+    if (editingRoomId === id) {
+      resetRoomForm();
+    }
     await onRefresh();
   }
 
@@ -195,13 +292,39 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
       {/* Gestion des pièces */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <form
-          onSubmit={handleCreateRoom}
-          className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-4"
+          onSubmit={handleSubmitRoom}
+          className={`rounded-2xl border p-5 space-y-4 transition ${
+            editingRoomId !== null
+              ? 'border-indigo-500/50 bg-slate-900/90 ring-1 ring-indigo-500/20'
+              : 'border-slate-800 bg-slate-900/70'
+          }`}
         >
-          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-            <Home className="h-4 w-4 text-indigo-400" />
-            Ajouter une pièce
-          </h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              {editingRoomId !== null ? (
+                <>
+                  <Pencil className="h-4 w-4 text-indigo-400" />
+                  Modifier la pièce
+                </>
+              ) : (
+                <>
+                  <Home className="h-4 w-4 text-indigo-400" />
+                  Ajouter une pièce
+                </>
+              )}
+            </h3>
+            {editingRoomId !== null && (
+              <button
+                type="button"
+                onClick={resetRoomForm}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2 py-1 text-[11px] text-slate-300 transition"
+                title="Revenir au mode ajout"
+              >
+                <X className="h-3.5 w-3.5" />
+                Annuler
+              </button>
+            )}
+          </div>
 
           <div>
             <label className="block text-xs text-slate-400 mb-1">Nom de la pièce</label>
@@ -217,8 +340,8 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
 
           <div>
             <label className="block text-xs text-slate-400 mb-1.5">Couleur sur les graphiques</label>
-            <div className="flex gap-2">
-              {ROOM_COLORS.map((c) => (
+            <div className="flex flex-wrap items-center gap-2">
+              {(ROOM_COLORS.includes(roomColor) ? ROOM_COLORS : [...ROOM_COLORS, roomColor]).map((c) => (
                 <button
                   key={c}
                   type="button"
@@ -229,6 +352,19 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                   style={{ backgroundColor: c }}
                 />
               ))}
+              <label
+                title="Couleur personnalisée"
+                className="relative inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-dashed border-slate-500 bg-slate-950 text-[11px] font-semibold text-slate-300 hover:border-white transition overflow-hidden"
+              >
+                <span>+</span>
+                <input
+                  type="color"
+                  value={/^#[0-9a-fA-F]{6}$/.test(roomColor) ? roomColor : '#3b82f6'}
+                  onChange={(e) => setRoomColor(e.target.value)}
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                  aria-label="Couleur personnalisée"
+                />
+              </label>
             </div>
           </div>
 
@@ -257,6 +393,8 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
               <label className="block text-slate-400 mb-1">Humidité min (%)</label>
               <input
                 type="number"
+                min={0}
+                max={100}
                 value={humMin}
                 onChange={(e) => setHumMin(e.target.value)}
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-white"
@@ -266,6 +404,8 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
               <label className="block text-slate-400 mb-1">Humidité max (%)</label>
               <input
                 type="number"
+                min={0}
+                max={100}
                 value={humMax}
                 onChange={(e) => setHumMax(e.target.value)}
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-white"
@@ -273,45 +413,103 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
             </div>
           </div>
 
-          <button
-            type="submit"
-            className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-xs font-medium text-white transition"
-          >
-            <Plus className="h-4 w-4" />
-            Créer la pièce
-          </button>
+          {roomFeedback && (
+            <div
+              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
+                roomFeedback.ok
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                  : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+              }`}
+            >
+              {roomFeedback.ok ? (
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              )}
+              <span>{roomFeedback.text}</span>
+            </div>
+          )}
+
+          {editingRoomId !== null ? (
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={savingRoom}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 text-xs font-medium text-white transition"
+              >
+                <Save className="h-4 w-4" />
+                {savingRoom ? 'Enregistrement...' : 'Enregistrer'}
+              </button>
+              <button
+                type="button"
+                onClick={resetRoomForm}
+                disabled={savingRoom}
+                className="rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-slate-300 transition"
+              >
+                Annuler
+              </button>
+            </div>
+          ) : (
+            <button
+              type="submit"
+              disabled={savingRoom}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-4 py-2 text-xs font-medium text-white transition"
+            >
+              <Plus className="h-4 w-4" />
+              {savingRoom ? 'Création...' : 'Créer la pièce'}
+            </button>
+          )}
         </form>
 
         <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-white">Pièces configurées ({data.rooms.length})</h3>
-            <span className="text-[11px] text-slate-400">Cliquez sur une pièce pour filtrer les appareils</span>
+            <span className="text-[11px] text-slate-400">
+              Cliquez sur une pièce pour la modifier et filtrer ses appareils
+            </span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {data.rooms.map((r) => {
-              const isSelected = roomFilter === String(r.id);
+              const isEditing = editingRoomId === r.id;
+              const isFiltered = roomFilter === String(r.id);
               const count = roomDeviceCounts.get(r.id) ?? 0;
               return (
                 <div
                   key={r.id}
-                  onClick={() => setRoomFilter(isSelected ? 'all' : String(r.id))}
+                  onClick={() => {
+                    if (isEditing) {
+                      resetRoomForm();
+                      if (isFiltered) setRoomFilter('all');
+                    } else {
+                      selectRoomForEdit(r);
+                      setRoomFilter(String(r.id));
+                    }
+                  }}
                   className={`cursor-pointer flex items-center justify-between rounded-xl border px-3.5 py-2.5 transition ${
-                    isSelected
-                      ? 'border-indigo-500 bg-indigo-950/30 ring-1 ring-indigo-500/40'
-                      : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+                    isEditing
+                      ? 'border-indigo-500 bg-indigo-950/35 ring-1 ring-indigo-500/50'
+                      : isFiltered
+                        ? 'border-indigo-500/40 bg-indigo-950/15'
+                        : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0">
                     <span
                       className="h-3.5 w-3.5 rounded-full shrink-0"
                       style={{ backgroundColor: r.color }}
                     />
-                    <div>
-                      <div className="text-xs font-semibold text-white flex items-center gap-2">
-                        {r.name}
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-white flex flex-wrap items-center gap-2">
+                        <span className="truncate">{r.name}</span>
                         <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-normal text-slate-300">
                           {count}
                         </span>
+                        {isEditing && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 px-2 py-0.5 text-[10px] font-medium text-indigo-300">
+                            <Pencil className="h-2.5 w-2.5" />
+                            En édition
+                          </span>
+                        )}
                       </div>
                       <div className="text-[11px] text-slate-400">
                         Cibles : {r.targetTempMin}–{r.targetTempMax}°C · {r.targetHumidityMin}–
@@ -320,12 +518,14 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                     </div>
                   </div>
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (isSelected) setRoomFilter('all');
+                      if (isEditing) resetRoomForm();
+                      if (isFiltered) setRoomFilter('all');
                       void handleDeleteRoom(r.id);
                     }}
-                    className="rounded-lg p-1.5 text-slate-500 hover:bg-rose-500/15 hover:text-rose-400"
+                    className="rounded-lg p-1.5 text-slate-500 hover:bg-rose-500/15 hover:text-rose-400 shrink-0"
                     title="Supprimer la pièce"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
