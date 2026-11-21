@@ -104,7 +104,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
                     borderRadius: '12px',
                     fontSize: '12px',
                   }}
-                  formatter={(val: number) => [`${val.toFixed(1)} °C`]}
+                  formatter={(val) => `${Number(val ?? 0).toFixed(1)} °C`}
                 />
                 <Legend wrapperStyle={{ fontSize: '12px' }} />
                 {climateRooms.map((rs) => (
@@ -156,7 +156,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
                     borderRadius: '12px',
                     fontSize: '12px',
                   }}
-                  formatter={(val: number) => [`${val.toFixed(0)} %`]}
+                  formatter={(val) => `${Number(val ?? 0).toFixed(0)} %`}
                 />
                 <Legend wrapperStyle={{ fontSize: '12px' }} />
                 {climateRooms.map((rs) => (

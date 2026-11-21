@@ -172,7 +172,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
                       borderRadius: '12px',
                       fontSize: '12px',
                     }}
-                    formatter={(val: number) => [`${val.toFixed(1)} ${unit}`]}
+                    formatter={(val) => `${Number(val ?? 0).toFixed(1)} ${unit}`}
                   />
                   <Legend wrapperStyle={{ fontSize: '12px' }} />
                   {seriesKeys.map((s) => (
@@ -200,9 +200,9 @@ export function EnergyTab({ data }: EnergyTabProps) {
                       borderRadius: '12px',
                       fontSize: '12px',
                     }}
-                    formatter={(val: number) => [
-                      `${val.toFixed(metric === 'energy' ? 3 : 2)} ${unit}`,
-                    ]}
+                    formatter={(val) =>
+                      `${Number(val ?? 0).toFixed(metric === 'energy' ? 3 : 2)} ${unit}`
+                    }
                   />
                   <Legend wrapperStyle={{ fontSize: '12px' }} />
                   {seriesKeys.map((s) => (
@@ -260,7 +260,10 @@ export function EnergyTab({ data }: EnergyTabProps) {
                       borderRadius: '12px',
                       fontSize: '12px',
                     }}
-                    formatter={(value: number, name: string) => [`${value.toFixed(2)} kWh`, name]}
+                    formatter={(value, name) => [
+                      `${Number(value ?? 0).toFixed(2)} kWh`,
+                      String(name ?? ''),
+                    ]}
                   />
                 </PieChart>
               </ResponsiveContainer>
