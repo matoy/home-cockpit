@@ -416,9 +416,9 @@ export async function getDashboardData(
       .where(
         range === 'custom'
           ? and(
-              gte(metricReadings.recordedAt, startDate),
-              lte(metricReadings.recordedAt, endDate)
-            )
+            gte(metricReadings.recordedAt, startDate),
+            lte(metricReadings.recordedAt, endDate)
+          )
           : gte(metricReadings.recordedAt, startDate)
       )
       .orderBy(asc(metricReadings.recordedAt)),
@@ -833,13 +833,13 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       const energyRes =
         metrics.powerW !== null || metrics.addEleKwh !== null
           ? computeHybridEnergyKwh({
-              energyMode: dev.energyMode,
-              powerW: metrics.powerW,
-              currentAddEleKwh: metrics.addEleKwh,
-              previousAddEleKwh: dev.lastAddEleKwh,
-              previousSeenAt: dev.lastSeenAt,
-              now,
-            })
+            energyMode: dev.energyMode,
+            powerW: metrics.powerW,
+            currentAddEleKwh: metrics.addEleKwh,
+            previousAddEleKwh: dev.lastAddEleKwh,
+            previousSeenAt: dev.lastSeenAt,
+            now,
+          })
           : null;
 
       state.readings.push({
@@ -917,13 +917,13 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
 
       const energyRes = hasPower
         ? computeHybridEnergyKwh({
-            energyMode: (dev.energyMode as EnergyMode) || 'hybrid',
-            powerW: metrics.powerW,
-            currentAddEleKwh: metrics.addEleKwh,
-            previousAddEleKwh: dev.lastAddEleKwh,
-            previousSeenAt: dev.lastSeenAt,
-            now,
-          })
+          energyMode: (dev.energyMode as EnergyMode) || 'hybrid',
+          powerW: metrics.powerW,
+          currentAddEleKwh: metrics.addEleKwh,
+          previousAddEleKwh: dev.lastAddEleKwh,
+          previousSeenAt: dev.lastSeenAt,
+          now,
+        })
         : null;
 
       readingsToInsert.push({
