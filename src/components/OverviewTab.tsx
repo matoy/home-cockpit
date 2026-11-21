@@ -12,14 +12,12 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
-import type { ComfortStatus, DashboardPayload } from '@/types';
+import type { ComfortStatus, DashboardPayload, TabId } from '@/types';
 
 interface OverviewTabProps {
   data: DashboardPayload;
   onSelectRoom: (roomId: string) => void;
-  onNavigateTab: (
-    tab: 'overview' | 'energy' | 'climate' | 'contacts' | 'tariffs' | 'devices' | 'guide'
-  ) => void;
+  onNavigateTab: (tab: TabId) => void;
 }
 
 const COMFORT_BADGE_CLASSES: Record<ComfortStatus['tone'], string> = {

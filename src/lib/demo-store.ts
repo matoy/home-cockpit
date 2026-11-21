@@ -1,5 +1,6 @@
 import { computeHybridEnergyKwh, normalizeTariffTimeline } from './tariff-engine';
 import type {
+  AutomationRecord,
   CollectionLogRecord,
   DeviceRecord,
   MetricReadingRecord,
@@ -12,6 +13,7 @@ interface DemoState {
   devices: DeviceRecord[];
   readings: MetricReadingRecord[];
   tariffs: TariffPeriodRecord[];
+  automations: AutomationRecord[];
   logs: CollectionLogRecord[];
   nextRoomId: number;
   nextReadingId: number;
@@ -800,11 +802,223 @@ function createInitialDemoState(): DemoState {
     },
   ];
 
+  const syncedIso = alignedNow.toISOString();
+  const demoAutomations: AutomationRecord[] = [
+    {
+      id: 'rule_window_cut_heat',
+      homeId: 'demo-home-1',
+      name: 'Coupure chauffage si fenêtre chambre ouverte',
+      ruleType: 'automation',
+      enabled: true,
+      matchType: 'all',
+      effectiveTime: { allDay: true, startTime: '00:00', endTime: '23:59', loops: '1111111' },
+      conditions: [
+        {
+          category: 'device',
+          entityId: 'bf81a2c9chambrefen',
+          entityName: 'Capteur Fenêtre Chambre',
+          code: 'doorcontact_state',
+          operator: '==',
+          value: true,
+          summary: 'doorcontact_state == true',
+        },
+      ],
+      actions: [
+        {
+          category: 'device',
+          entityId: 'bf81a2c9chambreelec',
+          entityName: 'Prise Radiateur Chambre',
+          executor: 'dpIssue',
+          properties: { switch_1: false },
+          summary: 'switch_1: OFF',
+        },
+      ],
+      rawPayload: { rule_id: 'rule_window_cut_heat', source: 'demo' },
+      syncedAt: syncedIso,
+    },
+    {
+      id: 'rule_evening_heat_chambre',
+      homeId: 'demo-home-1',
+      name: 'Relance chauffage chambre en soirée',
+      ruleType: 'automation',
+      enabled: true,
+      matchType: 'all',
+      effectiveTime: { allDay: false, startTime: '19:30', endTime: '23:30', loops: '1111111' },
+      conditions: [
+        {
+          category: 'timer',
+          entityId: null,
+          entityName: null,
+          code: 'timer',
+          operator: '==',
+          value: '20:00',
+          summary: 'Horaire : 20:00',
+        },
+        {
+          category: 'device',
+          entityId: 'bf81a2c9chambreclim',
+          entityName: 'Capteur Chambre',
+          code: 'va_temperature',
+          operator: '<',
+          value: 185,
+          summary: 'va_temperature < 185',
+        },
+      ],
+      actions: [
+        {
+          category: 'device',
+          entityId: 'bf81a2c9chambreelec',
+          entityName: 'Prise Radiateur Chambre',
+          executor: 'dpIssue',
+          properties: { switch_1: true },
+          summary: 'switch_1: ON',
+        },
+      ],
+      rawPayload: { rule_id: 'rule_evening_heat_chambre', source: 'demo' },
+      syncedAt: syncedIso,
+    },
+    {
+      id: 'rule_night_door_alert',
+      homeId: 'demo-home-1',
+      name: "Alerte porte d'entrée ouverte la nuit",
+      ruleType: 'automation',
+      enabled: true,
+      matchType: 'all',
+      effectiveTime: { allDay: false, startTime: '23:00', endTime: '06:30', loops: '1111111' },
+      conditions: [
+        {
+          category: 'device',
+          entityId: 'bf81a2c9entree001',
+          entityName: 'Capteur Porte Entrée',
+          code: 'doorcontact_state',
+          operator: '==',
+          value: true,
+          summary: 'doorcontact_state == true',
+        },
+      ],
+      actions: [
+        {
+          category: 'notification',
+          entityId: null,
+          entityName: null,
+          executor: 'appPush',
+          properties: {},
+          summary: 'Notification Push Smart Life',
+        },
+      ],
+      rawPayload: { rule_id: 'rule_night_door_alert', source: 'demo' },
+      syncedAt: syncedIso,
+    },
+    {
+      id: 'rule_desk_auto_off',
+      homeId: 'demo-home-1',
+      name: 'Extinction station bureau la nuit',
+      ruleType: 'automation',
+      enabled: true,
+      matchType: 'all',
+      effectiveTime: { allDay: true, startTime: '00:00', endTime: '23:59', loops: '0111110' },
+      conditions: [
+        {
+          category: 'timer',
+          entityId: null,
+          entityName: null,
+          code: 'timer',
+          operator: '==',
+          value: '23:30',
+          summary: 'Horaire : 23:30',
+        },
+      ],
+      actions: [
+        {
+          category: 'device',
+          entityId: 'bf81a2c9bureaudesk1',
+          entityName: 'Prise Station Bureau',
+          executor: 'dpIssue',
+          properties: { switch_1: false },
+          summary: 'switch_1: OFF',
+        },
+      ],
+      rawPayload: { rule_id: 'rule_desk_auto_off', source: 'demo' },
+      syncedAt: syncedIso,
+    },
+    {
+      id: 'rule_sdb_humidity_alert',
+      homeId: 'demo-home-1',
+      name: 'Alerte humidité élevée salle de bain',
+      ruleType: 'automation',
+      enabled: false,
+      matchType: 'any',
+      effectiveTime: { allDay: true, startTime: '00:00', endTime: '23:59', loops: '1111111' },
+      conditions: [
+        {
+          category: 'device',
+          entityId: 'bf81a2c9sdbclim001',
+          entityName: 'Capteur Salle de Bain',
+          code: 'va_humidity',
+          operator: '>',
+          value: 75,
+          summary: 'va_humidity > 75',
+        },
+      ],
+      actions: [
+        {
+          category: 'notification',
+          entityId: null,
+          entityName: null,
+          executor: 'appPush',
+          properties: {},
+          summary: 'Notification Push Smart Life',
+        },
+      ],
+      rawPayload: { rule_id: 'rule_sdb_humidity_alert', source: 'demo' },
+      syncedAt: syncedIso,
+    },
+    {
+      id: 'scene_leave_home',
+      homeId: 'demo-home-1',
+      name: 'Départ Maison (Tout couper)',
+      ruleType: 'scene',
+      enabled: true,
+      matchType: 'manual',
+      effectiveTime: null,
+      conditions: [],
+      actions: [
+        {
+          category: 'device',
+          entityId: 'bf81a2c9salonplug01',
+          entityName: 'Prise TV & Box Salon',
+          executor: 'dpIssue',
+          properties: { switch_1: false },
+          summary: 'switch_1: OFF',
+        },
+        {
+          category: 'device',
+          entityId: 'bf81a2c9bureaudesk1',
+          entityName: 'Prise Station Bureau',
+          executor: 'dpIssue',
+          properties: { switch_1: false },
+          summary: 'switch_1: OFF',
+        },
+        {
+          category: 'device',
+          entityId: 'bf81a2c9chambreelec',
+          entityName: 'Prise Radiateur Chambre',
+          executor: 'dpIssue',
+          properties: { switch_1: false },
+          summary: 'switch_1: OFF',
+        },
+      ],
+      rawPayload: { rule_id: 'scene_leave_home', type: 'scene', source: 'demo' },
+      syncedAt: syncedIso,
+    },
+  ];
+
   return {
     rooms,
     devices,
     readings,
     tariffs,
+    automations: demoAutomations,
     logs,
     nextRoomId: rooms.length + 1,
     nextReadingId,

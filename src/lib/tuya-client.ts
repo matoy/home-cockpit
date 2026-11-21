@@ -1,5 +1,17 @@
 import crypto from 'node:crypto';
-import type { DeviceCategory, DpConfig, RawDpStatus } from '@/types';
+import type {
+  AutomationAction,
+  AutomationActionCategory,
+  AutomationCondition,
+  AutomationConditionCategory,
+  AutomationEffectiveTime,
+  AutomationMatchType,
+  AutomationRecord,
+  AutomationRuleType,
+  DeviceCategory,
+  DpConfig,
+  RawDpStatus,
+} from '@/types';
 
 const TUYA_REGION_ENDPOINTS: Record<string, string> = {
   eu: 'https://openapi.tuyaeu.com',
@@ -313,9 +325,9 @@ async function collectRoomsViaV2Space(
   return foundAny;
 }
 
-export async function fetchTuyaRoomMapping(
-  rawDevices: TuyaRawDevice[]
-): Promise<TuyaRoomMappingResult> {
+export async function resolveTuyaHomeIds(
+  rawDevices: TuyaRawDevice[] = []
+): Promise<{ homeIds: string[]; lastError?: string }> {
   const cfg = getTuyaConfig();
   const homeIds = new Set<string>();
   const uids = new Set<string>();
@@ -348,10 +360,19 @@ export async function fetchTuyaRoomMapping(
     }
   }
 
+  return { homeIds: Array.from(homeIds), lastError };
+}
+
+export async function fetchTuyaRoomMapping(
+  rawDevices: TuyaRawDevice[]
+): Promise<TuyaRoomMappingResult> {
+  const { homeIds, lastError: homeErr } = await resolveTuyaHomeIds(rawDevices);
+  let lastError = homeErr;
+
   const roomNamesSet = new Set<string>();
   const deviceRoomMap = new Map<string, string>();
 
-  if (homeIds.size === 0) {
+  if (homeIds.length === 0) {
     try {
       await collectRoomsViaV2Space(null, roomNamesSet, deviceRoomMap);
     } catch (err) {
@@ -411,6 +432,323 @@ export async function fetchTuyaRoomMapping(
   return {
     roomNames: Array.from(roomNamesSet),
     deviceRoomMap,
+  };
+}
+
+export interface TuyaAutomationsResult {
+  automations: AutomationRecord[];
+  warning?: string;
+}
+
+function formatPropertyPairs(props: Record<string, unknown>): string {
+  const entries = Object.entries(props);
+  if (entries.length === 0) return 'Action exécutée';
+  return entries
+    .map(([k, v]) => {
+      if (typeof v === 'boolean') return `${k}: ${v ? 'ON' : 'OFF'}`;
+      return `${k}: ${String(v)}`;
+    })
+    .join(', ');
+}
+
+function normalizeCondition(raw: Record<string, unknown>): AutomationCondition {
+  const entityType = raw.entity_type;
+  const display = (raw.display ?? raw.rule ?? {}) as Record<string, unknown>;
+  const exprList = Array.isArray(raw.expr) ? (raw.expr as Array<Record<string, unknown>>) : [];
+  const firstExpr = exprList[0] ?? {};
+
+  const code =
+    (typeof firstExpr.code === 'string' ? firstExpr.code : null) ??
+    (typeof display.code === 'string' ? display.code : null) ??
+    (typeof raw.cond_type === 'string' ? raw.cond_type : null);
+
+  const operator =
+    (typeof firstExpr.operator === 'string' ? firstExpr.operator : null) ??
+    (typeof display.operator === 'string' ? display.operator : null) ??
+    null;
+
+  const rawVal = firstExpr.value ?? display.value ?? firstExpr.status_value ?? null;
+  const value: string | number | boolean | null =
+    typeof rawVal === 'string' || typeof rawVal === 'number' || typeof rawVal === 'boolean'
+      ? rawVal
+      : rawVal !== null && rawVal !== undefined
+        ? JSON.stringify(rawVal)
+        : null;
+
+  const entityIdRaw = raw.dev_id ?? raw.entity_id;
+  const entityId =
+    entityIdRaw !== undefined && entityIdRaw !== null && String(entityIdRaw).trim()
+      ? String(entityIdRaw).trim()
+      : null;
+  const entityName = typeof raw.entity_name === 'string' ? raw.entity_name.trim() : null;
+
+  let category: AutomationConditionCategory = 'other';
+  if (
+    entityType === 4 ||
+    entityType === 'timer' ||
+    entityType === 6 ||
+    code === 'timer' ||
+    code === 'time' ||
+    typeof display.time === 'string'
+  ) {
+    category = 'timer';
+  } else if (entityType === 3 || entityType === 'weather' || entityType === 10) {
+    category = 'weather';
+  } else if (entityType === 5 || entityType === 'geofence') {
+    category = 'geofence';
+  } else if (entityType === 1 || entityType === 'device' || Boolean(raw.dev_id) || Boolean(code)) {
+    category = 'device';
+  }
+
+  let summary = '';
+  if (category === 'timer') {
+    const timeVal =
+      (typeof display.time === 'string' ? display.time : null) ??
+      (value !== null ? String(value) : null) ??
+      'Planifié';
+    summary = `Horaire : ${timeVal}`;
+  } else if (category === 'weather') {
+    summary = `Météo (${code ?? 'condition'}${operator ? ` ${operator}` : ''}${value !== null ? ` ${String(value)}` : ''})`;
+  } else if (category === 'geofence') {
+    summary = `Géolocalisation (${code ?? String(value ?? 'zone')})`;
+  } else if (code) {
+    const valStr = typeof value === 'boolean' ? (value ? 'true' : 'false') : value !== null ? String(value) : '';
+    summary = `${code}${operator ? ` ${operator}` : ' :'}${valStr ? ` ${valStr}` : ''}`.trim();
+  } else {
+    summary = entityName || 'Condition configurée';
+  }
+
+  return {
+    category,
+    entityId: category === 'device' ? entityId : null,
+    entityName,
+    code,
+    operator,
+    value,
+    summary,
+  };
+}
+
+function normalizeAction(raw: Record<string, unknown>): AutomationAction {
+  const executor = typeof raw.action_executor === 'string' ? raw.action_executor : null;
+  const execLower = (executor ?? '').toLowerCase();
+  const entityIdRaw = raw.dev_id ?? raw.entity_id;
+  const entityId =
+    entityIdRaw !== undefined && entityIdRaw !== null && String(entityIdRaw).trim()
+      ? String(entityIdRaw).trim()
+      : null;
+  const entityName = typeof raw.entity_name === 'string' ? raw.entity_name.trim() : null;
+
+  const propObj = (
+    raw.executor_property && typeof raw.executor_property === 'object'
+      ? raw.executor_property
+      : raw.rule && typeof raw.rule === 'object'
+        ? raw.rule
+        : {}
+  ) as Record<string, unknown>;
+
+  let category: AutomationActionCategory = 'other';
+  if (execLower.includes('delay')) {
+    category = 'delay';
+  } else if (
+    execLower.includes('notify') ||
+    execLower.includes('push') ||
+    execLower.includes('sms') ||
+    execLower.includes('message')
+  ) {
+    category = 'notification';
+  } else if (execLower.includes('rule') || execLower.includes('scene') || execLower.includes('automation')) {
+    category = 'rule';
+  } else if (
+    execLower === 'dpissue' ||
+    execLower.includes('device') ||
+    Boolean(raw.dev_id) ||
+    Object.keys(propObj).length > 0
+  ) {
+    category = 'device';
+  }
+
+  let summary = '';
+  if (category === 'delay') {
+    const mins = propObj.minutes ?? propObj.minute ?? 0;
+    const secs = propObj.seconds ?? propObj.second ?? 0;
+    summary = `Temporisation : ${mins ? `${mins} min ` : ''}${secs ? `${secs} s` : ''}`.trim();
+  } else if (category === 'notification') {
+    summary = 'Notification Push Smart Life';
+  } else if (category === 'rule') {
+    summary = `Exécuter scénario${entityName ? ` (${entityName})` : ''}`;
+  } else {
+    summary = formatPropertyPairs(propObj);
+  }
+
+  return {
+    category,
+    entityId: category === 'device' ? entityId : null,
+    entityName,
+    executor,
+    properties: propObj,
+    summary,
+  };
+}
+
+function normalizeEffectiveTime(raw: Record<string, unknown>): AutomationEffectiveTime | null {
+  const eff = (raw.effective_time ?? null) as Record<string, unknown> | null;
+  if (!eff || typeof eff !== 'object') return null;
+
+  return {
+    allDay: Boolean(eff.all_day ?? (eff.start_time === '00:00' && eff.end_time === '23:59')),
+    startTime: typeof eff.start_time === 'string' ? eff.start_time : '00:00',
+    endTime: typeof eff.end_time === 'string' ? eff.end_time : '23:59',
+    loops: typeof eff.loops === 'string' ? eff.loops : '1111111',
+  };
+}
+
+function normalizeTuyaRule(
+  raw: Record<string, unknown>,
+  homeId: string,
+  defaultType: AutomationRuleType,
+  nowIso: string
+): AutomationRecord | null {
+  const rawId = raw.rule_id ?? raw.automation_id ?? raw.scene_id ?? raw.id;
+  if (!rawId) return null;
+  const id = String(rawId);
+  const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : `Scénario ${id}`;
+
+  const rawRuleType =
+    raw.type === 'scene' || raw.rule_type === 'scene' || defaultType === 'scene'
+      ? 'scene'
+      : 'automation';
+
+  const enabled =
+    typeof raw.enabled === 'boolean'
+      ? raw.enabled
+      : raw.status !== 0 && raw.status !== false && raw.status !== 'disabled';
+
+  const rawMatch = raw.match_type ?? raw.cond_type;
+  const matchType: AutomationMatchType =
+    rawRuleType === 'scene' ? 'manual' : rawMatch === 2 ? 'all' : 'any';
+
+  const rawConditions = Array.isArray(raw.conditions)
+    ? (raw.conditions as Array<Record<string, unknown>>)
+    : [];
+  const rawActions = Array.isArray(raw.actions)
+    ? (raw.actions as Array<Record<string, unknown>>)
+    : [];
+
+  return {
+    id,
+    homeId,
+    name,
+    ruleType: rawRuleType,
+    enabled,
+    matchType,
+    effectiveTime: normalizeEffectiveTime(raw),
+    conditions: rawConditions.map(normalizeCondition),
+    actions: rawActions.map(normalizeAction),
+    rawPayload: raw,
+    syncedAt: nowIso,
+  };
+}
+
+export async function fetchTuyaAutomations(
+  rawDevices?: TuyaRawDevice[]
+): Promise<TuyaAutomationsResult> {
+  const devicesSource = rawDevices ?? (await fetchTuyaDevices().catch(() => []));
+  const { homeIds, lastError: homeErr } = await resolveTuyaHomeIds(devicesSource);
+  let lastError = homeErr;
+
+  const collected = new Map<string, AutomationRecord>();
+  const nowIso = new Date().toISOString();
+
+  for (const homeId of homeIds) {
+    let foundViaV2 = false;
+
+    for (const ruleKind of ['automation', 'scene'] as const) {
+      try {
+        const res = await tuyaRequest<
+          | Array<Record<string, unknown>>
+          | { list?: Array<Record<string, unknown>>; data?: Array<Record<string, unknown>> }
+        >(
+          `/v2.0/cloud/scene/rule?page_no=1&page_size=50&space_id=${encodeURIComponent(homeId)}&type=${ruleKind}`
+        );
+
+        const list = Array.isArray(res) ? res : res?.list ?? res?.data ?? [];
+        if (list.length > 0) foundViaV2 = true;
+
+        for (const item of list) {
+          let fullItem = item;
+          const rid = item.rule_id ?? item.id;
+          const hasConds = Array.isArray(item.conditions) && item.conditions.length > 0;
+          const hasActs = Array.isArray(item.actions) && item.actions.length > 0;
+
+          if (rid && (!hasActs || (ruleKind === 'automation' && !hasConds))) {
+            const detail = await tuyaRequest<Record<string, unknown>>(
+              `/v2.0/cloud/scene/rule/${encodeURIComponent(String(rid))}`
+            ).catch(() => null);
+            if (detail && typeof detail === 'object') {
+              fullItem = { ...item, ...detail };
+            }
+          }
+
+          const normalized = normalizeTuyaRule(fullItem, homeId, ruleKind, nowIso);
+          if (normalized) {
+            collected.set(normalized.id, normalized);
+          }
+        }
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    if (foundViaV2) continue;
+
+    // Repli v1.0 : automations + scenes
+    try {
+      const autoList = await tuyaRequest<Array<Record<string, unknown>>>(
+        `/v1.0/homes/${encodeURIComponent(homeId)}/automations`
+      );
+      for (const item of autoList ?? []) {
+        let fullItem = item;
+        const aid = item.automation_id ?? item.id;
+        const hasConds = Array.isArray(item.conditions) && item.conditions.length > 0;
+        const hasActs = Array.isArray(item.actions) && item.actions.length > 0;
+        if (aid && (!hasConds || !hasActs)) {
+          const detail = await tuyaRequest<Record<string, unknown>>(
+            `/v1.0/homes/${encodeURIComponent(homeId)}/automations/${encodeURIComponent(String(aid))}`
+          ).catch(() => null);
+          if (detail && typeof detail === 'object') {
+            fullItem = { ...item, ...detail };
+          }
+        }
+        const normalized = normalizeTuyaRule(fullItem, homeId, 'automation', nowIso);
+        if (normalized) collected.set(normalized.id, normalized);
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+
+    try {
+      const sceneList = await tuyaRequest<Array<Record<string, unknown>>>(
+        `/v1.0/homes/${encodeURIComponent(homeId)}/scenes`
+      );
+      for (const item of sceneList ?? []) {
+        const normalized = normalizeTuyaRule(item, homeId, 'scene', nowIso);
+        if (normalized) collected.set(normalized.id, normalized);
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  if (collected.size === 0 && lastError) {
+    return {
+      automations: [],
+      warning: `Scénarios Tuya non importés (vérifiez IoT Core / Smart Home Scene Linkage sur iot.tuya.com) : ${lastError}`,
+    };
+  }
+
+  return {
+    automations: Array.from(collected.values()),
   };
 }
 

@@ -8,6 +8,16 @@ export type TariffMode = 'BASE' | 'HP_HC';
 
 export type TimeRange = '24h' | '7d' | '30d' | '365d' | 'custom';
 
+export type TabId =
+  | 'overview'
+  | 'energy'
+  | 'climate'
+  | 'contacts'
+  | 'automations'
+  | 'devices'
+  | 'tariffs'
+  | 'guide';
+
 export interface DpMappingField {
   code: string;
   scale: number;
@@ -222,6 +232,126 @@ export interface ContactsPayload {
   activitySeries: ContactActivityPoint[];
 }
 
+export type AutomationRuleType = 'automation' | 'scene';
+export type AutomationMatchType = 'any' | 'all' | 'manual';
+export type AutomationConditionCategory = 'device' | 'timer' | 'weather' | 'geofence' | 'other';
+export type AutomationActionCategory = 'device' | 'delay' | 'notification' | 'rule' | 'other';
+
+export interface AutomationEffectiveTime {
+  allDay: boolean;
+  startTime: string;
+  endTime: string;
+  loops: string;
+}
+
+export interface AutomationCondition {
+  category: AutomationConditionCategory;
+  entityId: string | null;
+  entityName: string | null;
+  code: string | null;
+  operator: string | null;
+  value: string | number | boolean | null;
+  summary: string;
+}
+
+export interface AutomationAction {
+  category: AutomationActionCategory;
+  entityId: string | null;
+  entityName: string | null;
+  executor: string | null;
+  properties: Record<string, unknown>;
+  summary: string;
+}
+
+export interface AutomationRecord {
+  id: string;
+  homeId: string | null;
+  name: string;
+  ruleType: AutomationRuleType;
+  enabled: boolean;
+  matchType: AutomationMatchType;
+  effectiveTime: AutomationEffectiveTime | null;
+  conditions: AutomationCondition[];
+  actions: AutomationAction[];
+  rawPayload: unknown;
+  syncedAt: string;
+}
+
+export interface AutomationDeviceRef {
+  deviceId: string;
+  name: string;
+  roomId: number | null;
+  roomName: string;
+  roomColor: string;
+  isOnline: boolean;
+  batteryPct: number | null;
+  foundInInventory: boolean;
+}
+
+export interface AutomationDiagnostic {
+  id: string;
+  ruleId: string;
+  ruleName: string;
+  severity: 'warning' | 'info' | 'error';
+  kind:
+    | 'offline_dependency'
+    | 'low_battery_dependency'
+    | 'missing_device'
+    | 'potential_conflict'
+    | 'empty_rule';
+  message: string;
+}
+
+export interface EnrichedAutomation extends AutomationRecord {
+  primaryTriggerCategory: AutomationConditionCategory | 'manual';
+  rooms: Array<{ id: number; name: string; color: string }>;
+  triggerDevices: AutomationDeviceRef[];
+  targetDevices: AutomationDeviceRef[];
+  diagnostics: AutomationDiagnostic[];
+  health: 'healthy' | 'warning' | 'disabled';
+}
+
+export interface AutomationsPayload {
+  summary: {
+    totalCount: number;
+    automationsCount: number;
+    scenesCount: number;
+    enabledCount: number;
+    disabledCount: number;
+    healthyCount: number;
+    warningCount: number;
+    conflictsCount: number;
+    coveredDevicesCount: number;
+    totalDevicesCount: number;
+    coveredRoomsCount: number;
+    lastSyncedAt: string | null;
+  };
+  triggerBreakdown: Array<{
+    category: string;
+    label: string;
+    count: number;
+  }>;
+  topDevices: Array<{
+    deviceId: string;
+    name: string;
+    roomName: string;
+    roomColor: string;
+    asTriggerCount: number;
+    asActionCount: number;
+    totalRules: number;
+    isOnline: boolean;
+  }>;
+  roomCoverage: Array<{
+    roomId: number;
+    roomName: string;
+    roomColor: string;
+    rulesCount: number;
+    activeRulesCount: number;
+  }>;
+  insights: AutomationDiagnostic[];
+  rules: EnrichedAutomation[];
+}
+
 export interface DashboardPayload {
   env: EnvStatus;
   range: TimeRange;
@@ -257,5 +387,6 @@ export interface DashboardPayload {
   energyByDevice: EnergyBreakdownItem[];
   timeSeries: TimeSeriesPoint[];
   contacts: ContactsPayload;
+  automations: AutomationsPayload;
   logs: CollectionLogRecord[];
 }

@@ -1,5 +1,9 @@
 import { computeDewPointC, computeReadingCost, getParisDateAndTime } from './tariff-engine';
 import type {
+  AutomationDeviceRef,
+  AutomationDiagnostic,
+  AutomationRecord,
+  AutomationsPayload,
   CollectionLogRecord,
   ComfortStatus,
   ContactActivityPoint,
@@ -9,6 +13,7 @@ import type {
   DashboardPayload,
   DeviceRecord,
   EnergyBreakdownItem,
+  EnrichedAutomation,
   EnvStatus,
   MetricReadingRecord,
   RoomRecord,
@@ -137,6 +142,353 @@ function evaluateComfort(
   return { label: 'Optimal', tone: 'emerald' };
 }
 
+export function buildAutomationsPayload(
+  automations: AutomationRecord[],
+  devices: DeviceRecord[],
+  rooms: RoomRecord[],
+  selectedRoomNumeric: number | null
+): AutomationsPayload {
+  const deviceMap = new Map(devices.map((d) => [d.id, d]));
+  const roomMap = new Map(rooms.map((r) => [r.id, r]));
+
+  const resolveDeviceRef = (entityId: string | null, entityName: string | null): AutomationDeviceRef | null => {
+    if (!entityId) return null;
+    const dev = deviceMap.get(entityId);
+    if (!dev) {
+      return {
+        deviceId: entityId,
+        name: entityName || entityId,
+        roomId: null,
+        roomName: 'Non répertorié',
+        roomColor: '#64748b',
+        isOnline: false,
+        batteryPct: null,
+        foundInInventory: false,
+      };
+    }
+    const room = dev.roomId !== null ? roomMap.get(dev.roomId) : undefined;
+    return {
+      deviceId: dev.id,
+      name: dev.customName || dev.name,
+      roomId: dev.roomId,
+      roomName: room?.name ?? 'Non assignée',
+      roomColor: room?.color ?? '#64748b',
+      isOnline: dev.isOnline,
+      batteryPct: dev.lastBatteryPct,
+      foundInInventory: true,
+    };
+  };
+
+  // Enrichissement initial de chaque règle
+  const allEnriched: EnrichedAutomation[] = automations.map((rule) => {
+    const triggerMap = new Map<string, AutomationDeviceRef>();
+    for (const c of rule.conditions) {
+      if (c.category === 'device' && c.entityId) {
+        const ref = resolveDeviceRef(c.entityId, c.entityName);
+        if (ref) triggerMap.set(ref.deviceId, ref);
+      }
+    }
+
+    const targetMap = new Map<string, AutomationDeviceRef>();
+    for (const a of rule.actions) {
+      if (a.category === 'device' && a.entityId) {
+        const ref = resolveDeviceRef(a.entityId, a.entityName);
+        if (ref) targetMap.set(ref.deviceId, ref);
+      }
+    }
+
+    const triggerDevices = Array.from(triggerMap.values());
+    const targetDevices = Array.from(targetMap.values());
+
+    const ruleRoomsMap = new Map<number, { id: number; name: string; color: string }>();
+    for (const dRef of [...triggerDevices, ...targetDevices]) {
+      if (dRef.roomId !== null) {
+        const rm = roomMap.get(dRef.roomId);
+        if (rm) ruleRoomsMap.set(rm.id, { id: rm.id, name: rm.name, color: rm.color });
+      }
+    }
+
+    const primaryTriggerCategory =
+      rule.ruleType === 'scene'
+        ? 'manual'
+        : rule.conditions[0]?.category ?? 'other';
+
+    const diagnostics: AutomationDiagnostic[] = [];
+    const seenDevices = new Map<string, AutomationDeviceRef>();
+    for (const dRef of [...triggerDevices, ...targetDevices]) {
+      seenDevices.set(dRef.deviceId, dRef);
+    }
+
+    for (const dRef of seenDevices.values()) {
+      if (!dRef.foundInInventory) {
+        diagnostics.push({
+          id: `${rule.id}-missing-${dRef.deviceId}`,
+          ruleId: rule.id,
+          ruleName: rule.name,
+          severity: 'info',
+          kind: 'missing_device',
+          message: `Appareil « ${dRef.name} » (${dRef.deviceId}) absent de l'inventaire synchronisé.`,
+        });
+      } else if (rule.enabled && !dRef.isOnline) {
+        diagnostics.push({
+          id: `${rule.id}-offline-${dRef.deviceId}`,
+          ruleId: rule.id,
+          ruleName: rule.name,
+          severity: 'warning',
+          kind: 'offline_dependency',
+          message: `Dépendance hors-ligne : « ${dRef.name} » est actuellement déconnecté.`,
+        });
+      }
+    }
+
+    for (const trig of triggerDevices) {
+      if (rule.enabled && trig.foundInInventory && trig.batteryPct !== null && trig.batteryPct <= 20) {
+        diagnostics.push({
+          id: `${rule.id}-battery-${trig.deviceId}`,
+          ruleId: rule.id,
+          ruleName: rule.name,
+          severity: 'warning',
+          kind: 'low_battery_dependency',
+          message: `Pile faible (${trig.batteryPct}%) sur le déclencheur « ${trig.name} ».`,
+        });
+      }
+    }
+
+    if (rule.ruleType === 'automation' && (rule.conditions.length === 0 || rule.actions.length === 0)) {
+      diagnostics.push({
+        id: `${rule.id}-empty`,
+        ruleId: rule.id,
+        ruleName: rule.name,
+        severity: 'info',
+        kind: 'empty_rule',
+        message: 'Détails de conditions ou d’actions incomplets dans la réponse Tuya.',
+      });
+    }
+
+    return {
+      ...rule,
+      primaryTriggerCategory,
+      rooms: Array.from(ruleRoomsMap.values()),
+      triggerDevices,
+      targetDevices,
+      diagnostics,
+      health: !rule.enabled ? 'disabled' : diagnostics.some((d) => d.severity === 'warning') ? 'warning' : 'healthy',
+    };
+  });
+
+  // Filtre par pièce si sélectionnée en haut du dashboard
+  const scopedRules =
+    selectedRoomNumeric !== null
+      ? allEnriched.filter((r) => r.rooms.some((rm) => rm.id === selectedRoomNumeric))
+      : allEnriched;
+
+  // Détection des conflits / chevauchements entre automatisations actives ciblant le même appareil
+  const targetRulesByDevice = new Map<string, EnrichedAutomation[]>();
+  for (const r of scopedRules) {
+    if (!r.enabled || r.ruleType !== 'automation') continue;
+    for (const target of r.targetDevices) {
+      if (!target.foundInInventory) continue;
+      const list = targetRulesByDevice.get(target.deviceId) ?? [];
+      list.push(r);
+      targetRulesByDevice.set(target.deviceId, list);
+    }
+  }
+
+  let conflictsCount = 0;
+  for (const [devId, rulesTargeting] of targetRulesByDevice.entries()) {
+    if (rulesTargeting.length < 2) continue;
+    conflictsCount += 1;
+    const dev = deviceMap.get(devId);
+    const devName = dev?.customName || dev?.name || devId;
+    const namesList = rulesTargeting.map((x) => `« ${x.name} »`).join(', ');
+    for (const r of rulesTargeting) {
+      r.diagnostics.push({
+        id: `${r.id}-conflict-${devId}`,
+        ruleId: r.id,
+        ruleName: r.name,
+        severity: 'warning',
+        kind: 'potential_conflict',
+        message: `Cible partagée : « ${devName} » est aussi piloté par ${namesList}.`,
+      });
+      if (r.enabled) r.health = 'warning';
+    }
+  }
+
+  // Trier : actives avec alerte -> actives saines -> désactivées
+  scopedRules.sort((a, b) => {
+    const score = (x: EnrichedAutomation) =>
+      x.health === 'warning' ? 0 : x.health === 'healthy' ? 1 : 2;
+    const diff = score(a) - score(b);
+    return diff !== 0 ? diff : a.name.localeCompare(b.name);
+  });
+
+  // Insights globaux (dédupliqués par id)
+  const insights: AutomationDiagnostic[] = [];
+  for (const r of scopedRules) {
+    for (const d of r.diagnostics) {
+      insights.push(d);
+    }
+  }
+
+  // Trigger breakdown
+  const TRIGGER_LABELS: Record<string, string> = {
+    device: 'Capteur / Appareil',
+    timer: 'Horaire',
+    weather: 'Météo',
+    geofence: 'Géolocalisation',
+    manual: 'Manuel (Tap-to-Run)',
+    other: 'Autre',
+  };
+  const triggerCounts = new Map<string, number>();
+  for (const r of scopedRules) {
+    triggerCounts.set(
+      r.primaryTriggerCategory,
+      (triggerCounts.get(r.primaryTriggerCategory) ?? 0) + 1
+    );
+  }
+  const triggerBreakdown = Array.from(triggerCounts.entries())
+    .map(([category, count]) => ({
+      category,
+      label: TRIGGER_LABELS[category] ?? category,
+      count,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  // Top appareils pivots
+  const deviceStatsMap = new Map<
+    string,
+    {
+      deviceId: string;
+      name: string;
+      roomName: string;
+      roomColor: string;
+      triggerRules: Set<string>;
+      actionRules: Set<string>;
+      allRules: Set<string>;
+      isOnline: boolean;
+    }
+  >();
+
+  for (const r of scopedRules) {
+    for (const td of r.triggerDevices) {
+      if (!td.foundInInventory) continue;
+      const entry = deviceStatsMap.get(td.deviceId) ?? {
+        deviceId: td.deviceId,
+        name: td.name,
+        roomName: td.roomName,
+        roomColor: td.roomColor,
+        triggerRules: new Set<string>(),
+        actionRules: new Set<string>(),
+        allRules: new Set<string>(),
+        isOnline: td.isOnline,
+      };
+      entry.triggerRules.add(r.id);
+      entry.allRules.add(r.id);
+      deviceStatsMap.set(td.deviceId, entry);
+    }
+    for (const ad of r.targetDevices) {
+      if (!ad.foundInInventory) continue;
+      const entry = deviceStatsMap.get(ad.deviceId) ?? {
+        deviceId: ad.deviceId,
+        name: ad.name,
+        roomName: ad.roomName,
+        roomColor: ad.roomColor,
+        triggerRules: new Set<string>(),
+        actionRules: new Set<string>(),
+        allRules: new Set<string>(),
+        isOnline: ad.isOnline,
+      };
+      entry.actionRules.add(r.id);
+      entry.allRules.add(r.id);
+      deviceStatsMap.set(ad.deviceId, entry);
+    }
+  }
+
+  const topDevices = Array.from(deviceStatsMap.values())
+    .map((e) => ({
+      deviceId: e.deviceId,
+      name: e.name,
+      roomName: e.roomName,
+      roomColor: e.roomColor,
+      asTriggerCount: e.triggerRules.size,
+      asActionCount: e.actionRules.size,
+      totalRules: e.allRules.size,
+      isOnline: e.isOnline,
+    }))
+    .sort((a, b) => b.totalRules - a.totalRules)
+    .slice(0, 8);
+
+  // Couverture par pièce
+  const roomCovMap = new Map<
+    number,
+    { roomId: number; roomName: string; roomColor: string; rules: Set<string>; activeRules: Set<string> }
+  >();
+  for (const rm of rooms) {
+    roomCovMap.set(rm.id, {
+      roomId: rm.id,
+      roomName: rm.name,
+      roomColor: rm.color,
+      rules: new Set(),
+      activeRules: new Set(),
+    });
+  }
+  for (const r of allEnriched) {
+    for (const rm of r.rooms) {
+      const cov = roomCovMap.get(rm.id);
+      if (cov) {
+        cov.rules.add(r.id);
+        if (r.enabled) cov.activeRules.add(r.id);
+      }
+    }
+  }
+  const roomCoverage = Array.from(roomCovMap.values())
+    .map((c) => ({
+      roomId: c.roomId,
+      roomName: c.roomName,
+      roomColor: c.roomColor,
+      rulesCount: c.rules.size,
+      activeRulesCount: c.activeRules.size,
+    }))
+    .sort((a, b) => b.rulesCount - a.rulesCount);
+
+  const coveredDevicesCount = deviceStatsMap.size;
+  const totalDevicesCount =
+    selectedRoomNumeric !== null
+      ? devices.filter((d) => d.roomId === selectedRoomNumeric).length
+      : devices.length;
+  const coveredRoomsCount = roomCoverage.filter((rc) => rc.rulesCount > 0).length;
+
+  const lastSyncedAt =
+    scopedRules.length > 0
+      ? scopedRules.reduce(
+          (latest, r) => (r.syncedAt > latest ? r.syncedAt : latest),
+          scopedRules[0].syncedAt
+        )
+      : null;
+
+  return {
+    summary: {
+      totalCount: scopedRules.length,
+      automationsCount: scopedRules.filter((r) => r.ruleType === 'automation').length,
+      scenesCount: scopedRules.filter((r) => r.ruleType === 'scene').length,
+      enabledCount: scopedRules.filter((r) => r.enabled).length,
+      disabledCount: scopedRules.filter((r) => !r.enabled).length,
+      healthyCount: scopedRules.filter((r) => r.health === 'healthy').length,
+      warningCount: scopedRules.filter((r) => r.health === 'warning').length,
+      conflictsCount,
+      coveredDevicesCount,
+      totalDevicesCount,
+      coveredRoomsCount,
+      lastSyncedAt,
+    },
+    triggerBreakdown,
+    topDevices,
+    roomCoverage,
+    insights,
+    rules: scopedRules,
+  };
+}
+
 export function buildDashboardPayload(params: {
   env: EnvStatus;
   range: TimeRange;
@@ -147,6 +499,7 @@ export function buildDashboardPayload(params: {
   devices: DeviceRecord[];
   readings: MetricReadingRecord[];
   tariffs: TariffPeriodRecord[];
+  automations?: AutomationRecord[];
   logs: CollectionLogRecord[];
   now?: Date;
 }): DashboardPayload {
@@ -160,6 +513,7 @@ export function buildDashboardPayload(params: {
     devices,
     readings,
     tariffs,
+    automations = [],
     logs,
     now = new Date(),
   } = params;
@@ -742,6 +1096,13 @@ export function buildDashboardPayload(params: {
     ),
   };
 
+  const automationsPayload = buildAutomationsPayload(
+    automations,
+    devices,
+    rooms,
+    selectedRoomNumeric
+  );
+
   return {
     env,
     range,
@@ -777,6 +1138,7 @@ export function buildDashboardPayload(params: {
     energyByDevice,
     timeSeries,
     contacts,
+    automations: automationsPayload,
     logs: logs.slice(0, 20),
   };
 }

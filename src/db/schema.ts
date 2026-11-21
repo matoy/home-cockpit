@@ -9,7 +9,14 @@ import {
   text,
   timestamp,
 } from 'drizzle-orm/pg-core';
-import type { DpConfig, HcSlot, RawDpStatus } from '@/types';
+import type {
+  AutomationAction,
+  AutomationCondition,
+  AutomationEffectiveTime,
+  DpConfig,
+  HcSlot,
+  RawDpStatus,
+} from '@/types';
 
 export const rooms = pgTable('rooms', {
   id: serial('id').primaryKey(),
@@ -96,4 +103,18 @@ export const collectionLogs = pgTable('collection_logs', {
   status: text('status').notNull(),
   errorMessage: text('error_message'),
   durationMs: integer('duration_ms'),
+});
+
+export const automations = pgTable('automations', {
+  id: text('id').primaryKey(),
+  homeId: text('home_id'),
+  name: text('name').notNull(),
+  ruleType: text('rule_type').notNull().default('automation'),
+  enabled: boolean('enabled').default(true).notNull(),
+  matchType: text('match_type').notNull().default('any'),
+  effectiveTime: jsonb('effective_time').$type<AutomationEffectiveTime | null>(),
+  conditions: jsonb('conditions').$type<AutomationCondition[]>().default([]).notNull(),
+  actions: jsonb('actions').$type<AutomationAction[]>().default([]).notNull(),
+  rawPayload: jsonb('raw_payload'),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).defaultNow().notNull(),
 });

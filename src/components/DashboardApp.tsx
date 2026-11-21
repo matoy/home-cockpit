@@ -16,17 +16,17 @@ import {
   Play,
   DoorOpen,
   CalendarRange,
+  Workflow,
 } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
 import { EnergyTab } from './EnergyTab';
 import { ClimateTab } from './ClimateTab';
 import { ContactsTab } from './ContactsTab';
+import { AutomationsTab } from './AutomationsTab';
 import { TariffsTab } from './TariffsTab';
 import { DevicesRoomsTab } from './DevicesRoomsTab';
 import { SetupGuideTab } from './SetupGuideTab';
-import type { DashboardPayload, TimeRange } from '@/types';
-
-type TabId = 'overview' | 'energy' | 'climate' | 'contacts' | 'tariffs' | 'devices' | 'guide';
+import type { DashboardPayload, TabId, TimeRange } from '@/types';
 
 interface DashboardAppProps {
   initialData: DashboardPayload;
@@ -189,8 +189,14 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
       icon: DoorOpen,
       badge: data.contacts.summary.openCountNow,
     },
-    { id: 'tariffs', label: 'Tarifs kWh', icon: Euro },
+    {
+      id: 'automations',
+      label: 'Automatisations',
+      icon: Workflow,
+      badge: data.automations.summary.warningCount,
+    },
     { id: 'devices', label: 'Appareils & Pièces', icon: Cpu },
+    { id: 'tariffs', label: 'Tarifs kWh', icon: Euro },
     { id: 'guide', label: 'Guide Setup', icon: BookOpen },
   ];
 
@@ -429,11 +435,14 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
         {activeTab === 'contacts' && (
           <ContactsTab data={data} onNavigateTab={setActiveTab} />
         )}
-        {activeTab === 'tariffs' && (
-          <TariffsTab data={data} onRefresh={() => fetchDashboard(range, roomId)} />
+        {activeTab === 'automations' && (
+          <AutomationsTab data={data} onRefresh={() => fetchDashboard(range, roomId)} />
         )}
         {activeTab === 'devices' && (
           <DevicesRoomsTab data={data} onRefresh={() => fetchDashboard(range, roomId)} />
+        )}
+        {activeTab === 'tariffs' && (
+          <TariffsTab data={data} onRefresh={() => fetchDashboard(range, roomId)} />
         )}
         {activeTab === 'guide' && <SetupGuideTab data={data} />}
       </main>

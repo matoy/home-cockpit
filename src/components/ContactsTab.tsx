@@ -23,11 +23,11 @@ import {
   WifiOff,
   Filter,
 } from 'lucide-react';
-import type { DashboardPayload } from '@/types';
+import type { DashboardPayload, TabId } from '@/types';
 
 interface ContactsTabProps {
   data: DashboardPayload;
-  onNavigateTab: (tab: 'overview' | 'energy' | 'climate' | 'contacts' | 'tariffs' | 'devices' | 'guide') => void;
+  onNavigateTab: (tab: TabId) => void;
 }
 
 type StateFilter = 'all' | 'open' | 'closed';

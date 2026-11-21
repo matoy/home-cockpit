@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, lte, notInArray, sql } from 'drizzle-orm';
 import { getDb, isDatabaseConfigured, type AppDatabase } from '@/db';
 import {
+  automations,
   collectionLogs,
   devices,
   metricReadings,
@@ -17,12 +18,17 @@ import {
   fetchBatchFactoryInfos,
   fetchBatchStatuses,
   fetchDeviceSpecification,
+  fetchTuyaAutomations,
   fetchTuyaDevices,
   fetchTuyaRoomMapping,
   formatMacAddress,
   getTuyaConfig,
+  type TuyaRawDevice,
 } from './tuya-client';
 import type {
+  AutomationMatchType,
+  AutomationRecord,
+  AutomationRuleType,
   CollectionLogRecord,
   DashboardPayload,
   DeviceCategory,
@@ -148,6 +154,22 @@ function mapDbLog(row: typeof collectionLogs.$inferSelect): CollectionLogRecord 
   };
 }
 
+function mapDbAutomation(row: typeof automations.$inferSelect): AutomationRecord {
+  return {
+    id: row.id,
+    homeId: row.homeId,
+    name: row.name,
+    ruleType: row.ruleType === 'scene' ? 'scene' : 'automation',
+    enabled: row.enabled,
+    matchType: (row.matchType as AutomationMatchType) || 'any',
+    effectiveTime: row.effectiveTime ?? null,
+    conditions: row.conditions ?? [],
+    actions: row.actions ?? [],
+    rawPayload: row.rawPayload ?? null,
+    syncedAt: row.syncedAt.toISOString(),
+  };
+}
+
 let schemaInitPromise: Promise<void> | null = null;
 
 async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
@@ -257,6 +279,21 @@ async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
           "status" text NOT NULL,
           "error_message" text,
           "duration_ms" integer
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS "automations" (
+          "id" text PRIMARY KEY NOT NULL,
+          "home_id" text,
+          "name" text NOT NULL,
+          "rule_type" text DEFAULT 'automation' NOT NULL,
+          "enabled" boolean DEFAULT true NOT NULL,
+          "match_type" text DEFAULT 'any' NOT NULL,
+          "effective_time" jsonb,
+          "conditions" jsonb DEFAULT '[]'::jsonb NOT NULL,
+          "actions" jsonb DEFAULT '[]'::jsonb NOT NULL,
+          "raw_payload" jsonb,
+          "synced_at" timestamp with time zone DEFAULT now() NOT NULL
         )
       `);
     })().catch((err) => {
@@ -401,6 +438,7 @@ export async function getDashboardData(
       devices: state.devices,
       readings: state.readings,
       tariffs: state.tariffs,
+      automations: state.automations,
       logs: state.logs,
     });
   }
@@ -412,7 +450,7 @@ export async function getDashboardData(
   const startDate = new Date(startMs);
   const endDate = new Date(endMs);
 
-  const [roomRows, deviceRows, readingRows, tariffRows, logRows] = await Promise.all([
+  const [roomRows, deviceRows, readingRows, tariffRows, automationRows, logRows] = await Promise.all([
     db.select().from(rooms).orderBy(asc(rooms.id)),
     db.select().from(devices).orderBy(asc(devices.name)),
     db
@@ -428,6 +466,7 @@ export async function getDashboardData(
       )
       .orderBy(asc(metricReadings.recordedAt)),
     db.select().from(tariffPeriods).orderBy(asc(tariffPeriods.startDate)),
+    db.select().from(automations).orderBy(asc(automations.name)),
     db.select().from(collectionLogs).orderBy(desc(collectionLogs.executedAt)).limit(20),
   ]);
 
@@ -441,6 +480,7 @@ export async function getDashboardData(
     devices: deviceRows.map(mapDbDevice),
     readings: readingRows.map(mapDbReading),
     tariffs: normalizeTariffTimeline(tariffRows.map(mapDbTariff)),
+    automations: automationRows.map(mapDbAutomation),
     logs: logRows.map(mapDbLog),
     now,
   });
@@ -749,6 +789,9 @@ export async function syncTuyaDevices(): Promise<{
     }
   }
 
+  // Synchronise les scénarios en arrière-plan lors de la synchro globale sans bloquer
+  await syncTuyaAutomations(rawDevices).catch(() => null);
+
   const baseMsg =
     syncedRoomsCount > 0
       ? `${rawDevices.length} appareils et ${syncedRoomsCount} pièces synchronisés avec Tuya Cloud (${newCount} nouveaux).`
@@ -759,6 +802,92 @@ export async function syncTuyaDevices(): Promise<{
     newCount,
     mode: 'live',
     message: roomMapping.warning ? `${baseMsg} (${roomMapping.warning})` : baseMsg,
+  };
+}
+
+export async function syncTuyaAutomations(rawDevicesArg?: TuyaRawDevice[]): Promise<{
+  syncedCount: number;
+  mode: 'live' | 'demo';
+  message: string;
+}> {
+  const db = getDb();
+  const tuya = getTuyaConfig();
+
+  if (!tuya.configured) {
+    if (!db) {
+      const state = getDemoState();
+      return {
+        syncedCount: state.automations.length,
+        mode: 'demo',
+        message: `Mode démo actif : ${state.automations.length} scénarios simulés disponibles.`,
+      };
+    }
+    throw new Error(
+      'Identifiants Tuya manquants. Configurez TUYA_ACCESS_ID et TUYA_ACCESS_SECRET.'
+    );
+  }
+
+  const res = await fetchTuyaAutomations(rawDevicesArg);
+  const now = new Date();
+
+  if (!db) {
+    const state = getDemoState();
+    if (res.automations.length > 0) {
+      state.automations = res.automations;
+    }
+    const baseMsg = `${res.automations.length} scénario(x) et automatisation(s) récupérés depuis Tuya Cloud.`;
+    return {
+      syncedCount: res.automations.length,
+      mode: 'demo',
+      message: res.warning ? `${baseMsg} (${res.warning})` : baseMsg,
+    };
+  }
+
+  await ensureSchemaInitialized(db);
+
+  for (const item of res.automations) {
+    await db
+      .insert(automations)
+      .values({
+        id: item.id,
+        homeId: item.homeId,
+        name: item.name,
+        ruleType: item.ruleType as AutomationRuleType,
+        enabled: item.enabled,
+        matchType: item.matchType,
+        effectiveTime: item.effectiveTime,
+        conditions: item.conditions,
+        actions: item.actions,
+        rawPayload: item.rawPayload,
+        syncedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: automations.id,
+        set: {
+          homeId: item.homeId,
+          name: item.name,
+          ruleType: item.ruleType as AutomationRuleType,
+          enabled: item.enabled,
+          matchType: item.matchType,
+          effectiveTime: item.effectiveTime,
+          conditions: item.conditions,
+          actions: item.actions,
+          rawPayload: item.rawPayload,
+          syncedAt: now,
+        },
+      });
+  }
+
+  if (res.automations.length > 0) {
+    const syncedIds = res.automations.map((a) => a.id);
+    await db.delete(automations).where(notInArray(automations.id, syncedIds));
+  }
+
+  const baseMsg = `${res.automations.length} scénario(x) et automatisation(s) synchronisés avec Tuya Cloud.`;
+  return {
+    syncedCount: res.automations.length,
+    mode: 'live',
+    message: res.warning ? `${baseMsg} (${res.warning})` : baseMsg,
   };
 }
 
