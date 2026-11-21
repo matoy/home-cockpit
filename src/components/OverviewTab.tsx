@@ -12,6 +12,7 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
+import { hasValidHumidityMeasurement, hasValidTempMeasurement } from '@/lib/device-utils';
 import type { ComfortStatus, DashboardPayload, TabId } from '@/types';
 
 interface OverviewTabProps {
@@ -289,10 +290,10 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                                 {dev.excludeFromTotals ? ' (cascade)' : ''}
                               </span>
                             )}
-                            {dev.lastTempC !== null && (
+                            {dev.lastTempC !== null && hasValidTempMeasurement(dev) && (
                               <span className="text-emerald-300">{dev.lastTempC.toFixed(1)}°C</span>
                             )}
-                            {dev.lastHumidityPct !== null && (
+                            {dev.lastHumidityPct !== null && hasValidHumidityMeasurement(dev) && (
                               <span className="text-sky-300">{dev.lastHumidityPct.toFixed(0)}%</span>
                             )}
                             {dev.lastContactOpen !== null && (

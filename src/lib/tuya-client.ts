@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { inferDeviceCategory, LIGHTING_TUYA_CATEGORIES } from './device-utils';
 import type {
   AutomationAction,
   AutomationActionCategory,
@@ -851,7 +852,7 @@ const POWER_CODES = ['cur_power', 'power', 'total_power', 'active_power', 'power
 const VOLTAGE_CODES = ['cur_voltage', 'voltage_a', 'voltage', 'phase_a'];
 const CURRENT_CODES = ['cur_current', 'current', 'current_a'];
 const ADD_ELE_CODES = ['add_ele', 'forward_energy_total', 'ele', 'total_forward_energy'];
-const TEMP_CODES = ['va_temperature', 'temp_current', 'temp_value', 'temperature', 'temp_set'];
+const TEMP_CODES = ['va_temperature', 'temp_current', 'temp_value', 'temperature'];
 const HUMIDITY_CODES = ['va_humidity', 'humidity_value', 'humidity_current', 'humidity'];
 const BATTERY_CODES = ['battery_percentage', 'va_battery', 'battery_value', 'battery_state'];
 const CONTACT_CODES = [
@@ -944,7 +945,11 @@ export function autoDetectDpConfig(
     };
   }
 
-  const tempDp = findMatchingDp(rawStatus, TEMP_CODES);
+  const isLighting = Boolean(
+    tuyaCategory && LIGHTING_TUYA_CATEGORIES.has(tuyaCategory.toLowerCase())
+  );
+  const tempCandidates = isLighting ? TEMP_CODES.filter((c) => c !== 'temp_value') : TEMP_CODES;
+  const tempDp = findMatchingDp(rawStatus, tempCandidates);
   if (tempDp) {
     dpConfig.temp = {
       code: tempDp.code,
@@ -981,20 +986,7 @@ export function autoDetectDpConfig(
     };
   }
 
-  const hasPower = Boolean(dpConfig.power || dpConfig.addEle);
-  const hasClimate = Boolean(dpConfig.temp || dpConfig.humidity);
-  const hasContact = Boolean(dpConfig.contact || tuyaCategory === 'mcs');
-  const activeKinds = [hasPower, hasClimate, hasContact].filter(Boolean).length;
-  const category: DeviceCategory =
-    activeKinds > 1
-      ? 'hybrid'
-      : hasPower
-        ? 'power'
-        : hasClimate
-          ? 'climate'
-          : hasContact
-            ? 'contact'
-            : 'other';
+  const category = inferDeviceCategory(dpConfig, tuyaCategory);
 
   return { dpConfig, category };
 }

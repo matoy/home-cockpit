@@ -24,7 +24,9 @@ import {
   AlertTriangle,
   Wifi,
   WifiOff,
+  Plug,
 } from 'lucide-react';
+import { isActiveClimateSensor } from '@/lib/device-utils';
 import type { DashboardPayload } from '@/types';
 
 interface ClimateTabProps {
@@ -81,17 +83,11 @@ export function ClimateTab({ data }: ClimateTabProps) {
 
   const climateHealth = useMemo(() => {
     const sensors = data.devices.filter((d) => {
-      if (!d.isMonitored) return false;
+      if (!isActiveClimateSensor(d)) return false;
       if (data.selectedRoomId !== 'all' && String(d.roomId) !== data.selectedRoomId) {
         return false;
       }
-      return (
-        d.category === 'climate' ||
-        Boolean(d.dpConfig?.temp) ||
-        Boolean(d.dpConfig?.humidity) ||
-        d.lastTempC !== null ||
-        d.lastHumidityPct !== null
-      );
+      return true;
     });
 
     const onlineCount = sensors.filter((d) => d.isOnline).length;
@@ -99,6 +95,9 @@ export function ClimateTab({ data }: ClimateTabProps) {
       (d): d is typeof d & { lastBatteryPct: number } =>
         d.lastBatteryPct !== null && Number.isFinite(d.lastBatteryPct)
     );
+    const mainsPoweredCount = sensors.filter(
+      (d) => !d.dpConfig?.battery?.code && d.lastBatteryPct === null
+    ).length;
     const lowBatteryCount = withBattery.filter((d) => d.lastBatteryPct <= 20).length;
     const avgBatteryPct =
       withBattery.length > 0
@@ -111,6 +110,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
       sensors,
       totalCount: sensors.length,
       onlineCount,
+      mainsPoweredCount,
       lowBatteryCount,
       avgBatteryPct,
       minBatteryPct,
@@ -213,7 +213,14 @@ export function ClimateTab({ data }: ClimateTabProps) {
               )}
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
+          <div
+            className="mt-3 flex items-baseline gap-2"
+            title={
+              climateHealth.sensors
+                .map((s) => `${s.customName || s.name} (${s.isOnline ? 'En ligne' : 'Hors ligne'})`)
+                .join(' • ') || 'Aucune sonde active'
+            }
+          >
             <span className="text-3xl font-bold tracking-tight text-white">
               {climateHealth.onlineCount} / {climateHealth.totalCount}
             </span>
@@ -225,10 +232,20 @@ export function ClimateTab({ data }: ClimateTabProps) {
             }`}
           >
             {climateHealth.lowBatteryCount > 0
-              ? `${climateHealth.lowBatteryCount} batterie(s) faible(s) (≤ 20%)`
+              ? `${climateHealth.lowBatteryCount} batterie(s) faible(s) (≤ 20%)${
+                  climateHealth.mainsPoweredCount > 0
+                    ? ` · ${climateHealth.mainsPoweredCount} sur secteur`
+                    : ''
+                }`
               : climateHealth.avgBatteryPct !== null
-                ? `Piles : moy. ${climateHealth.avgBatteryPct}% (min ${climateHealth.minBatteryPct}%)`
-                : 'Aucun niveau de pile remonté'}
+                ? `Piles : moy. ${climateHealth.avgBatteryPct}% (min ${climateHealth.minBatteryPct}%)${
+                    climateHealth.mainsPoweredCount > 0
+                      ? ` · ${climateHealth.mainsPoweredCount} sur secteur`
+                      : ''
+                  }`
+                : climateHealth.mainsPoweredCount > 0
+                  ? `${climateHealth.mainsPoweredCount} sonde(s) sur secteur`
+                  : 'Aucun niveau de pile remonté'}
           </p>
         </div>
       </div>
@@ -448,15 +465,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
                   rs.maxTempC !== null && rs.minTempC !== null
                     ? (rs.maxTempC - rs.minTempC).toFixed(1)
                     : null;
-                const roomClimateSensors = rs.devices.filter(
-                  (d) =>
-                    d.isMonitored &&
-                    (d.category === 'climate' ||
-                      Boolean(d.dpConfig?.temp) ||
-                      Boolean(d.dpConfig?.humidity) ||
-                      d.lastTempC !== null ||
-                      d.lastHumidityPct !== null)
-                );
+                const roomClimateSensors = rs.devices.filter((d) => isActiveClimateSensor(d));
                 return (
                   <tr key={rs.room.id} className="hover:bg-slate-800/30">
                     <td className="px-4 py-3 font-medium text-white flex items-center gap-2">
@@ -492,6 +501,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
                         <div className="flex flex-wrap gap-1.5">
                           {roomClimateSensors.map((s) => {
                             const pct = s.lastBatteryPct;
+                            const isMains = pct === null && !s.dpConfig?.battery?.code;
                             const badgeColor =
                               pct === null
                                 ? 'border-slate-700 bg-slate-800 text-slate-400'
@@ -500,10 +510,13 @@ export function ClimateTab({ data }: ClimateTabProps) {
                                   : pct <= 40
                                     ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
                                     : 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300';
+                            const sensorName = s.customName || s.name;
                             return (
                               <span
                                 key={s.id}
-                                title={s.customName || s.name}
+                                title={
+                                  isMains ? `${sensorName} — Alimentation secteur` : sensorName
+                                }
                                 className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${badgeColor}`}
                               >
                                 {s.isOnline ? (
@@ -511,7 +524,8 @@ export function ClimateTab({ data }: ClimateTabProps) {
                                 ) : (
                                   <WifiOff className="h-2.5 w-2.5" />
                                 )}
-                                {pct !== null ? `${pct}%` : 'N/A'}
+                                {isMains && <Plug className="h-2.5 w-2.5" />}
+                                {pct !== null ? `${pct}%` : isMains ? 'Secteur' : 'N/A'}
                               </span>
                             );
                           })}

@@ -11,6 +11,7 @@ import {
 import { buildDashboardPayload, resolveTimeWindow } from './aggregator';
 import { isAppPasswordConfigured } from './auth';
 import { getDemoState, simulateDemoCollection } from './demo-store';
+import { inferDeviceCategory, sanitizeDeviceDpConfig } from './device-utils';
 import { computeHybridEnergyKwh, normalizeTariffTimeline } from './tariff-engine';
 import {
   autoDetectDpConfig,
@@ -578,6 +579,11 @@ export async function syncTuyaDevices(): Promise<{
             existing.category = detected.category;
           }
         }
+        const sanitized = sanitizeDeviceDpConfig(existing.dpConfig ?? {}, raw.category);
+        if (sanitized.changed) {
+          existing.dpConfig = sanitized.dpConfig;
+          existing.category = inferDeviceCategory(existing.dpConfig, raw.category);
+        }
         const metrics = extractMetricsFromStatus(rawStatus, existing.dpConfig);
         existing.lastPowerW = metrics.powerW;
         existing.lastVoltageV = metrics.voltageV;
@@ -698,6 +704,12 @@ export async function syncTuyaDevices(): Promise<{
         if (nextCategory === 'other' && detected.category !== 'other') {
           nextCategory = detected.category;
         }
+      }
+
+      const sanitized = sanitizeDeviceDpConfig(dpConfig, raw.category);
+      if (sanitized.changed) {
+        dpConfig = sanitized.dpConfig;
+        nextCategory = inferDeviceCategory(dpConfig, raw.category);
       }
 
       const metrics = extractMetricsFromStatus(rawStatus, dpConfig);
@@ -966,7 +978,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       }
 
       if (!dev.isMonitored) continue;
-      const metrics = extractMetricsFromStatus(rawStatus, dev.dpConfig);
+      const effectiveDpConfig = sanitizeDeviceDpConfig(dev.dpConfig ?? {}, dev.tuyaCategory).dpConfig;
+      const metrics = extractMetricsFromStatus(rawStatus, effectiveDpConfig);
       const energyRes =
         metrics.powerW !== null || metrics.addEleKwh !== null
           ? computeHybridEnergyKwh({
@@ -1040,7 +1053,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       const rawStatus: RawDpStatus[] = statusMap.get(dev.id) ?? [];
       if (rawStatus.length === 0) continue;
 
-      const metrics = extractMetricsFromStatus(rawStatus, dev.dpConfig ?? {});
+      const effectiveDpConfig = sanitizeDeviceDpConfig(dev.dpConfig ?? {}, dev.tuyaCategory).dpConfig;
+      const metrics = extractMetricsFromStatus(rawStatus, effectiveDpConfig);
       const hasPower = metrics.powerW !== null || metrics.addEleKwh !== null;
       const hasClimate = metrics.tempC !== null || metrics.humidityPct !== null;
       const hasContact = metrics.contactOpen !== null;
@@ -1219,6 +1233,45 @@ export async function deleteRoom(id: number): Promise<void> {
   await db.delete(rooms).where(eq(rooms.id, id));
 }
 
+function computeDeviceMetricsForDpConfig(
+  rawStatus: RawDpStatus[] | null,
+  dpConfig: DpConfig
+): Partial<
+  Pick<
+    DeviceRecord,
+    | 'lastPowerW'
+    | 'lastVoltageV'
+    | 'lastAddEleKwh'
+    | 'lastTempC'
+    | 'lastHumidityPct'
+    | 'lastBatteryPct'
+    | 'lastContactOpen'
+  >
+> {
+  if (rawStatus && rawStatus.length > 0) {
+    const metrics = extractMetricsFromStatus(rawStatus, dpConfig);
+    return {
+      lastPowerW: metrics.powerW,
+      lastVoltageV: metrics.voltageV,
+      lastAddEleKwh: metrics.addEleKwh,
+      lastTempC: metrics.tempC,
+      lastHumidityPct: metrics.humidityPct,
+      lastBatteryPct: metrics.batteryPct,
+      lastContactOpen: metrics.contactOpen,
+    };
+  }
+
+  return {
+    ...(!dpConfig.power ? { lastPowerW: null } : {}),
+    ...(!dpConfig.voltage ? { lastVoltageV: null } : {}),
+    ...(!dpConfig.addEle ? { lastAddEleKwh: null } : {}),
+    ...(!dpConfig.temp ? { lastTempC: null } : {}),
+    ...(!dpConfig.humidity ? { lastHumidityPct: null } : {}),
+    ...(!dpConfig.battery ? { lastBatteryPct: null } : {}),
+    ...(!dpConfig.contact ? { lastContactOpen: null } : {}),
+  };
+}
+
 export async function updateDevice(
   id: string,
   input: Partial<{
@@ -1237,15 +1290,9 @@ export async function updateDevice(
     const dev = state.devices.find((d) => d.id === id);
     if (!dev) return null;
     Object.assign(dev, input);
-    if (input.dpConfig && dev.lastRawStatus) {
-      const metrics = extractMetricsFromStatus(dev.lastRawStatus, dev.dpConfig);
-      dev.lastPowerW = metrics.powerW;
-      dev.lastVoltageV = metrics.voltageV;
-      dev.lastAddEleKwh = metrics.addEleKwh;
-      dev.lastTempC = metrics.tempC;
-      dev.lastHumidityPct = metrics.humidityPct;
-      dev.lastBatteryPct = metrics.batteryPct;
-      dev.lastContactOpen = metrics.contactOpen;
+    if (input.dpConfig) {
+      dev.category = input.category ?? inferDeviceCategory(input.dpConfig, dev.tuyaCategory);
+      Object.assign(dev, computeDeviceMetricsForDpConfig(dev.lastRawStatus, input.dpConfig));
     }
     return dev;
   }
@@ -1255,15 +1302,13 @@ export async function updateDevice(
   if (existing.length === 0) return null;
 
   const updates: Partial<typeof devices.$inferInsert> = { ...input };
-  if (input.dpConfig && existing[0].lastRawStatus) {
-    const metrics = extractMetricsFromStatus(existing[0].lastRawStatus, input.dpConfig);
-    updates.lastPowerW = metrics.powerW;
-    updates.lastVoltageV = metrics.voltageV;
-    updates.lastAddEleKwh = metrics.addEleKwh;
-    updates.lastTempC = metrics.tempC;
-    updates.lastHumidityPct = metrics.humidityPct;
-    updates.lastBatteryPct = metrics.batteryPct;
-    updates.lastContactOpen = metrics.contactOpen;
+  if (input.dpConfig) {
+    updates.category =
+      input.category ?? inferDeviceCategory(input.dpConfig, existing[0].tuyaCategory);
+    Object.assign(
+      updates,
+      computeDeviceMetricsForDpConfig(existing[0].lastRawStatus, input.dpConfig)
+    );
   }
 
   const [updated] = await db

@@ -1,4 +1,5 @@
 import { computeDewPointC, computeReadingCost, getParisDateAndTime } from './tariff-engine';
+import { hasValidHumidityMeasurement, hasValidTempMeasurement } from './device-utils';
 import type {
   AutomationDeviceRef,
   AutomationDiagnostic,
@@ -543,22 +544,23 @@ export function buildDashboardPayload(params: {
 
   for (const r of periodReadings) {
     const dev = deviceMap.get(r.deviceId);
-    const effectiveRoomId = r.roomId ?? dev?.roomId ?? null;
+    if (!dev || !dev.isMonitored) continue;
+    const effectiveRoomId = r.roomId ?? dev.roomId ?? null;
     if (effectiveRoomId === null) continue;
 
-    if (r.energyKwh !== null && r.energyKwh > 0 && !dev?.excludeFromTotals) {
+    if (r.energyKwh !== null && r.energyKwh > 0 && !dev.excludeFromTotals) {
       const costInfo = computeReadingCost(r.recordedAt, r.energyKwh, tariffs);
       roomEnergyTotals.set(effectiveRoomId, (roomEnergyTotals.get(effectiveRoomId) ?? 0) + r.energyKwh);
       roomCostTotals.set(effectiveRoomId, (roomCostTotals.get(effectiveRoomId) ?? 0) + costInfo.costEur);
     }
 
-    if (r.tempC !== null) {
+    if (r.tempC !== null && hasValidTempMeasurement(dev)) {
       const arr = roomTempStats.get(effectiveRoomId) ?? [];
       arr.push(r.tempC);
       roomTempStats.set(effectiveRoomId, arr);
     }
 
-    if (r.humidityPct !== null) {
+    if (r.humidityPct !== null && hasValidHumidityMeasurement(dev)) {
       const arr = roomHumStats.get(effectiveRoomId) ?? [];
       arr.push(r.humidityPct);
       roomHumStats.set(effectiveRoomId, arr);
@@ -576,6 +578,7 @@ export function buildDashboardPayload(params: {
     );
 
     const tempValues = monitoredDevices
+      .filter((d) => hasValidTempMeasurement(d))
       .map((d) => d.lastTempC)
       .filter((v): v is number => v !== null && Number.isFinite(v));
     const currentTempC =
@@ -584,6 +587,7 @@ export function buildDashboardPayload(params: {
         : null;
 
     const humValues = monitoredDevices
+      .filter((d) => hasValidHumidityMeasurement(d))
       .map((d) => d.lastHumidityPct)
       .filter((v): v is number => v !== null && Number.isFinite(v));
     const currentHumidityPct =
@@ -805,14 +809,14 @@ export function buildDashboardPayload(params: {
       }
     }
 
-    if (r.tempC !== null) {
+    if (r.tempC !== null && hasValidTempMeasurement(dev)) {
       const rt = bucket.byRoomTemp[roomKey] ?? { sum: 0, count: 0 };
       rt.sum += r.tempC;
       rt.count += 1;
       bucket.byRoomTemp[roomKey] = rt;
     }
 
-    if (r.humidityPct !== null) {
+    if (r.humidityPct !== null && hasValidHumidityMeasurement(dev)) {
       const rh = bucket.byRoomHumidity[roomKey] ?? { sum: 0, count: 0 };
       rh.sum += r.humidityPct;
       rh.count += 1;

@@ -616,9 +616,17 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                 <th className="px-4 py-3">Pièce</th>
                 <th className="px-4 py-3">Calcul kWh</th>
                 <th className="px-4 py-3">Dernières valeurs</th>
-                <th className="px-4 py-3">Suivi</th>
-                <th className="px-4 py-3" title="Décocher pour les prises en cascade afin d'éviter le double comptage">
-                  En cascade (Exclure)
+                <th
+                  className="px-4 py-3"
+                  title="Décocher pour ignorer complètement cet appareil lors des collectes et dans le dashboard"
+                >
+                  Suivi
+                </th>
+                <th
+                  className="px-4 py-3"
+                  title="Cocher pour exclure l'appareil des totaux électriques (prises en cascade) et des mesures/compteurs de la page Climat (ex. pilotes de radiateurs)"
+                >
+                  Exclure (Cascade / Climat)
                 </th>
                 <th className="px-4 py-3 text-right">Data Points</th>
               </tr>
@@ -743,7 +751,7 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                   <td className="px-4 py-3">
                     <label
                       className="inline-flex items-center gap-1.5 cursor-pointer"
-                      title="Si coché, cet appareil est relevé mais exclu des totaux de la pièce et de la maison (anti double-comptage)"
+                      title="Si coché, cet appareil est exclu des totaux électriques (prises en cascade) et des mesures/compteurs de la page Climat"
                     >
                       <input
                         type="checkbox"
