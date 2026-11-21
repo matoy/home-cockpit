@@ -131,8 +131,8 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
         <div>
           <h2 className="text-base font-semibold text-white">Appareils Tuya &amp; Pièces</h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Synchronisez vos appareils depuis Tuya IoT Cloud, affectez-les à vos pièces et calibrez
-            les facteurs d&apos;échelle des Data Points si nécessaire.
+            Importez automatiquement vos appareils, vos pièces et leurs affectations depuis
+            Smart Life / Tuya Cloud, ou calibrez les Data Points si nécessaire.
           </p>
         </div>
 

@@ -29,12 +29,16 @@ async function computeExpectedToken(appPassword: string, scheduleSecret: string)
   return `${payload}.${sigHex}`;
 }
 
-export async function middleware(request: NextRequest) {
-  const appPassword = process.env.APP_PASSWORD?.trim();
-  if (!appPassword) {
-    return NextResponse.next();
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
+  return diff === 0;
+}
 
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (
@@ -45,13 +49,30 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  const appPassword = process.env.APP_PASSWORD?.trim();
+  if (!appPassword) {
+    if (process.env.NODE_ENV === 'production') {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json(
+          { error: 'APP_PASSWORD doit être configuré en production.' },
+          { status: 503 }
+        );
+      }
+      return new NextResponse(
+        'Accès bloqué : configurez APP_PASSWORD dans les variables d’environnement.',
+        { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
+      );
+    }
+    return NextResponse.next();
+  }
+
   const cookieToken = request.cookies.get('tuya_session')?.value;
   const expectedToken = await computeExpectedToken(
     appPassword,
     process.env.SCHEDULE_SECRET?.trim() ?? ''
   );
 
-  if (cookieToken && cookieToken === expectedToken) {
+  if (cookieToken && constantTimeEqual(cookieToken, expectedToken)) {
     return NextResponse.next();
   }
 

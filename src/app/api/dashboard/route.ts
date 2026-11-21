@@ -14,7 +14,13 @@ export async function GET(request: Request) {
     const payload = await getDashboardData(range, roomId);
     return NextResponse.json(payload);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erreur serveur';
+    console.error('[api/dashboard]', err);
+    const message =
+      process.env.NODE_ENV === 'production'
+        ? 'Erreur serveur'
+        : err instanceof Error
+          ? err.message
+          : 'Erreur serveur';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

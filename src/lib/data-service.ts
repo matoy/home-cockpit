@@ -1,4 +1,4 @@
-import { asc, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, sql } from 'drizzle-orm';
 import { getDb, isDatabaseConfigured, type AppDatabase } from '@/db';
 import {
   collectionLogs,
@@ -17,6 +17,7 @@ import {
   fetchBatchStatuses,
   fetchDeviceSpecification,
   fetchTuyaDevices,
+  fetchTuyaRoomMapping,
   getTuyaConfig,
 } from './tuya-client';
 import type {
@@ -239,48 +240,100 @@ async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
   await schemaInitPromise;
 }
 
+const ROOM_PALETTE = [
+  '#3b82f6',
+  '#8b5cf6',
+  '#f59e0b',
+  '#10b981',
+  '#ec4899',
+  '#06b6d4',
+  '#f43f5e',
+  '#14b8a6',
+];
+
+function inferRoomStyle(name: string, index: number): {
+  color: string;
+  icon: string;
+  targetTempMin: number;
+  targetTempMax: number;
+  targetHumidityMin: number;
+  targetHumidityMax: number;
+} {
+  const lower = name.toLowerCase();
+  if (lower.includes('salon') || lower.includes('séjour') || lower.includes('living')) {
+    return { color: '#3b82f6', icon: 'Sofa', targetTempMin: 19.5, targetTempMax: 22.5, targetHumidityMin: 40, targetHumidityMax: 60 };
+  }
+  if (lower.includes('bureau') || lower.includes('office')) {
+    return { color: '#8b5cf6', icon: 'Monitor', targetTempMin: 19, targetTempMax: 22, targetHumidityMin: 40, targetHumidityMax: 60 };
+  }
+  if (lower.includes('cuisine') || lower.includes('kitchen')) {
+    return { color: '#f59e0b', icon: 'Utensils', targetTempMin: 18.5, targetTempMax: 23, targetHumidityMin: 40, targetHumidityMax: 65 };
+  }
+  if (lower.includes('chambre') || lower.includes('bed')) {
+    return { color: '#10b981', icon: 'Bed', targetTempMin: 17, targetTempMax: 20, targetHumidityMin: 40, targetHumidityMax: 60 };
+  }
+  if (lower.includes('bain') || lower.includes('sdb') || lower.includes('douche') || lower.includes('bath')) {
+    return { color: '#ec4899', icon: 'Bath', targetTempMin: 20, targetTempMax: 24, targetHumidityMin: 45, targetHumidityMax: 65 };
+  }
+  return {
+    color: ROOM_PALETTE[index % ROOM_PALETTE.length],
+    icon: 'Home',
+    targetTempMin: 19,
+    targetTempMax: 22,
+    targetHumidityMin: 40,
+    targetHumidityMax: 60,
+  };
+}
+
 async function seedDefaultDataIfEmpty(db: AppDatabase): Promise<void> {
   await ensureSchemaInitialized(db);
-  const existingRooms = await db.select().from(rooms).limit(1);
-  if (existingRooms.length === 0) {
-    await db.insert(rooms).values([
-      {
-        name: 'Salon',
-        icon: 'Sofa',
-        color: '#3b82f6',
-        targetTempMin: 19.5,
-        targetTempMax: 22.5,
-        targetHumidityMin: 40,
-        targetHumidityMax: 60,
-      },
-      {
-        name: 'Bureau',
-        icon: 'Monitor',
-        color: '#8b5cf6',
-        targetTempMin: 19,
-        targetTempMax: 22,
-        targetHumidityMin: 40,
-        targetHumidityMax: 60,
-      },
-      {
-        name: 'Cuisine',
-        icon: 'Utensils',
-        color: '#f59e0b',
-        targetTempMin: 18.5,
-        targetTempMax: 23,
-        targetHumidityMin: 40,
-        targetHumidityMax: 65,
-      },
-      {
-        name: 'Chambre',
-        icon: 'Bed',
-        color: '#10b981',
-        targetTempMin: 17,
-        targetTempMax: 20,
-        targetHumidityMin: 40,
-        targetHumidityMax: 60,
-      },
+
+  // Ne crée des pièces d'exemple que si Tuya n'est pas configuré et la base est vierge
+  if (!getTuyaConfig().configured) {
+    const [existingRooms, existingDevices] = await Promise.all([
+      db.select().from(rooms).limit(1),
+      db.select().from(devices).limit(1),
     ]);
+    if (existingRooms.length === 0 && existingDevices.length === 0) {
+      await db.insert(rooms).values([
+        {
+          name: 'Salon',
+          icon: 'Sofa',
+          color: '#3b82f6',
+          targetTempMin: 19.5,
+          targetTempMax: 22.5,
+          targetHumidityMin: 40,
+          targetHumidityMax: 60,
+        },
+        {
+          name: 'Bureau',
+          icon: 'Monitor',
+          color: '#8b5cf6',
+          targetTempMin: 19,
+          targetTempMax: 22,
+          targetHumidityMin: 40,
+          targetHumidityMax: 60,
+        },
+        {
+          name: 'Cuisine',
+          icon: 'Utensils',
+          color: '#f59e0b',
+          targetTempMin: 18.5,
+          targetTempMax: 23,
+          targetHumidityMin: 40,
+          targetHumidityMax: 65,
+        },
+        {
+          name: 'Chambre',
+          icon: 'Bed',
+          color: '#10b981',
+          targetTempMin: 17,
+          targetTempMax: 20,
+          targetHumidityMin: 40,
+          targetHumidityMax: 60,
+        },
+      ]);
+    }
   }
 
   const existingTariffs = await db.select().from(tariffPeriods).limit(1);
@@ -376,22 +429,52 @@ export async function syncTuyaDevices(): Promise<{
 
   const rawDevices = await fetchTuyaDevices();
   const deviceIds = rawDevices.map((d) => d.id);
-  let statusMap = new Map<string, RawDpStatus[]>();
-  try {
-    statusMap = await fetchBatchStatuses(deviceIds);
-  } catch {
-    // Repli sur raw.status déjà inclus dans la réponse de fetchTuyaDevices
-  }
+  const [statusMap, roomMapping] = await Promise.all([
+    fetchBatchStatuses(deviceIds).catch(() => new Map<string, RawDpStatus[]>()),
+    fetchTuyaRoomMapping(rawDevices),
+  ]);
   const now = new Date();
 
   if (!db) {
     const state = getDemoState();
+    const roomNameToId = new Map<string, number>();
+    for (const r of state.rooms) {
+      roomNameToId.set(r.name.trim().toLowerCase(), r.id);
+    }
+
+    let syncedRoomsCount = 0;
+    for (const tuyaRoomName of roomMapping.roomNames) {
+      const key = tuyaRoomName.trim().toLowerCase();
+      if (!roomNameToId.has(key)) {
+        const style = inferRoomStyle(tuyaRoomName, state.rooms.length);
+        const created: RoomRecord = {
+          id: state.nextRoomId++,
+          name: tuyaRoomName.trim(),
+          icon: style.icon,
+          color: style.color,
+          targetTempMin: style.targetTempMin,
+          targetTempMax: style.targetTempMax,
+          targetHumidityMin: style.targetHumidityMin,
+          targetHumidityMax: style.targetHumidityMax,
+          createdAt: now.toISOString(),
+        };
+        state.rooms.push(created);
+        roomNameToId.set(key, created.id);
+      }
+      syncedRoomsCount++;
+    }
+
     let newCount = 0;
     for (const raw of rawDevices) {
       const rawStatus = statusMap.get(raw.id) ?? raw.status ?? [];
+      const tuyaRoomName = roomMapping.deviceRoomMap.get(raw.id);
+      const mappedRoomId = tuyaRoomName
+        ? (roomNameToId.get(tuyaRoomName.trim().toLowerCase()) ?? null)
+        : null;
       const existing = state.devices.find((d) => d.id === raw.id);
       if (existing) {
         existing.name = raw.name;
+        if (mappedRoomId !== null) existing.roomId = mappedRoomId;
         existing.isOnline = raw.online ?? true;
         existing.tuyaCategory = raw.category;
         existing.productName = raw.product_name ?? null;
@@ -412,7 +495,7 @@ export async function syncTuyaDevices(): Promise<{
           id: raw.id,
           name: raw.name,
           customName: null,
-          roomId: null,
+          roomId: mappedRoomId,
           category,
           tuyaCategory: raw.category,
           productName: raw.product_name ?? null,
@@ -432,15 +515,50 @@ export async function syncTuyaDevices(): Promise<{
         newCount++;
       }
     }
+    const baseMsg =
+      syncedRoomsCount > 0
+        ? `${rawDevices.length} appareils et ${syncedRoomsCount} pièces synchronisés depuis Tuya Cloud (${newCount} nouveaux).`
+        : `${rawDevices.length} appareils récupérés depuis Tuya Cloud (${newCount} nouveaux).`;
     return {
       syncedCount: rawDevices.length,
       newCount,
       mode: 'demo',
-      message: `${rawDevices.length} appareils récupérés depuis Tuya Cloud (${newCount} nouveaux).`,
+      message: roomMapping.warning ? `${baseMsg} (${roomMapping.warning})` : baseMsg,
     };
   }
 
   await seedDefaultDataIfEmpty(db);
+
+  // Synchronisation automatique des pièces depuis Tuya Smart Home
+  const existingRoomsRows = await db.select().from(rooms).orderBy(asc(rooms.id));
+  const roomNameToId = new Map<string, number>();
+  for (const r of existingRoomsRows) {
+    roomNameToId.set(r.name.trim().toLowerCase(), r.id);
+  }
+
+  let syncedRoomsCount = 0;
+  let styleIndex = existingRoomsRows.length;
+  for (const tuyaRoomName of roomMapping.roomNames) {
+    const key = tuyaRoomName.trim().toLowerCase();
+    if (!roomNameToId.has(key)) {
+      const style = inferRoomStyle(tuyaRoomName, styleIndex++);
+      const [insertedRoom] = await db
+        .insert(rooms)
+        .values({
+          name: tuyaRoomName.trim(),
+          icon: style.icon,
+          color: style.color,
+          targetTempMin: style.targetTempMin,
+          targetTempMax: style.targetTempMax,
+          targetHumidityMin: style.targetHumidityMin,
+          targetHumidityMax: style.targetHumidityMax,
+        })
+        .returning();
+      roomNameToId.set(key, insertedRoom.id);
+    }
+    syncedRoomsCount++;
+  }
+
   const existingRows = await db.select().from(devices);
   const existingMap = new Map(existingRows.map((d) => [d.id, d]));
 
@@ -449,8 +567,13 @@ export async function syncTuyaDevices(): Promise<{
   for (const raw of rawDevices) {
     const rawStatus = statusMap.get(raw.id) ?? raw.status ?? [];
     const existing = existingMap.get(raw.id);
+    const tuyaRoomName = roomMapping.deviceRoomMap.get(raw.id);
+    const tuyaRoomId = tuyaRoomName
+      ? (roomNameToId.get(tuyaRoomName.trim().toLowerCase()) ?? null)
+      : null;
 
     if (existing) {
+      const targetRoomId = tuyaRoomId ?? existing.roomId;
       const dpConfig =
         existing.dpConfig && Object.keys(existing.dpConfig).length > 0
           ? existing.dpConfig
@@ -461,6 +584,7 @@ export async function syncTuyaDevices(): Promise<{
         .update(devices)
         .set({
           name: raw.name,
+          roomId: targetRoomId,
           tuyaCategory: raw.category,
           productName: raw.product_name ?? null,
           isOnline: raw.online ?? true,
@@ -475,6 +599,13 @@ export async function syncTuyaDevices(): Promise<{
           lastBatteryPct: metrics.batteryPct,
         })
         .where(eq(devices.id, raw.id));
+
+      if (targetRoomId !== null && targetRoomId !== existing.roomId) {
+        await db
+          .update(metricReadings)
+          .set({ roomId: targetRoomId })
+          .where(and(eq(metricReadings.deviceId, raw.id), isNull(metricReadings.roomId)));
+      }
     } else {
       const spec = await fetchDeviceSpecification(raw.id);
       const { dpConfig, category } = autoDetectDpConfig(rawStatus, spec);
@@ -484,7 +615,7 @@ export async function syncTuyaDevices(): Promise<{
         id: raw.id,
         name: raw.name,
         customName: null,
-        roomId: null,
+        roomId: tuyaRoomId,
         category,
         tuyaCategory: raw.category,
         productName: raw.product_name ?? null,
@@ -505,11 +636,39 @@ export async function syncTuyaDevices(): Promise<{
     }
   }
 
+  // Nettoie d'éventuelles pièces par défaut vides qui n'existent pas dans Tuya
+  if (roomMapping.roomNames.length > 0) {
+    const tuyaNamesLower = new Set(roomMapping.roomNames.map((n) => n.trim().toLowerCase()));
+    const allAssignedDevices = await db.select({ roomId: devices.roomId }).from(devices);
+    const usedRoomIds = new Set(
+      allAssignedDevices.map((d) => d.roomId).filter((id): id is number => id !== null)
+    );
+    const DEFAULT_SEEDED_NAMES = new Set(['salon', 'bureau', 'cuisine', 'chambre']);
+    for (const r of existingRoomsRows) {
+      const lower = r.name.trim().toLowerCase();
+      if (DEFAULT_SEEDED_NAMES.has(lower) && !tuyaNamesLower.has(lower) && !usedRoomIds.has(r.id)) {
+        const refReadings = await db
+          .select({ id: metricReadings.id })
+          .from(metricReadings)
+          .where(eq(metricReadings.roomId, r.id))
+          .limit(1);
+        if (refReadings.length === 0) {
+          await db.delete(rooms).where(eq(rooms.id, r.id));
+        }
+      }
+    }
+  }
+
+  const baseMsg =
+    syncedRoomsCount > 0
+      ? `${rawDevices.length} appareils et ${syncedRoomsCount} pièces synchronisés avec Tuya Cloud (${newCount} nouveaux).`
+      : `${rawDevices.length} appareils synchronisés avec Tuya Cloud (${newCount} nouveaux).`;
+
   return {
     syncedCount: rawDevices.length,
     newCount,
     mode: 'live',
-    message: `${rawDevices.length} appareils synchronisés avec Tuya Cloud (${newCount} nouveaux).`,
+    message: roomMapping.warning ? `${baseMsg} (${roomMapping.warning})` : baseMsg,
   };
 }
 
@@ -541,7 +700,10 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
   if (!db) {
     // Tuya configuré sans Postgres : on collecte en mémoire dans demo-store
     const state = getDemoState();
-    const rawDevices = await fetchTuyaDevices();
+    const [rawDevices, roomMapping] = await Promise.all([
+    fetchTuyaDevices(),
+    fetchTuyaDevices().catch(() => [] as never[]),
+  ]).then(async ([devs]) => [devs, await fetchTuyaRoomMapping(devs)] as const);
     const statusMap = await fetchBatchStatuses(rawDevices.map((d) => d.id));
     const now = new Date();
     let inserted = 0;

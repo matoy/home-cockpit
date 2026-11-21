@@ -140,7 +140,7 @@ export function SetupGuideTab({ data }: SetupGuideTabProps) {
             <ul className="list-disc list-inside ml-5 mt-1 text-slate-400 space-y-0.5">
               <li><strong>IoT Core</strong> (indispensable pour lire les statuts en batch)</li>
               <li><strong>Authorization Token Management</strong></li>
-              <li><strong>Smart Home Family Management</strong> (optionnel)</li>
+              <li><strong>Smart Home Family Management</strong> (requis pour importer vos pièces et affectations Smart Life)</li>
             </ul>
           </li>
           <li>

@@ -16,6 +16,8 @@ export interface TuyaRawDevice {
   category: string;
   product_name?: string;
   online?: boolean;
+  uid?: string;
+  owner_id?: string | number;
   status?: RawDpStatus[];
 }
 
@@ -196,10 +198,19 @@ async function tuyaRequest<T>(pathWithQuery: string, method = 'GET', body?: unkn
 export async function fetchTuyaDevices(): Promise<TuyaRawDevice[]> {
   const cfg = getTuyaConfig();
   if (cfg.userUid) {
-    return tuyaRequest<TuyaRawDevice[]>(`/v1.0/users/${encodeURIComponent(cfg.userUid)}/devices`);
+    try {
+      const devices = await tuyaRequest<TuyaRawDevice[]>(
+        `/v1.0/users/${encodeURIComponent(cfg.userUid)}/devices`
+      );
+      if (Array.isArray(devices)) {
+        return devices;
+      }
+    } catch {
+      // Si TUYA_USER_UID est invalide ou incomplet, on bascule sur associated-users
+    }
   }
 
-  // Fallback pagination sur les appareils associés au projet Cloud
+  // Pagination sur les appareils associés au projet Cloud
   const collected: TuyaRawDevice[] = [];
   let lastRowKey = '';
   for (let page = 0; page < 5; page++) {
@@ -216,6 +227,107 @@ export async function fetchTuyaDevices(): Promise<TuyaRawDevice[]> {
     lastRowKey = res.last_row_key;
   }
   return collected;
+}
+
+export interface TuyaRoomMappingResult {
+  roomNames: string[];
+  deviceRoomMap: Map<string, string>;
+  warning?: string;
+}
+
+interface TuyaHomeInfo {
+  home_id?: number | string;
+  id?: number | string;
+  name?: string;
+}
+
+interface TuyaRoomInfo {
+  room_id?: number | string;
+  id?: number | string;
+  name?: string;
+}
+
+export async function fetchTuyaRoomMapping(
+  rawDevices: TuyaRawDevice[]
+): Promise<TuyaRoomMappingResult> {
+  const cfg = getTuyaConfig();
+  const homeIds = new Set<string>();
+  const uids = new Set<string>();
+
+  if (cfg.userUid) uids.add(cfg.userUid);
+  for (const dev of rawDevices) {
+    if (dev.owner_id !== undefined && dev.owner_id !== null && String(dev.owner_id).trim()) {
+      homeIds.add(String(dev.owner_id).trim());
+    }
+    if (dev.uid?.trim()) {
+      uids.add(dev.uid.trim());
+    }
+  }
+
+  let lastError: string | undefined;
+
+  for (const uid of uids) {
+    try {
+      const homes = await tuyaRequest<TuyaHomeInfo[]>(
+        `/v1.0/users/${encodeURIComponent(uid)}/homes`
+      );
+      for (const h of homes ?? []) {
+        const hid = h.home_id ?? h.id;
+        if (hid !== undefined && hid !== null && String(hid).trim()) {
+          homeIds.add(String(hid).trim());
+        }
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  const roomNamesSet = new Set<string>();
+  const deviceRoomMap = new Map<string, string>();
+
+  for (const homeId of homeIds) {
+    try {
+      const res = await tuyaRequest<
+        TuyaRoomInfo[] | { rooms?: TuyaRoomInfo[] }
+      >(`/v1.0/homes/${encodeURIComponent(homeId)}/rooms`);
+
+      const roomsList = Array.isArray(res) ? res : res?.rooms ?? [];
+      for (const room of roomsList) {
+        const roomId = room.room_id ?? room.id;
+        const roomName = room.name?.trim();
+        if (!roomId || !roomName) continue;
+
+        roomNamesSet.add(roomName);
+        try {
+          const roomDevices = await tuyaRequest<Array<{ id?: string }>>(
+            `/v1.0/homes/${encodeURIComponent(homeId)}/rooms/${encodeURIComponent(String(roomId))}/devices`
+          );
+          for (const rd of roomDevices ?? []) {
+            if (rd.id) {
+              deviceRoomMap.set(rd.id, roomName);
+            }
+          }
+        } catch (err) {
+          lastError = err instanceof Error ? err.message : String(err);
+        }
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  if (roomNamesSet.size === 0 && lastError) {
+    return {
+      roomNames: [],
+      deviceRoomMap,
+      warning: `Impossible de lire les pièces Tuya (vérifiez que l'API gratuite "Smart Home Family Management" est activée sur iot.tuya.com) : ${lastError}`,
+    };
+  }
+
+  return {
+    roomNames: Array.from(roomNamesSet),
+    deviceRoomMap,
+  };
 }
 
 export interface TuyaDpSpec {

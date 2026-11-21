@@ -7,6 +7,10 @@ export function isAppPasswordConfigured(): boolean {
   return Boolean(process.env.APP_PASSWORD?.trim());
 }
 
+function isProduction(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
+
 function getSessionSecret(): string {
   const pwd = process.env.APP_PASSWORD?.trim() ?? '';
   const extra = process.env.SCHEDULE_SECRET?.trim() ?? 'tuya-power-temp-salt';
@@ -21,26 +25,26 @@ export function createSessionToken(): string {
 }
 
 export function verifySessionToken(token: string | undefined): boolean {
-  if (!isAppPasswordConfigured()) return true;
+  if (!isAppPasswordConfigured()) {
+    return !isProduction();
+  }
   if (!token) return false;
   const expected = createSessionToken();
-  const a = Buffer.from(token);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+  return safeCompare(token, expected);
 }
 
 export function verifyAppPassword(candidate: string): boolean {
   const configured = process.env.APP_PASSWORD?.trim();
-  if (!configured) return true;
-  const a = Buffer.from(candidate);
-  const b = Buffer.from(configured);
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+  if (!configured) {
+    return !isProduction();
+  }
+  return safeCompare(candidate, configured);
 }
 
 export async function isRequestAuthenticated(): Promise<boolean> {
-  if (!isAppPasswordConfigured()) return true;
+  if (!isAppPasswordConfigured()) {
+    return !isProduction();
+  }
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   return verifySessionToken(token);
@@ -48,27 +52,19 @@ export async function isRequestAuthenticated(): Promise<boolean> {
 
 export function verifyScheduleSecret(request: Request): boolean {
   const secret = process.env.SCHEDULE_SECRET?.trim();
-  if (!secret) return true;
+  if (!secret) {
+    return !isProduction();
+  }
 
   const authHeader = request.headers.get('authorization');
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.slice('Bearer '.length).trim();
+  if (authHeader && authHeader.slice(0, 7).toLowerCase() === 'bearer ') {
+    const token = authHeader.slice(7).trim();
     if (safeCompare(token, secret)) return true;
   }
 
   const headerSecret = request.headers.get('x-schedule-secret');
   if (headerSecret && safeCompare(headerSecret.trim(), secret)) {
     return true;
-  }
-
-  try {
-    const url = new URL(request.url);
-    const querySecret = url.searchParams.get('secret');
-    if (querySecret && safeCompare(querySecret.trim(), secret)) {
-      return true;
-    }
-  } catch {
-    // Ignore invalid URL
   }
 
   return false;
