@@ -124,6 +124,7 @@ function createInitialDemoState(): DemoState {
       lastTempC: null,
       lastHumidityPct: null,
       lastBatteryPct: null,
+      lastContactOpen: null,
     },
     {
       id: 'bf81a2c9salonclim01',
@@ -153,6 +154,7 @@ function createInitialDemoState(): DemoState {
       lastTempC: 21.1,
       lastHumidityPct: 48,
       lastBatteryPct: 86,
+      lastContactOpen: null,
     },
     {
       id: 'bf81a2c9bureaudesk1',
@@ -183,6 +185,7 @@ function createInitialDemoState(): DemoState {
       lastTempC: null,
       lastHumidityPct: null,
       lastBatteryPct: null,
+      lastContactOpen: null,
     },
     {
       id: 'bf81a2c9bureauclim1',
@@ -212,6 +215,7 @@ function createInitialDemoState(): DemoState {
       lastTempC: 21.8,
       lastHumidityPct: 44,
       lastBatteryPct: 92,
+      lastContactOpen: null,
     },
     {
       id: 'bf81a2c9cuisinefrigo',
@@ -242,6 +246,7 @@ function createInitialDemoState(): DemoState {
       lastTempC: null,
       lastHumidityPct: null,
       lastBatteryPct: null,
+      lastContactOpen: null,
     },
     {
       id: 'bf81a2c9chambreelec',
@@ -270,6 +275,7 @@ function createInitialDemoState(): DemoState {
       lastTempC: null,
       lastHumidityPct: null,
       lastBatteryPct: null,
+      lastContactOpen: null,
     },
     {
       id: 'bf81a2c9chambreclim',
@@ -299,6 +305,7 @@ function createInitialDemoState(): DemoState {
       lastTempC: 18.6,
       lastHumidityPct: 53,
       lastBatteryPct: 78,
+      lastContactOpen: null,
     },
     {
       id: 'bf81a2c9sdbclim001',
@@ -328,6 +335,91 @@ function createInitialDemoState(): DemoState {
       lastTempC: 21.4,
       lastHumidityPct: 67,
       lastBatteryPct: 90,
+      lastContactOpen: null,
+    },
+    {
+      id: 'bf81a2c9entree001',
+      name: 'Capteur Porte Entrée',
+      customName: "Porte d'Entrée",
+      roomId: 1,
+      category: 'contact',
+      tuyaCategory: 'mcs',
+      productName: 'Zigbee Door & Window Sensor',
+      isOnline: true,
+      isMonitored: true,
+      energyMode: 'hybrid',
+      dpConfig: {
+        contact: { code: 'doorcontact_state', scale: 1 },
+        battery: { code: 'battery_percentage', scale: 1 },
+      },
+      lastRawStatus: [
+        { code: 'doorcontact_state', value: false },
+        { code: 'battery_percentage', value: 94 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: 94,
+      lastContactOpen: false,
+    },
+    {
+      id: 'bf81a2c9salonbaie',
+      name: 'Capteur Baie Vitrée',
+      customName: 'Baie Vitrée Salon',
+      roomId: 1,
+      category: 'contact',
+      tuyaCategory: 'mcs',
+      productName: 'Zigbee Door & Window Sensor',
+      isOnline: true,
+      isMonitored: true,
+      energyMode: 'hybrid',
+      dpConfig: {
+        contact: { code: 'doorcontact_state', scale: 1 },
+        battery: { code: 'battery_percentage', scale: 1 },
+      },
+      lastRawStatus: [
+        { code: 'doorcontact_state', value: true },
+        { code: 'battery_percentage', value: 82 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: 82,
+      lastContactOpen: true,
+    },
+    {
+      id: 'bf81a2c9chambrefen',
+      name: 'Capteur Fenêtre Chambre',
+      customName: 'Fenêtre Chambre',
+      roomId: 4,
+      category: 'contact',
+      tuyaCategory: 'mcs',
+      productName: 'Zigbee Door & Window Sensor',
+      isOnline: true,
+      isMonitored: true,
+      energyMode: 'hybrid',
+      dpConfig: {
+        contact: { code: 'doorcontact_state', scale: 1 },
+        battery: { code: 'battery_percentage', scale: 1 },
+      },
+      lastRawStatus: [
+        { code: 'doorcontact_state', value: false },
+        { code: 'battery_percentage', value: 65 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: 65,
+      lastContactOpen: false,
     },
   ];
 
@@ -400,6 +492,7 @@ function createInitialDemoState(): DemoState {
         energySource: 'add_ele',
         tempC: null,
         humidityPct: null,
+        contactOpen: null,
       });
     }
 
@@ -419,6 +512,7 @@ function createInitialDemoState(): DemoState {
         energySource: null,
         tempC,
         humidityPct,
+        contactOpen: null,
       });
     }
 
@@ -445,6 +539,7 @@ function createInitialDemoState(): DemoState {
         energySource: 'add_ele',
         tempC: null,
         humidityPct: null,
+        contactOpen: null,
       });
     }
 
@@ -466,6 +561,7 @@ function createInitialDemoState(): DemoState {
         energySource: null,
         tempC,
         humidityPct,
+        contactOpen: null,
       });
     }
 
@@ -488,6 +584,7 @@ function createInitialDemoState(): DemoState {
         energySource: 'add_ele',
         tempC: null,
         humidityPct: null,
+        contactOpen: null,
       });
     }
 
@@ -510,6 +607,7 @@ function createInitialDemoState(): DemoState {
         energySource: 'integration',
         tempC: null,
         humidityPct: null,
+        contactOpen: null,
       });
     }
 
@@ -529,6 +627,7 @@ function createInitialDemoState(): DemoState {
         energySource: null,
         tempC,
         humidityPct,
+        contactOpen: null,
       });
     }
 
@@ -551,6 +650,65 @@ function createInitialDemoState(): DemoState {
         energySource: null,
         tempC,
         humidityPct,
+        contactOpen: null,
+      });
+    }
+
+    // 9. Capteur Porte Entrée (ouvert ponctuellement en journée)
+    {
+      const noise = pseudoNoise(step * 4.3);
+      const isDay = hour >= 8 && hour <= 21;
+      const open = step > 0 && isDay && noise > 0.91;
+      readings.push({
+        id: nextReadingId++,
+        deviceId: 'bf81a2c9entree001',
+        roomId: 1,
+        recordedAt: ts.toISOString(),
+        powerW: null,
+        voltageV: null,
+        energyKwh: null,
+        energySource: null,
+        tempC: null,
+        humidityPct: null,
+        contactOpen: open,
+      });
+    }
+
+    // 10. Capteur Baie Vitrée Salon (aération après-midi, ouvert en ce moment)
+    {
+      const noise = pseudoNoise(step * 4.7);
+      const open = step === 0 || (hour >= 13 && hour <= 17.5 && noise > 0.65);
+      readings.push({
+        id: nextReadingId++,
+        deviceId: 'bf81a2c9salonbaie',
+        roomId: 1,
+        recordedAt: ts.toISOString(),
+        powerW: null,
+        voltageV: null,
+        energyKwh: null,
+        energySource: null,
+        tempC: null,
+        humidityPct: null,
+        contactOpen: open,
+      });
+    }
+
+    // 11. Capteur Fenêtre Chambre (aération le matin 08h-09h30)
+    {
+      const noise = pseudoNoise(step * 5.1);
+      const open = step > 0 && hour >= 8 && hour <= 9.5 && noise > 0.35;
+      readings.push({
+        id: nextReadingId++,
+        deviceId: 'bf81a2c9chambrefen',
+        roomId: 4,
+        recordedAt: ts.toISOString(),
+        powerW: null,
+        voltageV: null,
+        energyKwh: null,
+        energySource: null,
+        tempC: null,
+        humidityPct: null,
+        contactOpen: open,
       });
     }
   }
@@ -568,6 +726,7 @@ function createInitialDemoState(): DemoState {
       if (last.voltageV !== null) dev.lastVoltageV = last.voltageV;
       if (last.tempC !== null) dev.lastTempC = last.tempC;
       if (last.humidityPct !== null) dev.lastHumidityPct = last.humidityPct;
+      if (last.contactOpen !== null) dev.lastContactOpen = last.contactOpen;
     }
     const finalAdd = cumulativeAddEle.get(dev.id);
     if (finalAdd !== undefined) {
@@ -642,6 +801,7 @@ export function simulateDemoCollection(trigger: 'schedule' | 'manual'): Collecti
     let tempC: number | null = dev.lastTempC;
     let humidityPct: number | null = dev.lastHumidityPct;
     let addEleKwh: number | null = dev.lastAddEleKwh;
+    let contactOpen: boolean | null = dev.lastContactOpen;
 
     if (powerW !== null) {
       powerW = Math.max(2, Math.round((powerW + (jitter - 0.5) * 18) * 10) / 10);
@@ -654,6 +814,9 @@ export function simulateDemoCollection(trigger: 'schedule' | 'manual'): Collecti
     }
     if (humidityPct !== null) {
       humidityPct = Math.min(95, Math.max(20, Math.round(humidityPct + (jitter - 0.5) * 2)));
+    }
+    if (contactOpen !== null && jitter > 0.72) {
+      contactOpen = !contactOpen;
     }
 
     const energyRes =
@@ -679,12 +842,14 @@ export function simulateDemoCollection(trigger: 'schedule' | 'manual'): Collecti
       energySource: energyRes ? energyRes.source : null,
       tempC,
       humidityPct,
+      contactOpen,
     });
 
     dev.lastPowerW = powerW;
     dev.lastAddEleKwh = addEleKwh;
     dev.lastTempC = tempC;
     dev.lastHumidityPct = humidityPct;
+    dev.lastContactOpen = contactOpen;
     dev.lastSeenAt = now.toISOString();
     inserted += 1;
   }

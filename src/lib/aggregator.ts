@@ -2,6 +2,10 @@ import { computeDewPointC, computeReadingCost, getParisDateAndTime } from './tar
 import type {
   CollectionLogRecord,
   ComfortStatus,
+  ContactActivityPoint,
+  ContactEventItem,
+  ContactSensorStat,
+  ContactsPayload,
   DashboardPayload,
   DeviceRecord,
   EnergyBreakdownItem,
@@ -565,6 +569,123 @@ export function buildDashboardPayload(params: {
     (rs) => rs.comfort.label !== 'Optimal' && rs.comfort.label !== 'Aucun capteur'
   ).length;
 
+  // Agrégation des Contact Sensors (capteurs d'ouverture)
+  const contactDevices = filteredDevices.filter(
+    (d) => d.category === 'contact' || Boolean(d.dpConfig?.contact) || d.lastContactOpen !== null
+  );
+
+  const contactActivityBuckets = new Map<string, ContactActivityPoint>();
+  const contactEvents: ContactEventItem[] = [];
+  const contactSensors: ContactSensorStat[] = [];
+
+  for (const dev of contactDevices) {
+    const devName = dev.customName || dev.name;
+    const room = dev.roomId !== null ? roomMap.get(dev.roomId) : undefined;
+    const roomName = room?.name ?? 'Non assignée';
+    const roomColor = room?.color ?? '#64748b';
+
+    const devReadings = filteredReadings
+      .filter((r) => r.deviceId === dev.id && r.contactOpen !== null)
+      .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
+
+    let openEventsCount = 0;
+    let openMinutes = 0;
+    let lastOpenedAt: string | null = null;
+    let prevState: boolean | null = null;
+
+    for (let i = 0; i < devReadings.length; i++) {
+      const r = devReadings[i];
+      const isOpen = r.contactOpen === true;
+      const isTransition = prevState === null ? isOpen : prevState !== isOpen;
+
+      if (isOpen && (prevState === null || prevState === false)) {
+        openEventsCount += 1;
+      }
+      if (isOpen) {
+        lastOpenedAt = r.recordedAt;
+        const curMs = new Date(r.recordedAt).getTime();
+        const nextMs =
+          i + 1 < devReadings.length
+            ? new Date(devReadings[i + 1].recordedAt).getTime()
+            : now.getTime();
+        const deltaMin = Math.min(60, Math.max(1, Math.round((nextMs - curMs) / 60_000)));
+        openMinutes += deltaMin;
+      }
+
+      const dt = new Date(r.recordedAt);
+      const { key: bucketKey, label: bucketLabel } = getBucketInfo(dt, range);
+      const act = contactActivityBuckets.get(bucketKey) ?? {
+        bucket: bucketKey,
+        label: bucketLabel,
+        openCount: 0,
+        transitionsCount: 0,
+      };
+      if (isOpen) act.openCount += 1;
+      if (isTransition) act.transitionsCount += 1;
+      contactActivityBuckets.set(bucketKey, act);
+
+      contactEvents.push({
+        id: `${dev.id}-${r.id}-${r.recordedAt}`,
+        deviceId: dev.id,
+        deviceName: devName,
+        roomId: dev.roomId,
+        roomName,
+        roomColor,
+        recordedAt: r.recordedAt,
+        isOpen,
+        isTransition,
+      });
+
+      prevState = isOpen;
+    }
+
+    if (!lastOpenedAt && dev.lastContactOpen === true && dev.lastSeenAt) {
+      lastOpenedAt = dev.lastSeenAt;
+    }
+
+    contactSensors.push({
+      deviceId: dev.id,
+      name: devName,
+      roomId: dev.roomId,
+      roomName,
+      roomColor,
+      isOnline: dev.isOnline,
+      isOpen: dev.lastContactOpen,
+      batteryPct: dev.lastBatteryPct,
+      lastSeenAt: dev.lastSeenAt,
+      lastOpenedAt,
+      openEventsCount,
+      openMinutes,
+    });
+  }
+
+  contactSensors.sort((a, b) => {
+    const aOpen = a.isOpen === true ? 0 : 1;
+    const bOpen = b.isOpen === true ? 0 : 1;
+    if (aOpen !== bOpen) return aOpen - bOpen;
+    return a.name.localeCompare(b.name);
+  });
+
+  contactEvents.sort((a, b) => b.recordedAt.localeCompare(a.recordedAt));
+
+  const contacts: ContactsPayload = {
+    summary: {
+      totalSensors: contactSensors.length,
+      openCountNow: contactSensors.filter((s) => s.isOpen === true).length,
+      closedCountNow: contactSensors.filter((s) => s.isOpen === false).length,
+      onlineCount: contactSensors.filter((s) => s.isOnline).length,
+      lowBatteryCount: contactSensors.filter((s) => s.batteryPct !== null && s.batteryPct <= 20)
+        .length,
+      totalOpenEventsPeriod: contactSensors.reduce((sum, s) => sum + s.openEventsCount, 0),
+      totalOpenMinutesPeriod: contactSensors.reduce((sum, s) => sum + s.openMinutes, 0),
+    },
+    sensors: contactSensors,
+    events: contactEvents.slice(0, 400),
+    activitySeries: Array.from(contactActivityBuckets.values()).sort((a, b) =>
+      a.bucket.localeCompare(b.bucket)
+    ),
+  };
+
   return {
     env,
     range,
@@ -597,6 +718,7 @@ export function buildDashboardPayload(params: {
     energyByRoom,
     energyByDevice,
     timeSeries,
+    contacts,
     logs: logs.slice(0, 20),
   };
 }

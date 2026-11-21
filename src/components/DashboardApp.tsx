@@ -14,16 +14,18 @@ import {
   LogOut,
   Database,
   Play,
+  DoorOpen,
 } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
 import { EnergyTab } from './EnergyTab';
 import { ClimateTab } from './ClimateTab';
+import { ContactsTab } from './ContactsTab';
 import { TariffsTab } from './TariffsTab';
 import { DevicesRoomsTab } from './DevicesRoomsTab';
 import { SetupGuideTab } from './SetupGuideTab';
 import type { DashboardPayload, TimeRange } from '@/types';
 
-type TabId = 'overview' | 'energy' | 'climate' | 'tariffs' | 'devices' | 'guide';
+type TabId = 'overview' | 'energy' | 'climate' | 'contacts' | 'tariffs' | 'devices' | 'guide';
 
 interface DashboardAppProps {
   initialData: DashboardPayload;
@@ -111,10 +113,16 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
 
   const lastLog = data.logs[0];
 
-  const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutGrid }> = [
+  const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutGrid; badge?: number }> = [
     { id: 'overview', label: 'Synthèse & Pièces', icon: LayoutGrid },
     { id: 'energy', label: 'Énergie & Puissance', icon: BarChart3 },
     { id: 'climate', label: 'Climat (°C / %)', icon: Thermometer },
+    {
+      id: 'contacts',
+      label: 'Ouvertures',
+      icon: DoorOpen,
+      badge: data.contacts.summary.openCountNow,
+    },
     { id: 'tariffs', label: 'Tarifs kWh', icon: Euro },
     { id: 'devices', label: 'Appareils & Pièces', icon: Cpu },
     { id: 'guide', label: 'Guide Setup', icon: BookOpen },
@@ -235,6 +243,11 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
               >
                 <Icon className="h-3.5 w-3.5" />
                 {tab.label}
+                {tab.badge !== undefined && tab.badge > 0 && (
+                  <span className="rounded-full bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.2 text-[10px] font-semibold text-amber-300">
+                    {tab.badge}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -273,6 +286,9 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
         )}
         {activeTab === 'energy' && <EnergyTab data={data} />}
         {activeTab === 'climate' && <ClimateTab data={data} />}
+        {activeTab === 'contacts' && (
+          <ContactsTab data={data} onNavigateTab={setActiveTab} />
+        )}
         {activeTab === 'tariffs' && (
           <TariffsTab data={data} onRefresh={() => fetchDashboard(range, roomId)} />
         )}

@@ -17,7 +17,9 @@ import type { ComfortStatus, DashboardPayload } from '@/types';
 interface OverviewTabProps {
   data: DashboardPayload;
   onSelectRoom: (roomId: string) => void;
-  onNavigateTab: (tab: 'overview' | 'energy' | 'climate' | 'tariffs' | 'devices' | 'guide') => void;
+  onNavigateTab: (
+    tab: 'overview' | 'energy' | 'climate' | 'contacts' | 'tariffs' | 'devices' | 'guide'
+  ) => void;
 }
 
 const COMFORT_BADGE_CLASSES: Record<ComfortStatus['tone'], string> = {
@@ -279,6 +281,15 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                             )}
                             {dev.lastHumidityPct !== null && (
                               <span className="text-sky-300">{dev.lastHumidityPct.toFixed(0)}%</span>
+                            )}
+                            {dev.lastContactOpen !== null && (
+                              <span
+                                className={
+                                  dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'
+                                }
+                              >
+                                {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
+                              </span>
                             )}
                           </div>
                         </div>

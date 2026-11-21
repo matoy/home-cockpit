@@ -1,4 +1,4 @@
-export type DeviceCategory = 'power' | 'climate' | 'hybrid' | 'other';
+export type DeviceCategory = 'power' | 'climate' | 'contact' | 'hybrid' | 'other';
 
 export type EnergyMode = 'hybrid' | 'add_ele' | 'integration';
 
@@ -21,6 +21,7 @@ export interface DpConfig {
   temp?: DpMappingField;
   humidity?: DpMappingField;
   battery?: DpMappingField;
+  contact?: DpMappingField;
 }
 
 export interface RawDpStatus {
@@ -65,6 +66,7 @@ export interface DeviceRecord {
   lastTempC: number | null;
   lastHumidityPct: number | null;
   lastBatteryPct: number | null;
+  lastContactOpen: boolean | null;
 }
 
 export interface MetricReadingRecord {
@@ -78,6 +80,7 @@ export interface MetricReadingRecord {
   energySource: EnergySource | null;
   tempC: number | null;
   humidityPct: number | null;
+  contactOpen: boolean | null;
 }
 
 export interface TariffPeriodRecord {
@@ -166,6 +169,55 @@ export interface EnvStatus {
   scheduleSecretConfigured: boolean;
 }
 
+export interface ContactSensorStat {
+  deviceId: string;
+  name: string;
+  roomId: number | null;
+  roomName: string;
+  roomColor: string;
+  isOnline: boolean;
+  isOpen: boolean | null;
+  batteryPct: number | null;
+  lastSeenAt: string | null;
+  lastOpenedAt: string | null;
+  openEventsCount: number;
+  openMinutes: number;
+}
+
+export interface ContactEventItem {
+  id: string;
+  deviceId: string;
+  deviceName: string;
+  roomId: number | null;
+  roomName: string;
+  roomColor: string;
+  recordedAt: string;
+  isOpen: boolean;
+  isTransition: boolean;
+}
+
+export interface ContactActivityPoint {
+  bucket: string;
+  label: string;
+  openCount: number;
+  transitionsCount: number;
+}
+
+export interface ContactsPayload {
+  summary: {
+    totalSensors: number;
+    openCountNow: number;
+    closedCountNow: number;
+    onlineCount: number;
+    lowBatteryCount: number;
+    totalOpenEventsPeriod: number;
+    totalOpenMinutesPeriod: number;
+  };
+  sensors: ContactSensorStat[];
+  events: ContactEventItem[];
+  activitySeries: ContactActivityPoint[];
+}
+
 export interface DashboardPayload {
   env: EnvStatus;
   range: TimeRange;
@@ -198,5 +250,6 @@ export interface DashboardPayload {
   energyByRoom: EnergyBreakdownItem[];
   energyByDevice: EnergyBreakdownItem[];
   timeSeries: TimeSeriesPoint[];
+  contacts: ContactsPayload;
   logs: CollectionLogRecord[];
 }

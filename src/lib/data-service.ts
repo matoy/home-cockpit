@@ -94,6 +94,7 @@ function mapDbDevice(row: typeof devices.$inferSelect): DeviceRecord {
     lastTempC: row.lastTempC,
     lastHumidityPct: row.lastHumidityPct,
     lastBatteryPct: row.lastBatteryPct,
+    lastContactOpen: row.lastContactOpen,
   };
 }
 
@@ -109,6 +110,7 @@ function mapDbReading(row: typeof metricReadings.$inferSelect): MetricReadingRec
     energySource: (row.energySource as EnergySource | null) ?? null,
     tempC: row.tempC,
     humidityPct: row.humidityPct,
+    contactOpen: row.contactOpen,
   };
 }
 
@@ -179,8 +181,12 @@ async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
           "last_add_ele_kwh" real,
           "last_temp_c" real,
           "last_humidity_pct" real,
-          "last_battery_pct" real
+          "last_battery_pct" real,
+          "last_contact_open" boolean
         )
+      `);
+      await db.execute(sql`
+        ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "last_contact_open" boolean
       `);
       await db.execute(sql`
         CREATE TABLE IF NOT EXISTS "metric_readings" (
@@ -193,8 +199,12 @@ async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
           "energy_kwh" real,
           "energy_source" text,
           "temp_c" real,
-          "humidity_pct" real
+          "humidity_pct" real,
+          "contact_open" boolean
         )
+      `);
+      await db.execute(sql`
+        ALTER TABLE "metric_readings" ADD COLUMN IF NOT EXISTS "contact_open" boolean
       `);
       await db.execute(sql`
         CREATE INDEX IF NOT EXISTS "idx_readings_device_time" ON "metric_readings" ("device_id", "recorded_at")
@@ -479,6 +489,16 @@ export async function syncTuyaDevices(): Promise<{
         existing.tuyaCategory = raw.category;
         existing.productName = raw.product_name ?? null;
         existing.lastRawStatus = rawStatus;
+        if (!existing.dpConfig?.contact || !existing.dpConfig?.battery) {
+          const detected = autoDetectDpConfig(rawStatus, {}, raw.category);
+          existing.dpConfig = {
+            ...detected.dpConfig,
+            ...existing.dpConfig,
+          };
+          if (existing.category === 'other' && detected.category !== 'other') {
+            existing.category = detected.category;
+          }
+        }
         const metrics = extractMetricsFromStatus(rawStatus, existing.dpConfig);
         existing.lastPowerW = metrics.powerW;
         existing.lastVoltageV = metrics.voltageV;
@@ -486,10 +506,11 @@ export async function syncTuyaDevices(): Promise<{
         existing.lastTempC = metrics.tempC;
         existing.lastHumidityPct = metrics.humidityPct;
         existing.lastBatteryPct = metrics.batteryPct;
+        existing.lastContactOpen = metrics.contactOpen;
         existing.lastSeenAt = now.toISOString();
       } else {
         const spec = await fetchDeviceSpecification(raw.id);
-        const { dpConfig, category } = autoDetectDpConfig(rawStatus, spec);
+        const { dpConfig, category } = autoDetectDpConfig(rawStatus, spec, raw.category);
         const metrics = extractMetricsFromStatus(rawStatus, dpConfig);
         state.devices.push({
           id: raw.id,
@@ -511,6 +532,7 @@ export async function syncTuyaDevices(): Promise<{
           lastTempC: metrics.tempC,
           lastHumidityPct: metrics.humidityPct,
           lastBatteryPct: metrics.batteryPct,
+          lastContactOpen: metrics.contactOpen,
         });
         newCount++;
       }
@@ -574,10 +596,25 @@ export async function syncTuyaDevices(): Promise<{
 
     if (existing) {
       const targetRoomId = tuyaRoomId ?? existing.roomId;
-      const dpConfig =
-        existing.dpConfig && Object.keys(existing.dpConfig).length > 0
-          ? existing.dpConfig
-          : autoDetectDpConfig(rawStatus, await fetchDeviceSpecification(raw.id)).dpConfig;
+      let dpConfig = existing.dpConfig ?? {};
+      let nextCategory = existing.category;
+
+      if (Object.keys(dpConfig).length === 0) {
+        const detected = autoDetectDpConfig(
+          rawStatus,
+          await fetchDeviceSpecification(raw.id),
+          raw.category
+        );
+        dpConfig = detected.dpConfig;
+        nextCategory = detected.category;
+      } else if (!dpConfig.contact || !dpConfig.battery) {
+        const detected = autoDetectDpConfig(rawStatus, {}, raw.category);
+        dpConfig = { ...detected.dpConfig, ...dpConfig };
+        if (nextCategory === 'other' && detected.category !== 'other') {
+          nextCategory = detected.category;
+        }
+      }
+
       const metrics = extractMetricsFromStatus(rawStatus, dpConfig);
 
       await db
@@ -585,6 +622,7 @@ export async function syncTuyaDevices(): Promise<{
         .set({
           name: raw.name,
           roomId: targetRoomId,
+          category: nextCategory,
           tuyaCategory: raw.category,
           productName: raw.product_name ?? null,
           isOnline: raw.online ?? true,
@@ -597,6 +635,7 @@ export async function syncTuyaDevices(): Promise<{
           lastTempC: metrics.tempC,
           lastHumidityPct: metrics.humidityPct,
           lastBatteryPct: metrics.batteryPct,
+          lastContactOpen: metrics.contactOpen,
         })
         .where(eq(devices.id, raw.id));
 
@@ -608,7 +647,7 @@ export async function syncTuyaDevices(): Promise<{
       }
     } else {
       const spec = await fetchDeviceSpecification(raw.id);
-      const { dpConfig, category } = autoDetectDpConfig(rawStatus, spec);
+      const { dpConfig, category } = autoDetectDpConfig(rawStatus, spec, raw.category);
       const metrics = extractMetricsFromStatus(rawStatus, dpConfig);
 
       await db.insert(devices).values({
@@ -631,6 +670,7 @@ export async function syncTuyaDevices(): Promise<{
         lastTempC: metrics.tempC,
         lastHumidityPct: metrics.humidityPct,
         lastBatteryPct: metrics.batteryPct,
+        lastContactOpen: metrics.contactOpen,
       });
       newCount++;
     }
@@ -700,10 +740,7 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
   if (!db) {
     // Tuya configuré sans Postgres : on collecte en mémoire dans demo-store
     const state = getDemoState();
-    const [rawDevices, roomMapping] = await Promise.all([
-    fetchTuyaDevices(),
-    fetchTuyaDevices().catch(() => [] as never[]),
-  ]).then(async ([devs]) => [devs, await fetchTuyaRoomMapping(devs)] as const);
+    const rawDevices = await fetchTuyaDevices();
     const statusMap = await fetchBatchStatuses(rawDevices.map((d) => d.id));
     const now = new Date();
     let inserted = 0;
@@ -713,7 +750,7 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       let dev = state.devices.find((d) => d.id === raw.id);
       if (!dev) {
         const spec = await fetchDeviceSpecification(raw.id);
-        const detected = autoDetectDpConfig(rawStatus, spec);
+        const detected = autoDetectDpConfig(rawStatus, spec, raw.category);
         dev = {
           id: raw.id,
           name: raw.name,
@@ -734,6 +771,7 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           lastTempC: null,
           lastHumidityPct: null,
           lastBatteryPct: null,
+          lastContactOpen: null,
         };
         state.devices.push(dev);
       }
@@ -763,6 +801,7 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
         energySource: energyRes ? energyRes.source : null,
         tempC: metrics.tempC,
         humidityPct: metrics.humidityPct,
+        contactOpen: metrics.contactOpen,
       });
 
       dev.lastRawStatus = rawStatus;
@@ -773,6 +812,7 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       dev.lastTempC = metrics.tempC;
       dev.lastHumidityPct = metrics.humidityPct;
       dev.lastBatteryPct = metrics.batteryPct;
+      dev.lastContactOpen = metrics.contactOpen;
       inserted++;
     }
 
@@ -812,7 +852,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       const metrics = extractMetricsFromStatus(rawStatus, dev.dpConfig ?? {});
       const hasPower = metrics.powerW !== null || metrics.addEleKwh !== null;
       const hasClimate = metrics.tempC !== null || metrics.humidityPct !== null;
-      if (!hasPower && !hasClimate) {
+      const hasContact = metrics.contactOpen !== null;
+      if (!hasPower && !hasClimate && !hasContact) {
         await db
           .update(devices)
           .set({ lastRawStatus: rawStatus, lastSeenAt: now })
@@ -841,6 +882,7 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
         energySource: energyRes ? energyRes.source : null,
         tempC: metrics.tempC,
         humidityPct: metrics.humidityPct,
+        contactOpen: metrics.contactOpen,
       });
 
       await db
@@ -854,6 +896,7 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           lastTempC: metrics.tempC,
           lastHumidityPct: metrics.humidityPct,
           lastBatteryPct: metrics.batteryPct,
+          lastContactOpen: metrics.contactOpen,
         })
         .where(eq(devices.id, dev.id));
     }
@@ -1005,6 +1048,7 @@ export async function updateDevice(
       dev.lastTempC = metrics.tempC;
       dev.lastHumidityPct = metrics.humidityPct;
       dev.lastBatteryPct = metrics.batteryPct;
+      dev.lastContactOpen = metrics.contactOpen;
     }
     return dev;
   }
@@ -1022,6 +1066,7 @@ export async function updateDevice(
     updates.lastTempC = metrics.tempC;
     updates.lastHumidityPct = metrics.humidityPct;
     updates.lastBatteryPct = metrics.batteryPct;
+    updates.lastContactOpen = metrics.contactOpen;
   }
 
   const [updated] = await db

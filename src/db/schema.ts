@@ -43,6 +43,7 @@ export const devices = pgTable('devices', {
   lastTempC: real('last_temp_c'),
   lastHumidityPct: real('last_humidity_pct'),
   lastBatteryPct: real('last_battery_pct'),
+  lastContactOpen: boolean('last_contact_open'),
 });
 
 export const metricReadings = pgTable(
@@ -60,6 +61,7 @@ export const metricReadings = pgTable(
     energySource: text('energy_source'),
     tempC: real('temp_c'),
     humidityPct: real('humidity_pct'),
+    contactOpen: boolean('contact_open'),
   },
   (table) => [
     index('idx_readings_device_time').on(table.deviceId, table.recordedAt),

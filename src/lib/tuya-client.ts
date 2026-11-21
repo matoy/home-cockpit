@@ -477,7 +477,16 @@ const CURRENT_CODES = ['cur_current', 'current', 'current_a'];
 const ADD_ELE_CODES = ['add_ele', 'forward_energy_total', 'ele', 'total_forward_energy'];
 const TEMP_CODES = ['va_temperature', 'temp_current', 'temp_value', 'temperature', 'temp_set'];
 const HUMIDITY_CODES = ['va_humidity', 'humidity_value', 'humidity_current', 'humidity'];
-const BATTERY_CODES = ['battery_percentage', 'va_battery', 'battery_value'];
+const BATTERY_CODES = ['battery_percentage', 'va_battery', 'battery_value', 'battery_state'];
+const CONTACT_CODES = [
+  'doorcontact_state',
+  'contact_state',
+  'door_state',
+  'window_state',
+  'open_close',
+  'sensor_state',
+  'magnet_state',
+];
 
 function findMatchingDp(
   rawStatus: RawDpStatus[],
@@ -485,6 +494,19 @@ function findMatchingDp(
 ): RawDpStatus | undefined {
   for (const code of candidates) {
     const match = rawStatus.find((item) => item.code === code && typeof item.value === 'number');
+    if (match) return match;
+  }
+  return undefined;
+}
+
+function findMatchingAnyDp(
+  rawStatus: RawDpStatus[],
+  candidates: string[]
+): RawDpStatus | undefined {
+  for (const code of candidates) {
+    const match = rawStatus.find(
+      (item) => item.code === code && item.value !== undefined && item.value !== null
+    );
     if (match) return match;
   }
   return undefined;
@@ -509,7 +531,8 @@ function resolveScale(
 
 export function autoDetectDpConfig(
   rawStatus: RawDpStatus[],
-  specMap: Record<string, TuyaDpSpec> = {}
+  specMap: Record<string, TuyaDpSpec> = {},
+  tuyaCategory?: string
 ): { dpConfig: DpConfig; category: DeviceCategory } {
   const dpConfig: DpConfig = {};
 
@@ -563,7 +586,7 @@ export function autoDetectDpConfig(
     };
   }
 
-  const batteryDp = findMatchingDp(rawStatus, BATTERY_CODES);
+  const batteryDp = findMatchingAnyDp(rawStatus, BATTERY_CODES);
   if (batteryDp) {
     dpConfig.battery = {
       code: batteryDp.code,
@@ -571,10 +594,31 @@ export function autoDetectDpConfig(
     };
   }
 
+  let contactDp = findMatchingAnyDp(rawStatus, CONTACT_CODES);
+  if (!contactDp && tuyaCategory === 'mcs') {
+    contactDp = findMatchingAnyDp(rawStatus, ['switch', 'switch_1']);
+  }
+  if (contactDp) {
+    dpConfig.contact = {
+      code: contactDp.code,
+      scale: 1,
+    };
+  }
+
   const hasPower = Boolean(dpConfig.power || dpConfig.addEle);
   const hasClimate = Boolean(dpConfig.temp || dpConfig.humidity);
+  const hasContact = Boolean(dpConfig.contact || tuyaCategory === 'mcs');
+  const activeKinds = [hasPower, hasClimate, hasContact].filter(Boolean).length;
   const category: DeviceCategory =
-    hasPower && hasClimate ? 'hybrid' : hasPower ? 'power' : hasClimate ? 'climate' : 'other';
+    activeKinds > 1
+      ? 'hybrid'
+      : hasPower
+        ? 'power'
+        : hasClimate
+          ? 'climate'
+          : hasContact
+            ? 'contact'
+            : 'other';
 
   return { dpConfig, category };
 }
@@ -587,6 +631,7 @@ export interface ExtractedMetrics {
   tempC: number | null;
   humidityPct: number | null;
   batteryPct: number | null;
+  contactOpen: boolean | null;
 }
 
 function readScaledMetric(
@@ -602,6 +647,48 @@ function readScaledMetric(
   return Math.round(scaled * 1000) / 1000;
 }
 
+function readBatteryMetric(
+  rawStatus: RawDpStatus[],
+  mapping?: { code: string; scale: number }
+): number | null {
+  const numeric = readScaledMetric(rawStatus, mapping);
+  if (numeric !== null) return numeric;
+  if (!mapping?.code) return null;
+  const dp = rawStatus.find((item) => item.code === mapping.code);
+  if (!dp || typeof dp.value !== 'string') return null;
+  const val = dp.value.trim().toLowerCase();
+  if (val === 'high') return 100;
+  if (val === 'middle' || val === 'medium') return 60;
+  if (val === 'low') return 15;
+  return null;
+}
+
+function readContactMetric(
+  rawStatus: RawDpStatus[],
+  mapping?: { code: string; scale: number }
+): boolean | null {
+  if (!mapping?.code) return null;
+  const dp = rawStatus.find((item) => item.code === mapping.code);
+  if (!dp || dp.value === undefined || dp.value === null) return null;
+
+  let isOpen: boolean | null = null;
+  if (typeof dp.value === 'boolean') {
+    isOpen = dp.value;
+  } else if (typeof dp.value === 'number' && Number.isFinite(dp.value)) {
+    isOpen = dp.value > 0;
+  } else if (typeof dp.value === 'string') {
+    const v = dp.value.trim().toLowerCase();
+    if (v === 'open' || v === 'opened' || v === 'true' || v === '1' || v === 'alarm') {
+      isOpen = true;
+    } else if (v === 'close' || v === 'closed' || v === 'false' || v === '0' || v === 'normal') {
+      isOpen = false;
+    }
+  }
+
+  if (isOpen === null) return null;
+  return mapping.scale < 0 ? !isOpen : isOpen;
+}
+
 export function extractMetricsFromStatus(
   rawStatus: RawDpStatus[],
   dpConfig: DpConfig
@@ -613,6 +700,7 @@ export function extractMetricsFromStatus(
     addEleKwh: readScaledMetric(rawStatus, dpConfig.addEle),
     tempC: readScaledMetric(rawStatus, dpConfig.temp),
     humidityPct: readScaledMetric(rawStatus, dpConfig.humidity),
-    batteryPct: readScaledMetric(rawStatus, dpConfig.battery),
+    batteryPct: readBatteryMetric(rawStatus, dpConfig.battery),
+    contactOpen: readContactMetric(rawStatus, dpConfig.contact),
   };
 }

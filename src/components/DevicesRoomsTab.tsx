@@ -505,6 +505,15 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                       {dev.lastHumidityPct !== null && (
                         <span className="text-sky-300">{dev.lastHumidityPct} %</span>
                       )}
+                      {dev.lastContactOpen !== null && (
+                        <span
+                          className={
+                            dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'
+                          }
+                        >
+                          {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
+                        </span>
+                      )}
                     </div>
                   </td>
 
@@ -604,9 +613,11 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                   { key: 'temp', label: 'Température (°C)' },
                   { key: 'humidity', label: 'Humidité (%)' },
                   { key: 'battery', label: 'Batterie (%)' },
+                  { key: 'contact', label: 'Contact (Ouvert / Fermé)' },
                 ] as const
               ).map(({ key, label }) => {
                 const current = dpDraft[key] ?? { code: '', scale: 1 };
+                const isContact = key === 'contact';
                 return (
                   <div
                     key={key}
@@ -616,7 +627,7 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                     <div className="flex gap-2">
                       <input
                         type="text"
-                        placeholder="Code DP (ex: cur_power)"
+                        placeholder={isContact ? 'ex: doorcontact_state' : 'Code DP (ex: cur_power)'}
                         value={current.code}
                         onChange={(e) => {
                           const code = e.target.value.trim();
@@ -637,11 +648,18 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                         }
                         className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200"
                       >
-                        {SCALE_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
+                        {isContact ? (
+                          <>
+                            <option value={1}>Normal (true = Ouvert)</option>
+                            <option value={-1}>Inversé (false = Ouvert)</option>
+                          </>
+                        ) : (
+                          SCALE_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))
+                        )}
                       </select>
                     </div>
                   </div>
