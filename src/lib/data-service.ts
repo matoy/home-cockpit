@@ -1,4 +1,4 @@
-import { asc, desc, eq, gte } from 'drizzle-orm';
+import { asc, desc, eq, gte, sql } from 'drizzle-orm';
 import { getDb, isDatabaseConfigured, type AppDatabase } from '@/db';
 import {
   collectionLogs,
@@ -140,7 +140,107 @@ function mapDbLog(row: typeof collectionLogs.$inferSelect): CollectionLogRecord 
   };
 }
 
+let schemaInitPromise: Promise<void> | null = null;
+
+async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
+  if (!schemaInitPromise) {
+    schemaInitPromise = (async () => {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS "rooms" (
+          "id" serial PRIMARY KEY NOT NULL,
+          "name" text NOT NULL,
+          "icon" text DEFAULT 'Home' NOT NULL,
+          "color" text DEFAULT '#3b82f6' NOT NULL,
+          "target_temp_min" real DEFAULT 19 NOT NULL,
+          "target_temp_max" real DEFAULT 22 NOT NULL,
+          "target_humidity_min" real DEFAULT 40 NOT NULL,
+          "target_humidity_max" real DEFAULT 60 NOT NULL,
+          "created_at" timestamp with time zone DEFAULT now() NOT NULL
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS "devices" (
+          "id" text PRIMARY KEY NOT NULL,
+          "name" text NOT NULL,
+          "custom_name" text,
+          "room_id" integer REFERENCES "rooms"("id") ON DELETE SET NULL,
+          "category" text DEFAULT 'power' NOT NULL,
+          "tuya_category" text,
+          "product_name" text,
+          "is_online" boolean DEFAULT true NOT NULL,
+          "is_monitored" boolean DEFAULT true NOT NULL,
+          "energy_mode" text DEFAULT 'hybrid' NOT NULL,
+          "dp_config" jsonb DEFAULT '{}'::jsonb NOT NULL,
+          "last_raw_status" jsonb,
+          "last_seen_at" timestamp with time zone,
+          "last_power_w" real,
+          "last_voltage_v" real,
+          "last_add_ele_kwh" real,
+          "last_temp_c" real,
+          "last_humidity_pct" real,
+          "last_battery_pct" real
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS "metric_readings" (
+          "id" serial PRIMARY KEY NOT NULL,
+          "device_id" text NOT NULL REFERENCES "devices"("id") ON DELETE CASCADE,
+          "room_id" integer REFERENCES "rooms"("id") ON DELETE SET NULL,
+          "recorded_at" timestamp with time zone DEFAULT now() NOT NULL,
+          "power_w" real,
+          "voltage_v" real,
+          "energy_kwh" real,
+          "energy_source" text,
+          "temp_c" real,
+          "humidity_pct" real
+        )
+      `);
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS "idx_readings_device_time" ON "metric_readings" ("device_id", "recorded_at")
+      `);
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS "idx_readings_room_time" ON "metric_readings" ("room_id", "recorded_at")
+      `);
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS "idx_readings_time" ON "metric_readings" ("recorded_at")
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS "tariff_periods" (
+          "id" serial PRIMARY KEY NOT NULL,
+          "label" text NOT NULL,
+          "start_date" text NOT NULL,
+          "end_date" text,
+          "mode" text DEFAULT 'BASE' NOT NULL,
+          "base_rate_eur" real,
+          "hp_rate_eur" real,
+          "hc_rate_eur" real,
+          "hc_slots" jsonb DEFAULT '[]'::jsonb NOT NULL,
+          "monthly_subscription_eur" real DEFAULT 0 NOT NULL,
+          "created_at" timestamp with time zone DEFAULT now() NOT NULL
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS "collection_logs" (
+          "id" serial PRIMARY KEY NOT NULL,
+          "executed_at" timestamp with time zone DEFAULT now() NOT NULL,
+          "trigger" text NOT NULL,
+          "devices_count" integer NOT NULL,
+          "readings_inserted" integer NOT NULL,
+          "status" text NOT NULL,
+          "error_message" text,
+          "duration_ms" integer
+        )
+      `);
+    })().catch((err) => {
+      schemaInitPromise = null;
+      throw err;
+    });
+  }
+  await schemaInitPromise;
+}
+
 async function seedDefaultDataIfEmpty(db: AppDatabase): Promise<void> {
+  await ensureSchemaInitialized(db);
   const existingRooms = await db.select().from(rooms).limit(1);
   if (existingRooms.length === 0) {
     await db.insert(rooms).values([
@@ -417,6 +517,7 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
     if (!db) {
       return simulateDemoCollection(trigger);
     }
+    await ensureSchemaInitialized(db);
     const errMsg = 'TUYA_ACCESS_ID / TUYA_ACCESS_SECRET non configurés.';
     const [inserted] = await db
       .insert(collectionLogs)
@@ -651,6 +752,7 @@ export async function createRoom(input: {
     return room;
   }
 
+  await ensureSchemaInitialized(db);
   const [created] = await db
     .insert(rooms)
     .values({
@@ -687,6 +789,7 @@ export async function updateRoom(
     return room;
   }
 
+  await ensureSchemaInitialized(db);
   const [updated] = await db
     .update(rooms)
     .set(input)
@@ -706,6 +809,7 @@ export async function deleteRoom(id: number): Promise<void> {
     return;
   }
 
+  await ensureSchemaInitialized(db);
   await db.delete(rooms).where(eq(rooms.id, id));
 }
 
@@ -738,6 +842,7 @@ export async function updateDevice(
     return dev;
   }
 
+  await ensureSchemaInitialized(db);
   const existing = await db.select().from(devices).where(eq(devices.id, id)).limit(1);
   if (existing.length === 0) return null;
 
@@ -802,6 +907,7 @@ export async function createTariff(input: TariffInput): Promise<TariffPeriodReco
     return state.tariffs;
   }
 
+  await ensureSchemaInitialized(db);
   await db.insert(tariffPeriods).values(input);
   return syncTariffTimelineInDb(db);
 }
@@ -821,6 +927,7 @@ export async function updateTariff(
     return state.tariffs;
   }
 
+  await ensureSchemaInitialized(db);
   await db.update(tariffPeriods).set(input).where(eq(tariffPeriods.id, id));
   return syncTariffTimelineInDb(db);
 }
@@ -833,6 +940,7 @@ export async function deleteTariff(id: number): Promise<TariffPeriodRecord[]> {
     return state.tariffs;
   }
 
+  await ensureSchemaInitialized(db);
   await db.delete(tariffPeriods).where(eq(tariffPeriods.id, id));
   return syncTariffTimelineInDb(db);
 }
