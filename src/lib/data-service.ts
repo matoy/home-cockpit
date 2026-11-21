@@ -376,7 +376,12 @@ export async function syncTuyaDevices(): Promise<{
 
   const rawDevices = await fetchTuyaDevices();
   const deviceIds = rawDevices.map((d) => d.id);
-  const statusMap = await fetchBatchStatuses(deviceIds);
+  let statusMap = new Map<string, RawDpStatus[]>();
+  try {
+    statusMap = await fetchBatchStatuses(deviceIds);
+  } catch {
+    // Repli sur raw.status déjà inclus dans la réponse de fetchTuyaDevices
+  }
   const now = new Date();
 
   if (!db) {

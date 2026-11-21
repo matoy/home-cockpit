@@ -52,6 +52,30 @@ function hmacSha256Hex(message: string, secret: string): string {
   return crypto.createHmac('sha256', secret).update(message, 'utf8').digest('hex').toUpperCase();
 }
 
+function canonicalizePathWithQuery(pathWithQuery: string): string {
+  const qIdx = pathWithQuery.indexOf('?');
+  if (qIdx === -1) return pathWithQuery;
+
+  const path = pathWithQuery.slice(0, qIdx);
+  const query = pathWithQuery.slice(qIdx + 1);
+  if (!query) return path;
+
+  const map = new Map<string, string>();
+  for (const segment of query.split('&')) {
+    if (!segment) continue;
+    const eqIdx = segment.indexOf('=');
+    const rawKey = eqIdx === -1 ? segment : segment.slice(0, eqIdx);
+    const rawVal = eqIdx === -1 ? '' : segment.slice(eqIdx + 1);
+    const key = decodeURIComponent(rawKey);
+    const val = decodeURIComponent(rawVal);
+    map.set(key, val);
+  }
+
+  const sortedKeys = Array.from(map.keys()).sort();
+  const pairs = sortedKeys.map((key) => `${key}=${map.get(key) ?? ''}`);
+  return `${path}?${pairs.join('&')}`;
+}
+
 function buildSignHeaders(params: {
   method: string;
   pathWithQuery: string;
@@ -64,7 +88,8 @@ function buildSignHeaders(params: {
   const t = Date.now().toString();
   const nonce = crypto.randomUUID();
   const contentHash = sha256Hex(body);
-  const stringToSign = [method.toUpperCase(), contentHash, '', pathWithQuery].join('\n');
+  const canonicalUrl = canonicalizePathWithQuery(pathWithQuery);
+  const stringToSign = [method.toUpperCase(), contentHash, '', canonicalUrl].join('\n');
   const signPayload = accessToken
     ? accessId + accessToken + t + nonce + stringToSign
     : accessId + t + nonce + stringToSign;
@@ -179,7 +204,7 @@ export async function fetchTuyaDevices(): Promise<TuyaRawDevice[]> {
   let lastRowKey = '';
   for (let page = 0; page < 5; page++) {
     const query = lastRowKey
-      ? `/v1.0/iot-01/associated-users/devices?size=50&last_row_key=${encodeURIComponent(lastRowKey)}`
+      ? `/v1.0/iot-01/associated-users/devices?last_row_key=${encodeURIComponent(lastRowKey)}&size=50`
       : '/v1.0/iot-01/associated-users/devices?size=50';
     const res = await tuyaRequest<{ devices?: TuyaRawDevice[]; last_row_key?: string; has_more?: boolean }>(
       query
@@ -240,7 +265,7 @@ export async function fetchBatchStatuses(deviceIds: string[]): Promise<Map<strin
   // Lots de 20 appareils pour optimiser le quota gratuit Tuya IoT Core
   for (let i = 0; i < deviceIds.length; i += 20) {
     const chunk = deviceIds.slice(i, i + 20);
-    const idsParam = encodeURIComponent(chunk.join(','));
+    const idsParam = chunk.join(',');
     const items = await tuyaRequest<TuyaBatchStatusItem[]>(
       `/v1.0/iot-03/devices/status?device_ids=${idsParam}`
     );
