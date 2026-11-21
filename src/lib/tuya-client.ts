@@ -15,6 +15,8 @@ export interface TuyaRawDevice {
   name: string;
   category: string;
   product_name?: string;
+  ip?: string;
+  mac?: string;
   online?: boolean;
   uid?: string;
   owner_id?: string | number;
@@ -465,6 +467,42 @@ export async function fetchBatchStatuses(deviceIds: string[]): Promise<Map<strin
     );
     for (const item of items ?? []) {
       result.set(item.id, item.status ?? []);
+    }
+  }
+
+  return result;
+}
+
+export function formatMacAddress(rawMac: string | undefined | null): string | null {
+  if (!rawMac) return null;
+  const trimmed = rawMac.trim().toUpperCase();
+  if (!trimmed) return null;
+  const compact = trimmed.replace(/[^A-F0-9]/g, '');
+  if (compact.length === 12) {
+    return compact.match(/.{1,2}/g)?.join(':') ?? trimmed;
+  }
+  return trimmed;
+}
+
+export async function fetchBatchFactoryInfos(
+  deviceIds: string[]
+): Promise<Map<string, { mac: string | null }>> {
+  const result = new Map<string, { mac: string | null }>();
+  if (deviceIds.length === 0) return result;
+
+  for (let i = 0; i < deviceIds.length; i += 20) {
+    const chunk = deviceIds.slice(i, i + 20);
+    try {
+      const items = await tuyaRequest<Array<{ id?: string; mac?: string }>>(
+        `/v1.0/devices/factory-infos?device_ids=${chunk.join(',')}`
+      );
+      for (const item of items ?? []) {
+        if (item.id) {
+          result.set(item.id, { mac: formatMacAddress(item.mac) });
+        }
+      }
+    } catch {
+      // Ignore si la permission factory-infos n'est pas autorisée sur le projet Tuya
     }
   }
 

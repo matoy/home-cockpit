@@ -15,6 +15,7 @@ import {
   Database,
   Play,
   DoorOpen,
+  CalendarRange,
 } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
 import { EnergyTab } from './EnergyTab';
@@ -31,31 +32,61 @@ interface DashboardAppProps {
   initialData: DashboardPayload;
 }
 
-const RANGES: Array<{ id: TimeRange; label: string }> = [
+const RANGES: Array<{ id: Exclude<TimeRange, 'custom'>; label: string }> = [
   { id: '24h', label: '24h' },
   { id: '7d', label: '7 jours' },
   { id: '30d', label: '30 jours' },
   { id: '365d', label: '12 mois' },
 ];
 
+function toLocalDateTimeInput(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 export function DashboardApp({ initialData }: DashboardAppProps) {
   const router = useRouter();
   const [data, setData] = useState<DashboardPayload>(initialData);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [range, setRange] = useState<TimeRange>(initialData.range);
+  const [showCustomPicker, setShowCustomPicker] = useState(false);
+  const [customFromInput, setCustomFromInput] = useState<string>(() => {
+    if (initialData.customFrom) return toLocalDateTimeInput(new Date(initialData.customFrom));
+    return toLocalDateTimeInput(new Date(Date.now() - 24 * 3_600_000));
+  });
+  const [customToInput, setCustomToInput] = useState<string>(() => {
+    if (initialData.customTo) return toLocalDateTimeInput(new Date(initialData.customTo));
+    return toLocalDateTimeInput(new Date());
+  });
+  const [appliedCustom, setAppliedCustom] = useState<{ from: string; to: string } | null>(() =>
+    initialData.customFrom && initialData.customTo
+      ? { from: initialData.customFrom, to: initialData.customTo }
+      : null
+  );
   const [roomId, setRoomId] = useState<string>(initialData.selectedRoomId);
   const [loading, setLoading] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const fetchDashboard = useCallback(
-    async (nextRange: TimeRange = range, nextRoomId: string = roomId) => {
+    async (
+      nextRange: TimeRange = range,
+      nextRoomId: string = roomId,
+      customBounds: { from: string; to: string } | null = appliedCustom
+    ) => {
       setLoading(true);
       try {
-        const res = await fetch(
-          `/api/dashboard?range=${encodeURIComponent(nextRange)}&roomId=${encodeURIComponent(nextRoomId)}`,
-          { cache: 'no-store' }
-        );
+        const params = new URLSearchParams({
+          range: nextRange,
+          roomId: nextRoomId,
+        });
+        if (nextRange === 'custom' && customBounds) {
+          params.set('from', customBounds.from);
+          params.set('to', customBounds.to);
+        }
+        const res = await fetch(`/api/dashboard?${params.toString()}`, {
+          cache: 'no-store',
+        });
         if (res.status === 401) {
           router.push('/login');
           return;
@@ -68,12 +99,47 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
         setLoading(false);
       }
     },
-    [range, roomId, router]
+    [range, roomId, appliedCustom, router]
   );
 
-  async function handleRangeChange(nextRange: TimeRange) {
+  async function handleRangeChange(nextRange: Exclude<TimeRange, 'custom'>) {
     setRange(nextRange);
-    await fetchDashboard(nextRange, roomId);
+    setShowCustomPicker(false);
+    await fetchDashboard(nextRange, roomId, null);
+  }
+
+  async function applyCustomBounds(fromLocal: string, toLocal: string) {
+    const d1 = new Date(fromLocal);
+    const d2 = new Date(toLocal);
+    if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) return;
+    const bounds = { from: d1.toISOString(), to: d2.toISOString() };
+    setAppliedCustom(bounds);
+    setRange('custom');
+    setShowCustomPicker(false);
+    await fetchDashboard('custom', roomId, bounds);
+  }
+
+  function applyQuickCustomPreset(preset: 'today' | 'yesterday' | 'thisMonth' | 'last7d') {
+    const now = new Date();
+    let fromDate: Date;
+    let toDate: Date = now;
+
+    if (preset === 'today') {
+      fromDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    } else if (preset === 'yesterday') {
+      fromDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0);
+      toDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 0);
+    } else if (preset === 'thisMonth') {
+      fromDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+    } else {
+      fromDate = new Date(now.getTime() - 7 * 24 * 3_600_000);
+    }
+
+    const fromStr = toLocalDateTimeInput(fromDate);
+    const toStr = toLocalDateTimeInput(toDate);
+    setCustomFromInput(fromStr);
+    setCustomToInput(toStr);
+    void applyCustomBounds(fromStr, toStr);
   }
 
   async function handleRoomChange(nextRoomId: string) {
@@ -166,7 +232,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
           {/* Contrôles droite */}
           <div className="flex flex-wrap items-center gap-2">
             {/* Période */}
-            <div className="flex rounded-xl border border-slate-800 bg-slate-900 p-0.5">
+            <div className="flex flex-wrap rounded-xl border border-slate-800 bg-slate-900 p-0.5">
               {RANGES.map((r) => (
                 <button
                   key={r.id}
@@ -180,6 +246,18 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
                   {r.label}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => setShowCustomPicker((v) => !v)}
+                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+                  range === 'custom' || showCustomPicker
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <CalendarRange className="h-3.5 w-3.5" />
+                Personnalisé
+              </button>
             </div>
 
             {/* Filtre pièce */}
@@ -225,6 +303,68 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             )}
           </div>
         </div>
+
+        {/* Sélecteur de créneau personnalisé */}
+        {showCustomPicker && (
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-500/30 bg-slate-900/95 p-3 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-slate-400 font-medium">Du</span>
+                <input
+                  type="datetime-local"
+                  value={customFromInput}
+                  onChange={(e) => setCustomFromInput(e.target.value)}
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                />
+                <span className="text-slate-400 font-medium">Au</span>
+                <input
+                  type="datetime-local"
+                  value={customToInput}
+                  onChange={(e) => setCustomToInput(e.target.value)}
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => void applyCustomBounds(customFromInput, customToInput)}
+                  className="rounded-lg bg-indigo-600 hover:bg-indigo-500 px-3 py-1 font-medium text-white transition"
+                >
+                  Appliquer
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => applyQuickCustomPreset('today')}
+                  className="rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 text-[11px] text-slate-300"
+                >
+                  Aujourd&apos;hui
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyQuickCustomPreset('yesterday')}
+                  className="rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 text-[11px] text-slate-300"
+                >
+                  Hier
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyQuickCustomPreset('last7d')}
+                  className="rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 text-[11px] text-slate-300"
+                >
+                  7 derniers jours
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyQuickCustomPreset('thisMonth')}
+                  className="rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 text-[11px] text-slate-300"
+                >
+                  Ce mois-ci
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Navigation par onglets */}
         <div className="mx-auto max-w-7xl px-4 sm:px-6 flex gap-1 overflow-x-auto border-t border-slate-800/60">

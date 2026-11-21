@@ -411,6 +411,7 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
               <tr>
                 <th className="px-4 py-3">Appareil</th>
                 <th className="px-4 py-3">Nom affiché</th>
+                <th className="px-4 py-3">IP / MAC Address</th>
                 <th className="px-4 py-3">Pièce</th>
                 <th className="px-4 py-3">Calcul kWh</th>
                 <th className="px-4 py-3">Dernières valeurs</th>
@@ -421,7 +422,7 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
             <tbody className="divide-y divide-slate-800/80">
               {filteredDevices.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-xs text-slate-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-xs text-slate-500">
                     Aucun appareil dans ce filtre.
                   </td>
                 </tr>
@@ -457,6 +458,13 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                       }}
                       className="w-40 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-white focus:border-indigo-500 focus:outline-none"
                     />
+                  </td>
+
+                  <td className="px-4 py-3 font-mono text-[11px] leading-tight whitespace-nowrap">
+                    <div className="text-slate-200">{dev.ipAddress || '—'}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">
+                      {dev.macAddress || '—'}
+                    </div>
                   </td>
 
                   <td className="px-4 py-3">

@@ -38,8 +38,11 @@ const RANGE_LABELS: Record<string, string> = {
 };
 
 export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabProps) {
-  const { kpis, roomSummaries, range } = data;
-  const rangeLabel = RANGE_LABELS[range] ?? range;
+  const { kpis, roomSummaries, range, customFrom, customTo } = data;
+  const rangeLabel =
+    range === 'custom' && customFrom && customTo
+      ? `${new Date(customFrom).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} → ${new Date(customTo).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}`
+      : RANGE_LABELS[range] ?? range;
 
   return (
     <div className="space-y-6">

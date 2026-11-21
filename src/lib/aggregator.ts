@@ -18,7 +18,7 @@ import type {
   TimeSeriesPoint,
 } from '@/types';
 
-const RANGE_HOURS: Record<TimeRange, number> = {
+const RANGE_HOURS: Record<Exclude<TimeRange, 'custom'>, number> = {
   '24h': 24,
   '7d': 24 * 7,
   '30d': 24 * 30,
@@ -33,22 +33,63 @@ function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
 }
 
-function getBucketInfo(date: Date, range: TimeRange): { key: string; label: string } {
+export function resolveTimeWindow(
+  range: TimeRange,
+  customFrom?: string | null,
+  customTo?: string | null,
+  now: Date = new Date()
+): { startMs: number; endMs: number; effectiveHours: number } {
+  if (range === 'custom' && customFrom && customTo) {
+    const t1 = new Date(customFrom).getTime();
+    const t2 = new Date(customTo).getTime();
+    if (!Number.isNaN(t1) && !Number.isNaN(t2)) {
+      const startMs = Math.min(t1, t2);
+      const endMs = Math.max(t1, t2);
+      const effectiveHours = Math.max(1, (endMs - startMs) / 3_600_000);
+      return { startMs, endMs, effectiveHours };
+    }
+  }
+
+  const fallbackKey: Exclude<TimeRange, 'custom'> = range === 'custom' ? '24h' : range;
+  const hours = RANGE_HOURS[fallbackKey] ?? 24;
+  return {
+    startMs: now.getTime() - hours * 3_600_000,
+    endMs: now.getTime() + 60_000,
+    effectiveHours: hours,
+  };
+}
+
+function getBucketInfo(
+  date: Date,
+  range: TimeRange,
+  effectiveHours: number
+): { key: string; label: string } {
   const { dateStr, timeStr } = getParisDateAndTime(date);
   const [year, month, day] = dateStr.split('-');
   const [hourStr, minStr] = timeStr.split(':');
   const hour = Number(hourStr);
   const minute = Number(minStr);
 
-  if (range === '24h') {
+  const mode =
+    range !== 'custom'
+      ? range
+      : effectiveHours <= 48
+        ? '24h'
+        : effectiveHours <= 24 * 10
+          ? '7d'
+          : effectiveHours <= 24 * 90
+            ? '30d'
+            : '365d';
+
+  if (mode === '24h') {
     const slotMin = minute >= 30 ? '30' : '00';
     return {
       key: `${dateStr}T${hourStr}:${slotMin}`,
-      label: `${hourStr}:${slotMin}`,
+      label: effectiveHours > 24 ? `${day}/${month} ${hourStr}:${slotMin}` : `${hourStr}:${slotMin}`,
     };
   }
 
-  if (range === '7d') {
+  if (mode === '7d') {
     const blockHour = Math.floor(hour / 2) * 2;
     const bh = String(blockHour).padStart(2, '0');
     return {
@@ -57,14 +98,13 @@ function getBucketInfo(date: Date, range: TimeRange): { key: string; label: stri
     };
   }
 
-  if (range === '30d') {
+  if (mode === '30d') {
     return {
       key: dateStr,
       label: `${day}/${month}`,
     };
   }
 
-  // 365d -> par mois si > 45 jours sinon par jour
   return {
     key: `${year}-${month}`,
     label: `${month}/${year}`,
@@ -100,6 +140,8 @@ function evaluateComfort(
 export function buildDashboardPayload(params: {
   env: EnvStatus;
   range: TimeRange;
+  customFrom?: string | null;
+  customTo?: string | null;
   selectedRoomId: string;
   rooms: RoomRecord[];
   devices: DeviceRecord[];
@@ -111,6 +153,8 @@ export function buildDashboardPayload(params: {
   const {
     env,
     range,
+    customFrom = null,
+    customTo = null,
     selectedRoomId,
     rooms,
     devices,
@@ -120,8 +164,7 @@ export function buildDashboardPayload(params: {
     now = new Date(),
   } = params;
 
-  const hours = RANGE_HOURS[range] ?? 24;
-  const cutoffMs = now.getTime() - hours * 3_600_000;
+  const { startMs, endMs, effectiveHours } = resolveTimeWindow(range, customFrom, customTo, now);
 
   const roomMap = new Map<number, RoomRecord>();
   for (const r of rooms) {
@@ -135,7 +178,7 @@ export function buildDashboardPayload(params: {
 
   const periodReadings = readings.filter((r) => {
     const ts = new Date(r.recordedAt).getTime();
-    return ts >= cutoffMs && ts <= now.getTime() + 60_000;
+    return ts >= startMs && ts <= endMs;
   });
 
   // Calcul des coûts par lecture + agrégation par pièce pour roomSummaries (toujours sur toutes les pièces)
@@ -296,7 +339,7 @@ export function buildDashboardPayload(params: {
     const devName = dev.customName || dev.name;
 
     const dt = new Date(r.recordedAt);
-    const { key: bucketKey, label: bucketLabel } = getBucketInfo(dt, range);
+    const { key: bucketKey, label: bucketLabel } = getBucketInfo(dt, range, effectiveHours);
 
     let bucket = buckets.get(bucketKey);
     if (!bucket) {
@@ -547,7 +590,7 @@ export function buildDashboardPayload(params: {
   // Abonnement proratisé sur la période
   const latestTariff = tariffs.length > 0 ? tariffs[tariffs.length - 1] : null;
   const subscriptionCostEur = latestTariff
-    ? round2((hours / 24 / 30.4375) * (latestTariff.monthlySubscriptionEur ?? 0))
+    ? round2((effectiveHours / 24 / 30.4375) * (latestTariff.monthlySubscriptionEur ?? 0))
     : 0;
 
   // Climat moyen
@@ -613,7 +656,7 @@ export function buildDashboardPayload(params: {
       }
 
       const dt = new Date(r.recordedAt);
-      const { key: bucketKey, label: bucketLabel } = getBucketInfo(dt, range);
+      const { key: bucketKey, label: bucketLabel } = getBucketInfo(dt, range, effectiveHours);
       const act = contactActivityBuckets.get(bucketKey) ?? {
         bucket: bucketKey,
         label: bucketLabel,
@@ -689,6 +732,8 @@ export function buildDashboardPayload(params: {
   return {
     env,
     range,
+    customFrom: range === 'custom' ? customFrom : null,
+    customTo: range === 'custom' ? customTo : null,
     selectedRoomId,
     generatedAt: now.toISOString(),
     kpis: {

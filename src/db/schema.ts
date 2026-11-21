@@ -31,6 +31,8 @@ export const devices = pgTable('devices', {
   category: text('category').notNull().default('power'),
   tuyaCategory: text('tuya_category'),
   productName: text('product_name'),
+  ipAddress: text('ip_address'),
+  macAddress: text('mac_address'),
   isOnline: boolean('is_online').default(true).notNull(),
   isMonitored: boolean('is_monitored').default(true).notNull(),
   energyMode: text('energy_mode').default('hybrid').notNull(),

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { getDb, isDatabaseConfigured, type AppDatabase } from '@/db';
 import {
   collectionLogs,
@@ -7,17 +7,19 @@ import {
   rooms,
   tariffPeriods,
 } from '@/db/schema';
-import { buildDashboardPayload } from './aggregator';
+import { buildDashboardPayload, resolveTimeWindow } from './aggregator';
 import { isAppPasswordConfigured } from './auth';
 import { getDemoState, simulateDemoCollection } from './demo-store';
 import { computeHybridEnergyKwh, normalizeTariffTimeline } from './tariff-engine';
 import {
   autoDetectDpConfig,
   extractMetricsFromStatus,
+  fetchBatchFactoryInfos,
   fetchBatchStatuses,
   fetchDeviceSpecification,
   fetchTuyaDevices,
   fetchTuyaRoomMapping,
+  formatMacAddress,
   getTuyaConfig,
 } from './tuya-client';
 import type {
@@ -38,7 +40,7 @@ import type {
   TimeRange,
 } from '@/types';
 
-const RANGE_HOURS: Record<TimeRange, number> = {
+const RANGE_HOURS: Record<Exclude<TimeRange, 'custom'>, number> = {
   '24h': 24,
   '7d': 24 * 7,
   '30d': 24 * 30,
@@ -82,6 +84,8 @@ function mapDbDevice(row: typeof devices.$inferSelect): DeviceRecord {
     category: (row.category as DeviceCategory) || 'power',
     tuyaCategory: row.tuyaCategory,
     productName: row.productName,
+    ipAddress: row.ipAddress,
+    macAddress: row.macAddress,
     isOnline: row.isOnline,
     isMonitored: row.isMonitored,
     energyMode: (row.energyMode as EnergyMode) || 'hybrid',
@@ -170,6 +174,8 @@ async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
           "category" text DEFAULT 'power' NOT NULL,
           "tuya_category" text,
           "product_name" text,
+          "ip_address" text,
+          "mac_address" text,
           "is_online" boolean DEFAULT true NOT NULL,
           "is_monitored" boolean DEFAULT true NOT NULL,
           "energy_mode" text DEFAULT 'hybrid' NOT NULL,
@@ -187,6 +193,12 @@ async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
       `);
       await db.execute(sql`
         ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "last_contact_open" boolean
+      `);
+      await db.execute(sql`
+        ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "ip_address" text
+      `);
+      await db.execute(sql`
+        ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "mac_address" text
       `);
       await db.execute(sql`
         CREATE TABLE IF NOT EXISTS "metric_readings" (
@@ -365,7 +377,9 @@ async function seedDefaultDataIfEmpty(db: AppDatabase): Promise<void> {
 
 export async function getDashboardData(
   range: TimeRange = '24h',
-  selectedRoomId = 'all'
+  selectedRoomId = 'all',
+  customFrom: string | null = null,
+  customTo: string | null = null
 ): Promise<DashboardPayload> {
   const env = getEnvStatus();
   const db = getDb();
@@ -375,6 +389,8 @@ export async function getDashboardData(
     return buildDashboardPayload({
       env,
       range,
+      customFrom,
+      customTo,
       selectedRoomId,
       rooms: state.rooms,
       devices: state.devices,
@@ -386,8 +402,10 @@ export async function getDashboardData(
 
   await seedDefaultDataIfEmpty(db);
 
-  const hours = RANGE_HOURS[range] ?? 24;
-  const cutoff = new Date(Date.now() - hours * 3_600_000);
+  const now = new Date();
+  const { startMs, endMs } = resolveTimeWindow(range, customFrom, customTo, now);
+  const startDate = new Date(startMs);
+  const endDate = new Date(endMs);
 
   const [roomRows, deviceRows, readingRows, tariffRows, logRows] = await Promise.all([
     db.select().from(rooms).orderBy(asc(rooms.id)),
@@ -395,7 +413,14 @@ export async function getDashboardData(
     db
       .select()
       .from(metricReadings)
-      .where(gte(metricReadings.recordedAt, cutoff))
+      .where(
+        range === 'custom'
+          ? and(
+              gte(metricReadings.recordedAt, startDate),
+              lte(metricReadings.recordedAt, endDate)
+            )
+          : gte(metricReadings.recordedAt, startDate)
+      )
       .orderBy(asc(metricReadings.recordedAt)),
     db.select().from(tariffPeriods).orderBy(asc(tariffPeriods.startDate)),
     db.select().from(collectionLogs).orderBy(desc(collectionLogs.executedAt)).limit(20),
@@ -404,12 +429,15 @@ export async function getDashboardData(
   return buildDashboardPayload({
     env,
     range,
+    customFrom,
+    customTo,
     selectedRoomId,
     rooms: roomRows.map(mapDbRoom),
     devices: deviceRows.map(mapDbDevice),
     readings: readingRows.map(mapDbReading),
     tariffs: normalizeTariffTimeline(tariffRows.map(mapDbTariff)),
     logs: logRows.map(mapDbLog),
+    now,
   });
 }
 
@@ -439,9 +467,10 @@ export async function syncTuyaDevices(): Promise<{
 
   const rawDevices = await fetchTuyaDevices();
   const deviceIds = rawDevices.map((d) => d.id);
-  const [statusMap, roomMapping] = await Promise.all([
+  const [statusMap, roomMapping, factoryInfoMap] = await Promise.all([
     fetchBatchStatuses(deviceIds).catch(() => new Map<string, RawDpStatus[]>()),
     fetchTuyaRoomMapping(rawDevices),
+    fetchBatchFactoryInfos(deviceIds),
   ]);
   const now = new Date();
 
@@ -482,12 +511,17 @@ export async function syncTuyaDevices(): Promise<{
         ? (roomNameToId.get(tuyaRoomName.trim().toLowerCase()) ?? null)
         : null;
       const existing = state.devices.find((d) => d.id === raw.id);
+      const nextIp = raw.ip?.trim() || null;
+      const nextMac =
+        factoryInfoMap.get(raw.id)?.mac ?? formatMacAddress(raw.mac) ?? existing?.macAddress ?? null;
       if (existing) {
         existing.name = raw.name;
         if (mappedRoomId !== null) existing.roomId = mappedRoomId;
         existing.isOnline = raw.online ?? true;
         existing.tuyaCategory = raw.category;
         existing.productName = raw.product_name ?? null;
+        existing.ipAddress = nextIp ?? existing.ipAddress;
+        existing.macAddress = nextMac;
         existing.lastRawStatus = rawStatus;
         if (!existing.dpConfig?.contact || !existing.dpConfig?.battery) {
           const detected = autoDetectDpConfig(rawStatus, {}, raw.category);
@@ -520,6 +554,8 @@ export async function syncTuyaDevices(): Promise<{
           category,
           tuyaCategory: raw.category,
           productName: raw.product_name ?? null,
+          ipAddress: nextIp,
+          macAddress: nextMac,
           isOnline: raw.online ?? true,
           isMonitored: true,
           energyMode: 'hybrid',
@@ -589,6 +625,9 @@ export async function syncTuyaDevices(): Promise<{
   for (const raw of rawDevices) {
     const rawStatus = statusMap.get(raw.id) ?? raw.status ?? [];
     const existing = existingMap.get(raw.id);
+    const nextIp = raw.ip?.trim() || existing?.ipAddress || null;
+    const nextMac =
+      factoryInfoMap.get(raw.id)?.mac ?? formatMacAddress(raw.mac) ?? existing?.macAddress ?? null;
     const tuyaRoomName = roomMapping.deviceRoomMap.get(raw.id);
     const tuyaRoomId = tuyaRoomName
       ? (roomNameToId.get(tuyaRoomName.trim().toLowerCase()) ?? null)
@@ -625,6 +664,8 @@ export async function syncTuyaDevices(): Promise<{
           category: nextCategory,
           tuyaCategory: raw.category,
           productName: raw.product_name ?? null,
+          ipAddress: nextIp,
+          macAddress: nextMac,
           isOnline: raw.online ?? true,
           dpConfig,
           lastRawStatus: rawStatus,
@@ -658,6 +699,8 @@ export async function syncTuyaDevices(): Promise<{
         category,
         tuyaCategory: raw.category,
         productName: raw.product_name ?? null,
+        ipAddress: nextIp,
+        macAddress: nextMac,
         isOnline: raw.online ?? true,
         isMonitored: true,
         energyMode: 'hybrid',
@@ -741,13 +784,20 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
     // Tuya configuré sans Postgres : on collecte en mémoire dans demo-store
     const state = getDemoState();
     const rawDevices = await fetchTuyaDevices();
-    const statusMap = await fetchBatchStatuses(rawDevices.map((d) => d.id));
+    const deviceIds = rawDevices.map((d) => d.id);
+    const [statusMap, factoryInfoMap] = await Promise.all([
+      fetchBatchStatuses(deviceIds),
+      fetchBatchFactoryInfos(deviceIds),
+    ]);
     const now = new Date();
     let inserted = 0;
 
     for (const raw of rawDevices) {
       const rawStatus = statusMap.get(raw.id) ?? raw.status ?? [];
       let dev = state.devices.find((d) => d.id === raw.id);
+      const nextIp = raw.ip?.trim() || dev?.ipAddress || null;
+      const nextMac =
+        factoryInfoMap.get(raw.id)?.mac ?? formatMacAddress(raw.mac) ?? dev?.macAddress ?? null;
       if (!dev) {
         const spec = await fetchDeviceSpecification(raw.id);
         const detected = autoDetectDpConfig(rawStatus, spec, raw.category);
@@ -759,6 +809,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           category: detected.category,
           tuyaCategory: raw.category,
           productName: raw.product_name ?? null,
+          ipAddress: nextIp,
+          macAddress: nextMac,
           isOnline: raw.online ?? true,
           isMonitored: true,
           energyMode: 'hybrid',
@@ -805,6 +857,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       });
 
       dev.lastRawStatus = rawStatus;
+      dev.ipAddress = nextIp;
+      dev.macAddress = nextMac;
       dev.lastSeenAt = now.toISOString();
       dev.lastPowerW = metrics.powerW;
       dev.lastVoltageV = metrics.voltageV;

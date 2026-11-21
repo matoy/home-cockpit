@@ -6,7 +6,7 @@ export type EnergySource = 'add_ele' | 'integration';
 
 export type TariffMode = 'BASE' | 'HP_HC';
 
-export type TimeRange = '24h' | '7d' | '30d' | '365d';
+export type TimeRange = '24h' | '7d' | '30d' | '365d' | 'custom';
 
 export interface DpMappingField {
   code: string;
@@ -54,6 +54,8 @@ export interface DeviceRecord {
   category: DeviceCategory;
   tuyaCategory: string | null;
   productName: string | null;
+  ipAddress: string | null;
+  macAddress: string | null;
   isOnline: boolean;
   isMonitored: boolean;
   energyMode: EnergyMode;
@@ -221,6 +223,8 @@ export interface ContactsPayload {
 export interface DashboardPayload {
   env: EnvStatus;
   range: TimeRange;
+  customFrom: string | null;
+  customTo: string | null;
   selectedRoomId: string;
   generatedAt: string;
   kpis: {

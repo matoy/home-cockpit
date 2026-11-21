@@ -93,7 +93,8 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
     let hpKwh = 0;
     let exactFromBuckets = false;
 
-    if ((data.range === '24h' || data.range === '7d') && data.timeSeries.length > 0) {
+    const hasHourlyBuckets = data.timeSeries.some((pt) => pt.bucket.includes('T'));
+    if (hasHourlyBuckets && data.timeSeries.length > 0) {
       exactFromBuckets = true;
       for (const pt of data.timeSeries) {
         const timePart = pt.bucket.includes('T') ? pt.bucket.split('T')[1].slice(0, 5) : null;
