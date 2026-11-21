@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import {
   RefreshCw,
   Plus,
@@ -46,6 +46,34 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
   const [inspectDevice, setInspectDevice] = useState<DeviceRecord | null>(null);
   const [dpDraft, setDpDraft] = useState<DpConfig>({});
   const [savingDp, setSavingDp] = useState(false);
+
+  // Filtre des appareils par pièce ('all' | 'unassigned' | '<roomId>')
+  const [roomFilter, setRoomFilter] = useState<string>('all');
+
+  const { unassignedCount, roomDeviceCounts, filteredDevices } = useMemo(() => {
+    const counts = new Map<number, number>();
+    let unassigned = 0;
+
+    for (const dev of data.devices) {
+      if (dev.roomId === null) {
+        unassigned += 1;
+      } else {
+        counts.set(dev.roomId, (counts.get(dev.roomId) ?? 0) + 1);
+      }
+    }
+
+    const filtered = data.devices.filter((dev) => {
+      if (roomFilter === 'all') return true;
+      if (roomFilter === 'unassigned') return dev.roomId === null;
+      return String(dev.roomId) === roomFilter;
+    });
+
+    return {
+      unassignedCount: unassigned,
+      roomDeviceCounts: counts,
+      filteredDevices: filtered,
+    };
+  }, [data.devices, roomFilter]);
 
   async function handleSyncTuya() {
     setSyncing(true);
@@ -254,49 +282,126 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
         </form>
 
         <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-          <h3 className="text-sm font-semibold text-white mb-3">Pièces configurées ({data.rooms.length})</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-white">Pièces configurées ({data.rooms.length})</h3>
+            <span className="text-[11px] text-slate-400">Cliquez sur une pièce pour filtrer les appareils</span>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {data.rooms.map((r) => (
-              <div
-                key={r.id}
-                className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-3.5 py-2.5"
-              >
-                <div className="flex items-center gap-2.5">
-                  <span
-                    className="h-3.5 w-3.5 rounded-full shrink-0"
-                    style={{ backgroundColor: r.color }}
-                  />
-                  <div>
-                    <div className="text-xs font-semibold text-white">{r.name}</div>
-                    <div className="text-[11px] text-slate-400">
-                      Cibles : {r.targetTempMin}–{r.targetTempMax}°C · {r.targetHumidityMin}–
-                      {r.targetHumidityMax}%
+            {data.rooms.map((r) => {
+              const isSelected = roomFilter === String(r.id);
+              const count = roomDeviceCounts.get(r.id) ?? 0;
+              return (
+                <div
+                  key={r.id}
+                  onClick={() => setRoomFilter(isSelected ? 'all' : String(r.id))}
+                  className={`cursor-pointer flex items-center justify-between rounded-xl border px-3.5 py-2.5 transition ${
+                    isSelected
+                      ? 'border-indigo-500 bg-indigo-950/30 ring-1 ring-indigo-500/40'
+                      : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className="h-3.5 w-3.5 rounded-full shrink-0"
+                      style={{ backgroundColor: r.color }}
+                    />
+                    <div>
+                      <div className="text-xs font-semibold text-white flex items-center gap-2">
+                        {r.name}
+                        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-normal text-slate-300">
+                          {count}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        Cibles : {r.targetTempMin}–{r.targetTempMax}°C · {r.targetHumidityMin}–
+                        {r.targetHumidityMax}%
+                      </div>
                     </div>
                   </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isSelected) setRoomFilter('all');
+                      void handleDeleteRoom(r.id);
+                    }}
+                    className="rounded-lg p-1.5 text-slate-500 hover:bg-rose-500/15 hover:text-rose-400"
+                    title="Supprimer la pièce"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleDeleteRoom(r.id)}
-                  className="rounded-lg p-1.5 text-slate-500 hover:bg-rose-500/15 hover:text-rose-400"
-                  title="Supprimer la pièce"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
 
       {/* Liste des appareils */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-white">
-              Appareils Tuya détectés ({data.devices.length})
-            </h3>
-            <p className="text-xs text-slate-400">
-              Associez chaque appareil à une pièce et choisissez la méthode de calcul des kWh
-            </p>
+        <div className="px-5 py-4 border-b border-slate-800 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-white">
+                Appareils Tuya détectés ({filteredDevices.length}
+                {roomFilter !== 'all' ? ` / ${data.devices.length}` : ''})
+              </h3>
+              <p className="text-xs text-slate-400">
+                Associez chaque appareil à une pièce et choisissez la méthode de calcul des kWh
+              </p>
+            </div>
+          </div>
+
+          {/* Barre de filtres par pièce */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setRoomFilter('all')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                roomFilter === 'all'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              Tous ({data.devices.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setRoomFilter('unassigned')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition border ${
+                roomFilter === 'unassigned'
+                  ? 'border-amber-500 bg-amber-500/20 text-amber-200'
+                  : unassignedCount > 0
+                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                    : 'border-transparent bg-slate-800/80 text-slate-400 hover:bg-slate-800'
+              }`}
+            >
+              Sans pièce ({unassignedCount})
+            </button>
+
+            {data.rooms.map((r) => {
+              const key = String(r.id);
+              const active = roomFilter === key;
+              const count = roomDeviceCounts.get(r.id) ?? 0;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => setRoomFilter(key)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition border ${
+                    active
+                      ? 'border-indigo-500 bg-indigo-600/25 text-white'
+                      : 'border-transparent bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <span
+                    className="h-2 w-2 rounded-full shrink-0"
+                    style={{ backgroundColor: r.color }}
+                  />
+                  {r.name} ({count})
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -314,7 +419,14 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80">
-              {data.devices.map((dev) => (
+              {filteredDevices.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-xs text-slate-500">
+                    Aucun appareil dans ce filtre.
+                  </td>
+                </tr>
+              ) : (
+                filteredDevices.map((dev) => (
                 <tr key={dev.id} className="hover:bg-slate-800/30">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -417,7 +529,8 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                     </button>
                   </td>
                 </tr>
-              ))}
+                ))
+              )}
             </tbody>
           </table>
         </div>
