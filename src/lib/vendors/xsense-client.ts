@@ -456,9 +456,27 @@ async function callXSenseApi(params: {
   }
   const reCode = toNum(json.reCode);
   if (reCode !== null && reCode !== 200 && reCode !== 0) {
-    throw new Error(`Erreur API X-Sense (${reCode}) : ${toStr(json.reMsg) ?? 'requête refusée'}`);
+    const errCode = toStr(json.errCode);
+    const reMsg = toStr(json.reMsg) ?? 'requête refusée';
+    const isSessionError =
+      errCode === '10000008' ||
+      errCode === '10000020' ||
+      /another device is logged in|session|expired|token/i.test(reMsg);
+    if (isSessionError) {
+      throw new XSenseSessionExpiredError(
+        `Erreur API X-Sense (${reCode}) : ${reMsg} — X-Sense n’autorise qu’une session active par compte (utilisez un compte invité/partagé dédié dans l’app X-Sense).`
+      );
+    }
+    throw new Error(`Erreur API X-Sense (${reCode}) : ${reMsg}`);
   }
   return json.reData ?? json;
+}
+
+class XSenseSessionExpiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'XSenseSessionExpiredError';
+  }
 }
 
 // ---------- AWS IoT SigV4 GET (Lecture seule des Shadows X-Sense) ----------
@@ -856,20 +874,7 @@ export async function fetchXSenseInventoryWithSession(
     );
   }
 
-  let session = cachedSession ?? null;
-  let sessionRenewed = false;
-
-  const needNewLogin = !session || (!session.accessToken && !session.refreshToken);
-  if (!needNewLogin && session && session.expiresAtMs - Date.now() < 120_000) {
-    try {
-      session = await refreshCognitoSession(session);
-      sessionRenewed = true;
-    } catch {
-      session = null;
-    }
-  }
-
-  if (!session) {
+  async function createFreshSession(): Promise<XSenseSession> {
     const appInfo = asRecord(
       await callXSenseApi({
         apiUrl: cfg.apiUrl,
@@ -888,7 +893,7 @@ export async function fetchXSenseInventoryWithSession(
       : DEFAULT_CLIENT_SECRET;
 
     if (cfg.refreshToken && clientId) {
-      session = await refreshCognitoSession({
+      return refreshCognitoSession({
         idToken: '',
         accessToken: '',
         refreshToken: cfg.refreshToken,
@@ -899,9 +904,9 @@ export async function fetchXSenseInventoryWithSession(
         region,
         clientSecret,
       });
-      sessionRenewed = true;
-    } else if (userPoolId && clientId && cfg.email && cfg.password) {
-      session = await authenticateCognitoSrp({
+    }
+    if (userPoolId && clientId && cfg.email && cfg.password) {
+      return authenticateCognitoSrp({
         region,
         userPoolId,
         clientId,
@@ -909,24 +914,61 @@ export async function fetchXSenseInventoryWithSession(
         password: cfg.password,
         clientSecret,
       });
+    }
+    throw new Error(
+      'Impossible de récupérer les paramètres Cognito X-Sense ou identifiants incomplets.'
+    );
+  }
+
+  let session = cachedSession ?? null;
+  let sessionRenewed = false;
+  const usedCachedSession = Boolean(session && (session.accessToken || session.refreshToken));
+
+  const needNewLogin = !session || (!session.accessToken && !session.refreshToken);
+  if (!needNewLogin && session && session.expiresAtMs - Date.now() < 120_000) {
+    try {
+      session = await refreshCognitoSession(session);
       sessionRenewed = true;
-    } else {
-      throw new Error(
-        'Impossible de récupérer les paramètres Cognito X-Sense ou identifiants incomplets.'
-      );
+    } catch {
+      session = null;
     }
   }
 
-  const secret = session.clientSecret ?? DEFAULT_CLIENT_SECRET;
-  const housesData = await callXSenseApi({
-    apiUrl: cfg.apiUrl,
-    bizCode: '102007',
-    payload: {
-      utctimestamp: '0',
-    },
-    accessToken: session.accessToken,
-    clientSecret: secret,
-  });
+  if (!session) {
+    session = await createFreshSession();
+    sessionRenewed = true;
+  }
+
+  let secret = session.clientSecret ?? DEFAULT_CLIENT_SECRET;
+  let housesData: unknown;
+  try {
+    housesData = await callXSenseApi({
+      apiUrl: cfg.apiUrl,
+      bizCode: '102007',
+      payload: {
+        utctimestamp: '0',
+      },
+      accessToken: session.accessToken,
+      clientSecret: secret,
+    });
+  } catch (err) {
+    if (usedCachedSession && err instanceof XSenseSessionExpiredError) {
+      session = await createFreshSession();
+      sessionRenewed = true;
+      secret = session.clientSecret ?? DEFAULT_CLIENT_SECRET;
+      housesData = await callXSenseApi({
+        apiUrl: cfg.apiUrl,
+        bizCode: '102007',
+        payload: {
+          utctimestamp: '0',
+        },
+        accessToken: session.accessToken,
+        clientSecret: secret,
+      });
+    } else {
+      throw err;
+    }
+  }
 
   const housesArr = Array.isArray(housesData)
     ? housesData
