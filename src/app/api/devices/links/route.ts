@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
+  bulkMergeDevices,
+  bulkToggleDeviceSystemTag,
   mergeDevices,
   toggleDeviceSystemTag,
   unlinkDeviceVendor,
@@ -11,10 +13,12 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       action?: string;
       deviceId?: string;
+      deviceIds?: unknown;
       vendor?: string;
       enabled?: boolean;
       targetDeviceId?: string;
       sourceDeviceId?: string;
+      pairs?: unknown;
     };
 
     if (body.action === 'toggle_system') {
@@ -35,6 +39,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ device });
     }
 
+    if (body.action === 'bulk_toggle_system') {
+      const deviceIds = Array.isArray(body.deviceIds)
+        ? body.deviceIds
+            .filter((id): id is string => typeof id === 'string')
+            .map((id) => id.trim())
+            .filter(Boolean)
+        : [];
+      if (
+        deviceIds.length === 0 ||
+        !isValidVendorId(body.vendor) ||
+        typeof body.enabled !== 'boolean'
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'Paramètres invalides pour bulk_toggle_system (deviceIds, vendor et enabled requis).',
+          },
+          { status: 400 }
+        );
+      }
+      const result = await bulkToggleDeviceSystemTag({
+        deviceIds,
+        vendor: body.vendor,
+        enabled: body.enabled,
+      });
+      return NextResponse.json(result);
+    }
+
     if (body.action === 'merge') {
       if (!body.targetDeviceId || !body.sourceDeviceId) {
         return NextResponse.json(
@@ -53,6 +85,34 @@ export async function POST(request: Request) {
         );
       }
       return NextResponse.json({ device });
+    }
+
+    if (body.action === 'bulk_merge') {
+      const pairs = Array.isArray(body.pairs)
+        ? body.pairs
+            .filter(
+              (item): item is { targetDeviceId: string; sourceDeviceId: string } =>
+                Boolean(
+                  item &&
+                    typeof item === 'object' &&
+                    typeof (item as { targetDeviceId?: unknown }).targetDeviceId === 'string' &&
+                    typeof (item as { sourceDeviceId?: unknown }).sourceDeviceId === 'string'
+                )
+            )
+            .map((item) => ({
+              targetDeviceId: item.targetDeviceId.trim(),
+              sourceDeviceId: item.sourceDeviceId.trim(),
+            }))
+            .filter((item) => item.targetDeviceId && item.sourceDeviceId)
+        : [];
+      if (pairs.length === 0) {
+        return NextResponse.json(
+          { error: 'La liste pairs (targetDeviceId, sourceDeviceId) est requise.' },
+          { status: 400 }
+        );
+      }
+      const result = await bulkMergeDevices({ pairs });
+      return NextResponse.json(result);
     }
 
     return NextResponse.json({ error: 'Action non reconnue.' }, { status: 400 });

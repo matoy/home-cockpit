@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   RefreshCw,
   Plus,
@@ -133,6 +133,17 @@ export function DevicesRoomsTab({
   const [syncMessage, setSyncMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [dismissedDuplicates, setDismissedDuplicates] = useState<string[]>([]);
   const [mergingId, setMergingId] = useState<string | null>(null);
+  const [bulkMergingAll, setBulkMergingAll] = useState(false);
+
+  // Sélection et liaison multi-systèmes en masse
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
+  const [bulkPanelOpen, setBulkPanelOpen] = useState(false);
+  const [bulkVendor, setBulkVendor] = useState<VendorId>('google_home');
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkFeedback, setBulkFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+  const lastSelectedIdRef = useRef<string | null>(null);
+  const lastShiftKeyRef = useRef<boolean>(false);
+  const selectAllCheckboxRef = useRef<HTMLInputElement | null>(null);
 
   // Inspecteur DP & réseau local (IP / MAC)
   const [inspectDevice, setInspectDevice] = useState<DeviceRecord | null>(null);
@@ -419,6 +430,189 @@ export function DevicesRoomsTab({
       filteredDevices: filtered,
     };
   }, [data.devices, data.rooms, roomFilter, systemFilter, searchQuery]);
+
+  const selectedDeviceIdSet = useMemo(
+    () => new Set(selectedDeviceIds),
+    [selectedDeviceIds]
+  );
+
+  useEffect(() => {
+    const validIds = new Set(data.devices.map((d) => d.id));
+    setSelectedDeviceIds((prev) => {
+      const next = prev.filter((id) => validIds.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [data.devices]);
+
+  const filteredDeviceIds = useMemo(
+    () => filteredDevices.map((d) => d.id),
+    [filteredDevices]
+  );
+
+  const selectedFilteredCount = useMemo(
+    () => filteredDeviceIds.filter((id) => selectedDeviceIdSet.has(id)).length,
+    [filteredDeviceIds, selectedDeviceIdSet]
+  );
+
+  const allFilteredSelected =
+    filteredDeviceIds.length > 0 && selectedFilteredCount === filteredDeviceIds.length;
+
+  const someFilteredSelected =
+    selectedFilteredCount > 0 && !allFilteredSelected;
+
+  const filteredNotLinkedToBulkVendorIds = useMemo(
+    () =>
+      filteredDevices
+        .filter((d) => !d.systems.includes(bulkVendor))
+        .map((d) => d.id),
+    [filteredDevices, bulkVendor]
+  );
+
+  useEffect(() => {
+    if (selectAllCheckboxRef.current) {
+      selectAllCheckboxRef.current.indeterminate = someFilteredSelected;
+    }
+  }, [someFilteredSelected]);
+
+  const showBulkBar =
+    bulkPanelOpen || selectedDeviceIds.length > 0 || bulkFeedback !== null;
+
+  function toggleSelectDevice(deviceId: string, shiftKey = false) {
+    setBulkFeedback(null);
+    setSelectedDeviceIds((prev) => {
+      const prevSet = new Set(prev);
+      const targetChecked = !prevSet.has(deviceId);
+
+      if (shiftKey && lastSelectedIdRef.current) {
+        const startIdx = filteredDeviceIds.indexOf(lastSelectedIdRef.current);
+        const endIdx = filteredDeviceIds.indexOf(deviceId);
+        if (startIdx !== -1 && endIdx !== -1) {
+          const low = Math.min(startIdx, endIdx);
+          const high = Math.max(startIdx, endIdx);
+          for (let i = low; i <= high; i++) {
+            if (targetChecked) {
+              prevSet.add(filteredDeviceIds[i]);
+            } else {
+              prevSet.delete(filteredDeviceIds[i]);
+            }
+          }
+          return Array.from(prevSet);
+        }
+      }
+
+      if (targetChecked) {
+        prevSet.add(deviceId);
+      } else {
+        prevSet.delete(deviceId);
+      }
+      return Array.from(prevSet);
+    });
+    lastSelectedIdRef.current = deviceId;
+  }
+
+  function handleToggleSelectAllFiltered() {
+    setBulkFeedback(null);
+    setSelectedDeviceIds((prev) => {
+      const filteredSet = new Set(filteredDeviceIds);
+      if (allFilteredSelected) {
+        return prev.filter((id) => !filteredSet.has(id));
+      }
+      return Array.from(new Set([...prev, ...filteredDeviceIds]));
+    });
+  }
+
+  function handleSelectNotLinkedToBulkVendor() {
+    setBulkFeedback(null);
+    setBulkPanelOpen(true);
+    setSelectedDeviceIds(filteredNotLinkedToBulkVendorIds);
+  }
+
+  async function handleBulkSystemAction(enabled: boolean) {
+    if (selectedDeviceIds.length === 0) return;
+    setBulkSaving(true);
+    setBulkFeedback(null);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/devices/links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'bulk_toggle_system',
+          deviceIds: selectedDeviceIds,
+          vendor: bulkVendor,
+          enabled,
+        }),
+      });
+      const json = (await res.json()) as {
+        updatedCount?: number;
+        alreadySetCount?: number;
+        skippedPrimaryCount?: number;
+        message?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        throw new Error(json.error || 'Échec de la mise à jour en masse des systèmes');
+      }
+
+      const updatedCount = json.updatedCount ?? 0;
+      const alreadySetCount = json.alreadySetCount ?? 0;
+      const skippedPrimaryCount = json.skippedPrimaryCount ?? 0;
+      const hasOnlyPrimarySkip =
+        updatedCount === 0 && skippedPrimaryCount > 0 && alreadySetCount === 0;
+      const ok = !hasOnlyPrimarySkip;
+      const text = json.message || 'Liaison multi-systèmes mise à jour.';
+
+      setBulkFeedback({ ok, text });
+      setSyncMessage({ ok, text });
+      if (updatedCount > 0) {
+        await onRefresh();
+        setSelectedDeviceIds([]);
+      }
+    } catch (err) {
+      const text = err instanceof Error ? err.message : 'Erreur liaison en masse';
+      setBulkFeedback({ ok: false, text });
+      setSyncMessage({ ok: false, text });
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
+  async function handleBulkMergeDuplicates() {
+    if (visibleDuplicateCandidates.length === 0) return;
+    setBulkMergingAll(true);
+    setSavingLink(true);
+    setLinkFeedback(null);
+    setSyncMessage(null);
+    try {
+      const pairs = visibleDuplicateCandidates.map((c) => ({
+        targetDeviceId: c.targetDeviceId,
+        sourceDeviceId: c.sourceDeviceId,
+      }));
+      const res = await fetch('/api/devices/links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'bulk_merge', pairs }),
+      });
+      const json = (await res.json()) as {
+        mergedCount?: number;
+        message?: string;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error || 'Échec de la fusion en masse');
+      const ok = (json.mergedCount ?? 0) > 0;
+      const text = json.message || 'Doublons fusionnés sans perte de mesures.';
+      setSyncMessage({ ok, text });
+      setLinkFeedback({ ok, text });
+      await onRefresh();
+    } catch (err) {
+      const text = err instanceof Error ? err.message : 'Erreur fusion en masse';
+      setSyncMessage({ ok: false, text });
+      setLinkFeedback({ ok: false, text });
+    } finally {
+      setBulkMergingAll(false);
+      setSavingLink(false);
+    }
+  }
 
   async function handleSyncTuya() {
     setSyncingTuya(true);
@@ -1152,9 +1346,24 @@ export function DevicesRoomsTab({
               <GitMerge className="h-4 w-4 text-amber-400 shrink-0" />
               Doublons potentiels multi-systèmes détectés ({visibleDuplicateCandidates.length})
             </div>
-            <span className="text-[11px] text-amber-300/80">
-              Fusionnez en 1 clic pour combiner les badges sur une seule ligne et conserver les mesures principales (Tuya / Kasa).
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] text-amber-300/80">
+                Fusionnez en 1 clic pour combiner les badges sur une seule ligne et conserver les mesures principales (Tuya / Kasa).
+              </span>
+              {visibleDuplicateCandidates.length > 1 && (
+                <button
+                  type="button"
+                  disabled={bulkMergingAll || mergingId !== null}
+                  onClick={() => void handleBulkMergeDuplicates()}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 px-3 py-1.5 text-[11px] font-semibold text-slate-950 transition shrink-0"
+                >
+                  <GitMerge className="h-3.5 w-3.5" />
+                  {bulkMergingAll
+                    ? 'Fusion en cours...'
+                    : `Tout fusionner (${visibleDuplicateCandidates.length})`}
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -1186,7 +1395,7 @@ export function DevicesRoomsTab({
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     type="button"
-                    disabled={mergingId === cand.sourceDeviceId}
+                    disabled={mergingId === cand.sourceDeviceId || bulkMergingAll}
                     onClick={() => void handleMergeDevices(cand.targetDeviceId, cand.sourceDeviceId)}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 px-3 py-1.5 text-[11px] font-semibold text-slate-950 transition"
                   >
@@ -1248,6 +1457,31 @@ export function DevicesRoomsTab({
                   </button>
                 )}
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (bulkPanelOpen && selectedDeviceIds.length === 0) {
+                    setBulkPanelOpen(false);
+                    setBulkFeedback(null);
+                  } else {
+                    setBulkPanelOpen(true);
+                  }
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition shrink-0 ${
+                  bulkPanelOpen || selectedDeviceIds.length > 0
+                    ? 'border-indigo-500/50 bg-indigo-500/20 text-indigo-200 hover:bg-indigo-500/30'
+                    : 'border-slate-700 bg-slate-800/80 text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                <Link2 className="h-3.5 w-3.5" />
+                Lier en masse
+                {selectedDeviceIds.length > 0 && (
+                  <span className="rounded-full bg-indigo-500 px-1.5 py-0.2 text-[10px] font-semibold text-white">
+                    {selectedDeviceIds.length}
+                  </span>
+                )}
+              </button>
 
               <button
                 type="button"
@@ -1383,6 +1617,154 @@ export function DevicesRoomsTab({
               </button>
             )}
           </div>
+
+          {showBulkBar && (
+            <div className="rounded-xl border border-indigo-500/35 bg-indigo-500/10 p-3 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="inline-flex items-center gap-1.5 font-semibold text-indigo-200">
+                    <Link2 className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                    Liaison multi-systèmes en masse
+                  </span>
+                  <span className="rounded-full bg-indigo-500/25 px-2 py-0.5 text-[11px] font-medium text-indigo-100">
+                    {selectedDeviceIds.length} appareil(s) sélectionné(s)
+                  </span>
+                  {selectedDeviceIds.length > selectedFilteredCount && (
+                    <span className="text-[11px] text-amber-300/90">
+                      (dont {selectedDeviceIds.length - selectedFilteredCount} hors filtre actif)
+                    </span>
+                  )}
+                  <span className="text-[11px] text-slate-400 hidden sm:inline">
+                    Maj + clic pour une plage
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={bulkSaving || filteredDevices.length === 0}
+                    onClick={() => {
+                      setBulkFeedback(null);
+                      setSelectedDeviceIds((prev) =>
+                        Array.from(new Set([...prev, ...filteredDeviceIds]))
+                      );
+                    }}
+                    className="rounded-lg border border-slate-700 bg-slate-900/90 hover:bg-slate-800 disabled:opacity-40 px-2.5 py-1 text-[11px] text-slate-200 transition"
+                  >
+                    Tous les affichés ({filteredDevices.length})
+                  </button>
+                  <button
+                    type="button"
+                    disabled={bulkSaving || filteredNotLinkedToBulkVendorIds.length === 0}
+                    onClick={handleSelectNotLinkedToBulkVendor}
+                    className="rounded-lg border border-slate-700 bg-slate-900/90 hover:bg-slate-800 disabled:opacity-40 px-2.5 py-1 text-[11px] text-slate-200 transition"
+                  >
+                    Non liés à {VENDOR_REGISTRY[bulkVendor].label} ({filteredNotLinkedToBulkVendorIds.length})
+                  </button>
+                  {selectedDeviceIds.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={bulkSaving}
+                      onClick={() => {
+                        setSelectedDeviceIds([]);
+                        setBulkFeedback(null);
+                      }}
+                      className="rounded-lg border border-slate-700 bg-slate-900/90 hover:bg-slate-800 disabled:opacity-40 px-2.5 py-1 text-[11px] text-slate-300 transition"
+                    >
+                      Effacer
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <label
+                  htmlFor="bulk-vendor-select"
+                  className="text-[11px] font-medium text-slate-300"
+                >
+                  Système cible :
+                </label>
+                <select
+                  id="bulk-vendor-select"
+                  value={bulkVendor}
+                  disabled={bulkSaving}
+                  onChange={(e) => {
+                    setBulkVendor(e.target.value as VendorId);
+                    setBulkFeedback(null);
+                  }}
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                >
+                  {VENDOR_IDS.map((vId) => (
+                    <option key={vId} value={vId}>
+                      {VENDOR_REGISTRY[vId].label}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  disabled={bulkSaving || selectedDeviceIds.length === 0}
+                  onClick={() => void handleBulkSystemAction(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 px-3 py-1.5 text-xs font-medium text-white transition"
+                >
+                  <Link2 className="h-3.5 w-3.5" />
+                  {bulkSaving ? 'Application...' : 'Lier au système'}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={bulkSaving || selectedDeviceIds.length === 0}
+                  onClick={() => void handleBulkSystemAction(false)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:border-rose-500/40 hover:bg-rose-500/15 hover:text-rose-200 disabled:opacity-40 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
+                >
+                  <Unlink className="h-3.5 w-3.5" />
+                  Délier du système
+                </button>
+
+                <button
+                  type="button"
+                  disabled={bulkSaving}
+                  onClick={() => {
+                    setBulkPanelOpen(false);
+                    setSelectedDeviceIds([]);
+                    setBulkFeedback(null);
+                  }}
+                  title="Fermer la barre de liaison en masse"
+                  aria-label="Fermer la barre de liaison en masse"
+                  className="ml-auto rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {bulkFeedback && (
+                <div
+                  className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-xs ${
+                    bulkFeedback.ok
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                      : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {bulkFeedback.ok ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    )}
+                    <span>{bulkFeedback.text}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setBulkFeedback(null)}
+                    aria-label="Fermer le message"
+                    className="rounded p-0.5 opacity-70 hover:opacity-100"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Vue Desktop sans scrollbar horizontale (table-fixed 100 %) */}
@@ -1390,7 +1772,25 @@ export function DevicesRoomsTab({
           <table className="w-full table-fixed text-left text-xs">
             <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider text-[10.5px]">
               <tr>
-                <th className="w-[21%] px-2.5 py-2.5">Appareil / Nom affiché</th>
+                <th className="w-[21%] px-2.5 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={selectAllCheckboxRef}
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      disabled={filteredDevices.length === 0 || bulkSaving}
+                      onChange={handleToggleSelectAllFiltered}
+                      aria-label="Tout sélectionner parmi les appareils affichés"
+                      title={
+                        allFilteredSelected
+                          ? 'Désélectionner tous les appareils affichés'
+                          : 'Sélectionner tous les appareils affichés'
+                      }
+                      className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500 shrink-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                    />
+                    <span>Appareil / Nom affiché</span>
+                  </div>
+                </th>
                 <th className="w-[13%] px-2.5 py-2.5">Système</th>
                 <th className="w-[12%] px-2.5 py-2.5">IP / MAC</th>
                 <th className="w-[13%] px-2.5 py-2.5">Pièce</th>
@@ -1434,10 +1834,34 @@ export function DevicesRoomsTab({
               ) : (
                 filteredDevices.map((dev) => {
                   const isManual = dev.id.startsWith('manual_');
+                  const isSelected = selectedDeviceIdSet.has(dev.id);
                   return (
-                    <tr key={dev.id} className="hover:bg-slate-800/30 align-top">
+                    <tr
+                      key={dev.id}
+                      className={`align-top transition-colors ${
+                        isSelected
+                          ? 'bg-indigo-500/10 hover:bg-indigo-500/15'
+                          : 'hover:bg-slate-800/30'
+                      }`}
+                    >
                       <td className="px-2.5 py-2.5 min-w-0">
                         <div className="flex items-start gap-1.5 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            disabled={bulkSaving}
+                            onClick={(e) => {
+                              lastShiftKeyRef.current = e.shiftKey;
+                            }}
+                            onChange={() => {
+                              const shift = lastShiftKeyRef.current;
+                              lastShiftKeyRef.current = false;
+                              toggleSelectDevice(dev.id, shift);
+                            }}
+                            aria-label={`Sélectionner ${dev.customName || dev.name}`}
+                            title="Sélectionner pour lier en masse (Maj + clic pour une plage)"
+                            className="mt-0.5 h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500 shrink-0 cursor-pointer"
+                          />
                           {dev.isOnline ? (
                             <Wifi className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
                           ) : (
@@ -1759,10 +2183,31 @@ export function DevicesRoomsTab({
           ) : (
             filteredDevices.map((dev) => {
               const isManual = dev.id.startsWith('manual_');
+              const isSelected = selectedDeviceIdSet.has(dev.id);
               return (
-                <div key={dev.id} className="p-4 space-y-3 text-xs">
+                <div
+                  key={dev.id}
+                  className={`p-4 space-y-3 text-xs transition-colors ${
+                    isSelected ? 'bg-indigo-500/10' : ''
+                  }`}
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-start gap-2 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        disabled={bulkSaving}
+                        onClick={(e) => {
+                          lastShiftKeyRef.current = e.shiftKey;
+                        }}
+                        onChange={() => {
+                          const shift = lastShiftKeyRef.current;
+                          lastShiftKeyRef.current = false;
+                          toggleSelectDevice(dev.id, shift);
+                        }}
+                        aria-label={`Sélectionner ${dev.customName || dev.name}`}
+                        className="mt-0.5 h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500 shrink-0 cursor-pointer"
+                      />
                       {dev.isOnline ? (
                         <Wifi className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
                       ) : (

@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { and, asc, desc, eq, gte, isNull, lte, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, notInArray, sql } from 'drizzle-orm';
 import { getDb, isDatabaseConfigured, type AppDatabase } from '@/db';
 import {
   automations,
@@ -2691,6 +2691,340 @@ export async function unlinkDeviceVendor(params: {
     vendor: params.vendor,
     enabled: false,
   });
+}
+
+export interface BulkToggleSystemResult {
+  vendor: VendorId;
+  enabled: boolean;
+  requestedCount: number;
+  updatedCount: number;
+  alreadySetCount: number;
+  skippedPrimaryCount: number;
+  notFoundCount: number;
+  message: string;
+}
+
+function formatBulkToggleMessage(params: {
+  vendorLabel: string;
+  enabled: boolean;
+  updatedCount: number;
+  alreadySetCount: number;
+  skippedPrimaryCount: number;
+}): string {
+  const { vendorLabel, enabled, updatedCount, alreadySetCount, skippedPrimaryCount } = params;
+  if (enabled) {
+    if (updatedCount > 0) {
+      return `${updatedCount} appareil(s) lié(s) à ${vendorLabel}${
+        alreadySetCount > 0 ? ` (${alreadySetCount} déjà lié(s))` : ''
+      }.`;
+    }
+    if (alreadySetCount > 0) {
+      return `Les ${alreadySetCount} appareil(s) sélectionné(s) étaient déjà lié(s) à ${vendorLabel}.`;
+    }
+    return 'Aucun appareil trouvé à lier.';
+  }
+
+  if (updatedCount === 0 && skippedPrimaryCount > 0 && alreadySetCount === 0) {
+    return `Impossible de dissocier : ${vendorLabel} est le système principal des ${skippedPrimaryCount} appareil(s) sélectionné(s).`;
+  }
+  if (updatedCount === 0 && skippedPrimaryCount === 0 && alreadySetCount === 0) {
+    return 'Aucun appareil trouvé à dissocier.';
+  }
+
+  const notes: string[] = [];
+  if (skippedPrimaryCount > 0) {
+    notes.push(`${skippedPrimaryCount} ignoré(s) car système principal`);
+  }
+  if (alreadySetCount > 0) {
+    notes.push(`${alreadySetCount} non lié(s)`);
+  }
+  return `${updatedCount} appareil(s) dissocié(s) de ${vendorLabel}${
+    notes.length > 0 ? ` (${notes.join(', ')})` : ''
+  }.`;
+}
+
+export async function bulkToggleDeviceSystemTag(params: {
+  deviceIds: string[];
+  vendor: VendorId;
+  enabled: boolean;
+}): Promise<BulkToggleSystemResult> {
+  const uniqueIds = Array.from(
+    new Set(params.deviceIds.map((id) => id.trim()).filter(Boolean))
+  );
+  const vendorLabel = VENDOR_REGISTRY[params.vendor].label;
+
+  if (uniqueIds.length === 0) {
+    return {
+      vendor: params.vendor,
+      enabled: params.enabled,
+      requestedCount: 0,
+      updatedCount: 0,
+      alreadySetCount: 0,
+      skippedPrimaryCount: 0,
+      notFoundCount: 0,
+      message: 'Aucun appareil sélectionné.',
+    };
+  }
+
+  const db = getDb();
+  const now = new Date();
+  let updatedCount = 0;
+  let alreadySetCount = 0;
+  let skippedPrimaryCount = 0;
+  let notFoundCount = 0;
+
+  if (!db) {
+    const state = getDemoState();
+    for (const id of uniqueIds) {
+      const dev = state.devices.find((d) => d.id === id);
+      if (!dev) {
+        notFoundCount++;
+        continue;
+      }
+
+      if (!params.enabled && dev.primaryVendor === params.vendor) {
+        skippedPrimaryCount++;
+        continue;
+      }
+
+      const hasSystem = dev.systems.includes(params.vendor);
+      const hasLink = state.vendorLinks.some(
+        (l) => l.deviceId === dev.id && l.vendor === params.vendor
+      );
+
+      if (params.enabled) {
+        if (hasSystem && hasLink) {
+          alreadySetCount++;
+          continue;
+        }
+        dev.systems = mergeDeviceSystems(dev.systems, params.vendor, dev.primaryVendor);
+        if (!hasLink) {
+          state.vendorLinks.push({
+            id: state.nextLinkId++,
+            deviceId: dev.id,
+            vendor: params.vendor,
+            externalId: `manual:${params.vendor}:${dev.id}`,
+            externalName: dev.customName || dev.name,
+            isPrimaryTelemetry: false,
+            linkedAt: now.toISOString(),
+          });
+        }
+        updatedCount++;
+      } else {
+        if (!hasSystem && !hasLink) {
+          alreadySetCount++;
+          continue;
+        }
+        dev.systems = normalizeSystems(
+          dev.systems.filter((s) => s !== params.vendor),
+          dev.primaryVendor
+        );
+        state.vendorLinks = state.vendorLinks.filter(
+          (l) => !(l.deviceId === dev.id && l.vendor === params.vendor)
+        );
+        updatedCount++;
+      }
+    }
+
+    return {
+      vendor: params.vendor,
+      enabled: params.enabled,
+      requestedCount: uniqueIds.length,
+      updatedCount,
+      alreadySetCount,
+      skippedPrimaryCount,
+      notFoundCount,
+      message: formatBulkToggleMessage({
+        vendorLabel,
+        enabled: params.enabled,
+        updatedCount,
+        alreadySetCount,
+        skippedPrimaryCount,
+      }),
+    };
+  }
+
+  await ensureSchemaInitialized(db);
+  const rows = await db.select().from(devices).where(inArray(devices.id, uniqueIds));
+  const rowById = new Map(rows.map((r) => [r.id, r]));
+  const foundIds = rows.map((r) => r.id);
+
+  const existingLinks =
+    foundIds.length > 0
+      ? await db
+          .select()
+          .from(deviceVendorLinks)
+          .where(
+            and(
+              inArray(deviceVendorLinks.deviceId, foundIds),
+              eq(deviceVendorLinks.vendor, params.vendor)
+            )
+          )
+      : [];
+  const linkedDeviceIds = new Set(existingLinks.map((l) => l.deviceId));
+
+  const linksToInsert: Array<typeof deviceVendorLinks.$inferInsert> = [];
+  const unlinkDeviceIds: string[] = [];
+
+  for (const id of uniqueIds) {
+    const row = rowById.get(id);
+    if (!row) {
+      notFoundCount++;
+      continue;
+    }
+
+    const primaryVendor: VendorId = isValidVendorId(row.primaryVendor)
+      ? row.primaryVendor
+      : 'tuya';
+    if (!params.enabled && primaryVendor === params.vendor) {
+      skippedPrimaryCount++;
+      continue;
+    }
+
+    const currentSystems = normalizeSystems(row.systems, primaryVendor);
+    const hasSystem = currentSystems.includes(params.vendor);
+    const hasLink = linkedDeviceIds.has(row.id);
+
+    if (params.enabled) {
+      if (hasSystem && hasLink) {
+        alreadySetCount++;
+        continue;
+      }
+      const nextSystems = mergeDeviceSystems(currentSystems, params.vendor, primaryVendor);
+      const systemsChanged =
+        nextSystems.length !== currentSystems.length ||
+        nextSystems.some((s, idx) => s !== currentSystems[idx]);
+      if (systemsChanged) {
+        await db
+          .update(devices)
+          .set({ systems: nextSystems })
+          .where(eq(devices.id, row.id));
+      }
+      if (!hasLink) {
+        linksToInsert.push({
+          deviceId: row.id,
+          vendor: params.vendor,
+          externalId: `manual:${params.vendor}:${row.id}`,
+          externalName: row.customName || row.name,
+          isPrimaryTelemetry: false,
+          linkedAt: now,
+        });
+      }
+      updatedCount++;
+    } else {
+      if (!hasSystem && !hasLink) {
+        alreadySetCount++;
+        continue;
+      }
+      const nextSystems = normalizeSystems(
+        currentSystems.filter((s) => s !== params.vendor),
+        primaryVendor
+      );
+      const systemsChanged =
+        nextSystems.length !== currentSystems.length ||
+        nextSystems.some((s, idx) => s !== currentSystems[idx]);
+      if (systemsChanged) {
+        await db
+          .update(devices)
+          .set({ systems: nextSystems })
+          .where(eq(devices.id, row.id));
+      }
+      if (hasLink) {
+        unlinkDeviceIds.push(row.id);
+      }
+      updatedCount++;
+    }
+  }
+
+  if (linksToInsert.length > 0) {
+    await db.insert(deviceVendorLinks).values(linksToInsert).onConflictDoNothing();
+  }
+  if (unlinkDeviceIds.length > 0) {
+    await db
+      .delete(deviceVendorLinks)
+      .where(
+        and(
+          inArray(deviceVendorLinks.deviceId, unlinkDeviceIds),
+          eq(deviceVendorLinks.vendor, params.vendor)
+        )
+      );
+  }
+
+  return {
+    vendor: params.vendor,
+    enabled: params.enabled,
+    requestedCount: uniqueIds.length,
+    updatedCount,
+    alreadySetCount,
+    skippedPrimaryCount,
+    notFoundCount,
+    message: formatBulkToggleMessage({
+      vendorLabel,
+      enabled: params.enabled,
+      updatedCount,
+      alreadySetCount,
+      skippedPrimaryCount,
+    }),
+  };
+}
+
+export interface BulkMergeDevicesResult {
+  mergedCount: number;
+  skippedCount: number;
+  errors: string[];
+  message: string;
+}
+
+export async function bulkMergeDevices(params: {
+  pairs: Array<{ targetDeviceId: string; sourceDeviceId: string }>;
+}): Promise<BulkMergeDevicesResult> {
+  const consumedIds = new Set<string>();
+  const errors: string[] = [];
+  let mergedCount = 0;
+  let skippedCount = 0;
+
+  for (const rawPair of params.pairs) {
+    const targetDeviceId = rawPair.targetDeviceId.trim();
+    const sourceDeviceId = rawPair.sourceDeviceId.trim();
+
+    if (
+      !targetDeviceId ||
+      !sourceDeviceId ||
+      targetDeviceId === sourceDeviceId ||
+      consumedIds.has(sourceDeviceId) ||
+      consumedIds.has(targetDeviceId)
+    ) {
+      skippedCount++;
+      continue;
+    }
+
+    try {
+      const merged = await mergeDevices({ targetDeviceId, sourceDeviceId });
+      if (!merged) {
+        skippedCount++;
+        continue;
+      }
+      consumedIds.add(sourceDeviceId);
+      mergedCount++;
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : 'Erreur fusion');
+      skippedCount++;
+    }
+  }
+
+  const message =
+    mergedCount > 0
+      ? `${mergedCount} doublon(s) fusionné(s) sans perte de mesures${
+          skippedCount > 0 ? ` (${skippedCount} ignoré(s))` : ''
+        }.`
+      : 'Aucun doublon fusionné.';
+
+  return {
+    mergedCount,
+    skippedCount,
+    errors,
+    message,
+  };
 }
 
 async function collectGoogleHomeReadingsInDb(
