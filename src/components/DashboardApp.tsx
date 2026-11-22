@@ -203,6 +203,12 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     await fetchDashboard(range, roomId, appliedCustom, nextSystem);
   }
 
+  async function handleResetGlobalFilters() {
+    setRoomId('all');
+    setSystemFilter('all');
+    await fetchDashboard(range, 'all', appliedCustom, 'all');
+  }
+
   async function handleCollectNow() {
     setCollecting(true);
     setToast(null);
@@ -271,6 +277,12 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
 
   const lastLog = data.logs[0];
   const openCoversCount = data.devices.filter((d) => {
+    if (data.selectedSystem !== 'all' && !d.systems.includes(data.selectedSystem)) {
+      return false;
+    }
+    if (data.selectedRoomId !== 'all' && String(d.roomId) !== data.selectedRoomId) {
+      return false;
+    }
     const cover = extractCoverSummary(d);
     return cover !== null && (cover.state === 'open' || cover.state === 'partial');
   }).length;
@@ -586,7 +598,11 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
           <ContactsTab data={data} onNavigateTab={setActiveTab} />
         )}
         {activeTab === 'covers' && (
-          <CoversTab data={data} onNavigateTab={setActiveTab} />
+          <CoversTab
+            data={data}
+            onNavigateTab={setActiveTab}
+            onResetGlobalFilters={() => void handleResetGlobalFilters()}
+          />
         )}
         {activeTab === 'automations' && (
           <AutomationsTab data={data} onRefresh={() => fetchDashboard(range, roomId)} />

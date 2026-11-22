@@ -21,6 +21,7 @@ import type { DashboardPayload, DeviceRecord, RoomRecord, TabId } from '@/types'
 interface CoversTabProps {
   data: DashboardPayload;
   onNavigateTab: (tab: TabId) => void;
+  onResetGlobalFilters?: () => void;
 }
 
 interface CoverItem {
@@ -30,7 +31,6 @@ interface CoverItem {
 }
 
 type StateFilter = 'all' | 'open' | 'partial' | 'closed' | 'unknown';
-type SourceFilter = 'all' | 'somfy' | 'tuya';
 type KindFilter = 'all' | CoverKind;
 
 const KIND_LABELS: Record<CoverKind, string> = {
@@ -55,11 +55,9 @@ function formatTimeShort(iso: string | null): string {
   });
 }
 
-export function CoversTab({ data, onNavigateTab }: CoversTabProps) {
+export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversTabProps) {
   const [stateFilter, setStateFilter] = useState<StateFilter>('all');
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [kindFilter, setKindFilter] = useState<KindFilter>('all');
-  const [roomFilter, setRoomFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const roomById = useMemo(
@@ -89,6 +87,18 @@ export function CoversTab({ data, onNavigateTab }: CoversTabProps) {
     });
   }, [data.devices, roomById]);
 
+  const scopedCovers = useMemo(() => {
+    return allCovers.filter(({ device }) => {
+      if (data.selectedSystem !== 'all' && !device.systems.includes(data.selectedSystem)) {
+        return false;
+      }
+      if (data.selectedRoomId !== 'all' && String(device.roomId) !== data.selectedRoomId) {
+        return false;
+      }
+      return true;
+    });
+  }, [allCovers, data.selectedSystem, data.selectedRoomId]);
+
   const stats = useMemo(() => {
     let openCount = 0;
     let partialCount = 0;
@@ -100,7 +110,7 @@ export function CoversTab({ data, onNavigateTab }: CoversTabProps) {
     let somfyCount = 0;
     let tuyaCount = 0;
 
-    for (const { device, summary } of allCovers) {
+    for (const { device, summary } of scopedCovers) {
       if (summary.state === 'open') openCount++;
       else if (summary.state === 'partial') partialCount++;
       else if (summary.state === 'closed') closedCount++;
@@ -114,43 +124,40 @@ export function CoversTab({ data, onNavigateTab }: CoversTabProps) {
     }
 
     const alertCount =
-      allCovers.length - onlineCount + lowBatteryCount + weakRssiCount;
+      scopedCovers.length - onlineCount + lowBatteryCount + weakRssiCount;
 
     return {
-      total: allCovers.length,
+      total: scopedCovers.length,
       openCount,
       partialCount,
       closedCount,
       unknownCount,
       onlineCount,
-      offlineCount: allCovers.length - onlineCount,
+      offlineCount: scopedCovers.length - onlineCount,
       lowBatteryCount,
       weakRssiCount,
       alertCount,
       somfyCount,
       tuyaCount,
     };
-  }, [allCovers]);
+  }, [scopedCovers]);
 
   const availableKinds = useMemo(() => {
     const set = new Set<CoverKind>();
-    for (const item of allCovers) set.add(item.summary.kind);
+    for (const item of scopedCovers) set.add(item.summary.kind);
     return [...set];
-  }, [allCovers]);
+  }, [scopedCovers]);
+
+  const effectiveStateFilter: StateFilter =
+    stateFilter === 'unknown' && stats.unknownCount === 0 ? 'all' : stateFilter;
+  const effectiveKindFilter: KindFilter =
+    kindFilter !== 'all' && !availableKinds.includes(kindFilter) ? 'all' : kindFilter;
 
   const filteredCovers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return allCovers.filter(({ device, summary, room }) => {
-      if (stateFilter !== 'all' && summary.state !== stateFilter) return false;
-      if (sourceFilter !== 'all' && summary.source !== sourceFilter) return false;
-      if (kindFilter !== 'all' && summary.kind !== kindFilter) return false;
-      if (roomFilter !== 'all') {
-        if (roomFilter === 'unassigned') {
-          if (device.roomId !== null) return false;
-        } else if (String(device.roomId) !== roomFilter) {
-          return false;
-        }
-      }
+    return scopedCovers.filter(({ device, summary, room }) => {
+      if (effectiveStateFilter !== 'all' && summary.state !== effectiveStateFilter) return false;
+      if (effectiveKindFilter !== 'all' && summary.kind !== effectiveKindFilter) return false;
       if (q) {
         const haystack = [
           device.name,
@@ -169,7 +176,7 @@ export function CoversTab({ data, onNavigateTab }: CoversTabProps) {
       }
       return true;
     });
-  }, [allCovers, stateFilter, sourceFilter, kindFilter, roomFilter, searchQuery]);
+  }, [scopedCovers, effectiveStateFilter, effectiveKindFilter, searchQuery]);
 
   const groupedByRoom = useMemo(() => {
     const groups = new Map<
@@ -231,28 +238,25 @@ export function CoversTab({ data, onNavigateTab }: CoversTabProps) {
     );
   }
 
+  const hasActiveGlobalFilter =
+    data.selectedSystem !== 'all' || data.selectedRoomId !== 'all';
+  const hasAnyActiveFilter =
+    hasActiveGlobalFilter ||
+    effectiveStateFilter !== 'all' ||
+    effectiveKindFilter !== 'all' ||
+    searchQuery.trim() !== '';
+
+  function handleResetAllFilters() {
+    setStateFilter('all');
+    setKindFilter('all');
+    setSearchQuery('');
+    if (hasActiveGlobalFilter) {
+      onResetGlobalFilters?.();
+    }
+  }
+
   return (
     <div className="space-y-5">
-      {/* Bandeau lecture seule */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-xs text-amber-100">
-        <div className="flex items-center gap-2.5">
-          <Blinds className="h-4 w-4 shrink-0 text-amber-400" />
-          <span>
-            <strong className="font-semibold text-white">Volets &amp; Stores</strong> —
-            Monitoring unifié <strong>100 % lecture seule</strong> (positions, état
-            ouvert/fermé, protocoles et signal sans aucune commande envoyée aux
-            moteurs).
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={() => onNavigateTab('devices')}
-          className="rounded-lg border border-amber-400/30 bg-amber-500/15 px-2.5 py-1 text-[11px] font-medium text-amber-200 hover:bg-amber-500/25 transition"
-        >
-          Gérer dans Appareils
-        </button>
-      </div>
-
       {/* 4 cartes KPI */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
@@ -354,7 +358,7 @@ export function CoversTab({ data, onNavigateTab }: CoversTabProps) {
               type="button"
               onClick={() => setStateFilter(pill.id)}
               className={`rounded-xl px-3 py-1.5 text-xs font-medium transition ${
-                stateFilter === pill.id
+                effectiveStateFilter === pill.id
                   ? 'bg-amber-600 text-white shadow'
                   : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
               }`}
@@ -365,21 +369,9 @@ export function CoversTab({ data, onNavigateTab }: CoversTabProps) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {stats.somfyCount > 0 && stats.tuyaCount > 0 && (
-            <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value as SourceFilter)}
-              className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
-            >
-              <option value="all">Toutes sources</option>
-              <option value="somfy">Somfy ({stats.somfyCount})</option>
-              <option value="tuya">Tuya ({stats.tuyaCount})</option>
-            </select>
-          )}
-
           {availableKinds.length > 1 && (
             <select
-              value={kindFilter}
+              value={effectiveKindFilter}
               onChange={(e) => setKindFilter(e.target.value as KindFilter)}
               className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
             >
@@ -391,20 +383,6 @@ export function CoversTab({ data, onNavigateTab }: CoversTabProps) {
               ))}
             </select>
           )}
-
-          <select
-            value={roomFilter}
-            onChange={(e) => setRoomFilter(e.target.value)}
-            className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
-          >
-            <option value="all">Toutes les pièces</option>
-            {data.rooms.map((room) => (
-              <option key={room.id} value={String(room.id)}>
-                {room.name}
-              </option>
-            ))}
-            <option value="unassigned">Sans pièce</option>
-          </select>
 
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-500" />
@@ -421,8 +399,17 @@ export function CoversTab({ data, onNavigateTab }: CoversTabProps) {
 
       {/* Groupes par pièce */}
       {groupedByRoom.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 text-center text-sm text-slate-400">
-          Aucun volet ou store ne correspond aux filtres actifs.
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 text-center text-sm text-slate-400 space-y-3">
+          <div>Aucun volet ou store ne correspond aux filtres actifs.</div>
+          {hasAnyActiveFilter && (
+            <button
+              type="button"
+              onClick={handleResetAllFilters}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3.5 py-1.5 text-xs font-medium text-slate-200 transition"
+            >
+              Réinitialiser les filtres
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
