@@ -21,6 +21,7 @@ import {
   Unlink,
   ExternalLink,
   Search,
+  BookOpen,
 } from 'lucide-react';
 import { VENDOR_IDS, VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import type {
@@ -37,6 +38,7 @@ import type {
 interface DevicesRoomsTabProps {
   data: DashboardPayload;
   onRefresh: () => Promise<void>;
+  onOpenGoogleGuide?: () => void;
 }
 
 const ROOM_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f43f5e'];
@@ -89,7 +91,7 @@ function buildDeviceSearchHaystack(dev: DeviceRecord, roomName?: string): string
   return normalizeSearchText(parts.filter((p) => p !== null && p !== undefined && p !== '').join(' '));
 }
 
-export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
+export function DevicesRoomsTab({ data, onRefresh, onOpenGoogleGuide }: DevicesRoomsTabProps) {
   const [syncingTuya, setSyncingTuya] = useState(false);
   const [syncingGoogle, setSyncingGoogle] = useState(false);
   const [disconnectingGoogle, setDisconnectingGoogle] = useState(false);
@@ -630,6 +632,17 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
             </span>
 
             <div className="flex flex-wrap items-center gap-2">
+              {onOpenGoogleGuide && (
+                <button
+                  type="button"
+                  onClick={onOpenGoogleGuide}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:text-white transition"
+                  title="Afficher le déroulé opératoire pas-à-pas Google Home"
+                >
+                  <BookOpen className="h-3.5 w-3.5 text-sky-400" />
+                  Déroulé setup
+                </button>
+              )}
               {data.env.mode === 'live' && !isGhConnected ? (
                 <a
                   href={`/api/vendors/google-home/oauth/start?mode=${selectedGoogleMode}`}

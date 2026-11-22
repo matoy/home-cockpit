@@ -213,6 +213,15 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     router.refresh();
   }
 
+  function handleOpenGoogleGuide() {
+    setActiveTab('guide');
+    setTimeout(() => {
+      document
+        .getElementById('setup-google-home')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  }
+
   const lastLog = data.logs[0];
 
   const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutGrid; badge?: number }> = [
@@ -490,12 +499,16 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
           <AutomationsTab data={data} onRefresh={() => fetchDashboard(range, roomId)} />
         )}
         {activeTab === 'devices' && (
-          <DevicesRoomsTab data={data} onRefresh={() => fetchDashboard(range, roomId)} />
+          <DevicesRoomsTab
+            data={data}
+            onRefresh={() => fetchDashboard(range, roomId)}
+            onOpenGoogleGuide={handleOpenGoogleGuide}
+          />
         )}
         {activeTab === 'tariffs' && (
           <TariffsTab data={data} onRefresh={() => fetchDashboard(range, roomId)} />
         )}
-        {activeTab === 'guide' && <SetupGuideTab data={data} />}
+        {activeTab === 'guide' && <SetupGuideTab data={data} onNavigateTab={setActiveTab} />}
       </main>
     </div>
   );
