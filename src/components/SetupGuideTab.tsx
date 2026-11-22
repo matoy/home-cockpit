@@ -444,7 +444,7 @@ KASA_REGION="eu" # eu, us, ap ou global`}
       {showHomeConnect && (
         <div
           id="setup-home-connect"
-          className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-4 scroll-mt-24"
+          className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-5 scroll-mt-24"
         >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-center gap-2.5">
@@ -453,7 +453,7 @@ KASA_REGION="eu" # eu, us, ap ou global`}
               </div>
               <div>
                 <h3 className="text-sm font-semibold text-white">
-                  Siemens Home Connect — Électroménager en OAuth 2.0 (100 % lecture seule)
+                  Siemens Home Connect — Déroulé portail développeur &amp; OAuth 2.0 (100 % lecture seule)
                 </h3>
                 <p className="text-xs text-slate-400">
                   Suivi des programmes actifs, temps restant, porte ouverte et températures four /
@@ -477,56 +477,137 @@ KASA_REGION="eu" # eu, us, ap ou global`}
             </div>
           </div>
 
-          <ol className="list-decimal list-inside space-y-2 text-xs text-slate-300 leading-relaxed">
-            <li>
-              Créez un compte développeur gratuit sur <strong>developer.home-connect.com</strong>{' '}
-              puis allez dans <strong>Applications → Register Application</strong>.
-            </li>
-            <li>
-              Choisissez <strong>OAuth Flow : Authorization Code Grant Flow</strong>, mettez{' '}
-              <strong>One-Time Token</strong> sur <strong>Off</strong>, et renseignez votre compte
-              Home Connect utilisateur (<strong>SingleKey ID</strong>) pour pouvoir autoriser vos
-              appareils.
-            </li>
-            <li>
-              Ajoutez l&apos;URI de redirection ci-dessous dans les <strong>Redirect URIs</strong>{' '}
-              de votre application Home Connect :
-            </li>
-          </ol>
-
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2">
-              <div className="min-w-0">
-                <div className="text-[10px] uppercase text-slate-500">Redirect URI actuelle</div>
-                <div className="font-mono text-xs text-cyan-300 break-all">{hcRedirectUri}</div>
+          <div className="space-y-3 text-xs text-slate-300 leading-relaxed">
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-2">
+              <div className="font-semibold text-white flex items-center justify-between gap-2">
+                <span>Étape 1 — Créer / connecter votre compte développeur</span>
+                <a
+                  href="https://developer.home-connect.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-cyan-400 hover:text-cyan-300"
+                >
+                  developer.home-connect.com
+                  <ExternalLink className="h-3 w-3" />
+                </a>
               </div>
-              <button
-                type="button"
-                onClick={() => copyText('hc-uri', hcRedirectUri)}
-                className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1 shrink-0"
-              >
-                {copiedKey === 'hc-uri' ? (
-                  <Check className="h-3 w-3 text-emerald-400" />
-                ) : (
-                  <Copy className="h-3 w-3" />
-                )}
-                Copier
-              </button>
+              <ol className="list-decimal list-inside space-y-1 text-slate-300">
+                <li>
+                  Ouvrez <strong>developer.home-connect.com</strong> puis cliquez sur{' '}
+                  <strong>Sign up</strong> (ou <strong>Log in</strong>).
+                </li>
+                <li>
+                  Dans votre profil, si le champ{' '}
+                  <strong>Default Home Connect User Account for Testing</strong> apparaît, saisissez
+                  l&apos;adresse e-mail exacte de votre application mobile{' '}
+                  <strong>Home Connect (SingleKey ID)</strong>,{' '}
+                  <strong className="text-amber-300">tout en minuscules</strong>.
+                </li>
+              </ol>
             </div>
-            {hcRedirectUri !== localHcRedirectUri && (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2">
-                <div className="min-w-0">
-                  <div className="text-[10px] uppercase text-slate-500">Redirect URI locale</div>
-                  <div className="font-mono text-xs text-slate-300 break-all">
-                    {localHcRedirectUri}
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-2.5">
+              <div className="font-semibold text-white">
+                Étape 2 — Enregistrer l&apos;application (Applications → Register Application)
+              </div>
+              <ul className="list-disc list-inside space-y-1 text-slate-300">
+                <li>
+                  <strong>Application ID :</strong> un nom libre sans caractères spéciaux (ex.{' '}
+                  <code>HomeCockpit</code>).
+                </li>
+                <li>
+                  <strong>OAuth Flow :</strong> sélectionnez obligatoirement{' '}
+                  <strong className="text-cyan-300">Authorization Code Grant Flow</strong> (ne pas
+                  utiliser Device Flow).
+                </li>
+                <li>
+                  <strong>Home Connect User Account for Testing</strong> <em>(si présent)</em> :
+                  e-mail en minuscules de votre compte mobile Home Connect où sont appairés vos
+                  appareils Siemens.
+                </li>
+                <li>
+                  <strong>One-Time Token :</strong> <strong>Off</strong> ·{' '}
+                  <strong>Sync to China :</strong> <strong>Off</strong> (sauf appareils achetés en
+                  Chine continentale) · <strong>Status :</strong> <strong>Enabled</strong>.
+                </li>
+                <li>
+                  <strong>Redirect URIs :</strong> collez exactement l&apos;URL ci-dessous (aucun{' '}
+                  <code>/</code> final), puis cliquez sur <strong>Save / Register</strong> :
+                </li>
+              </ul>
+
+              <div className="space-y-2 pt-1">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2">
+                  <div className="min-w-0">
+                    <div className="text-[10px] uppercase text-slate-500">Redirect URI actuelle</div>
+                    <div className="font-mono text-xs text-cyan-300 break-all">{hcRedirectUri}</div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => copyText('hc-uri', hcRedirectUri)}
+                    className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1 shrink-0"
+                  >
+                    {copiedKey === 'hc-uri' ? (
+                      <Check className="h-3 w-3 text-emerald-400" />
+                    ) : (
+                      <Copy className="h-3 w-3" />
+                    )}
+                    Copier
+                  </button>
                 </div>
+                {hcRedirectUri !== localHcRedirectUri && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2">
+                    <div className="min-w-0">
+                      <div className="text-[10px] uppercase text-slate-500">Redirect URI locale</div>
+                      <div className="font-mono text-xs text-slate-300 break-all">
+                        {localHcRedirectUri}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => copyText('hc-uri-local', localHcRedirectUri)}
+                      className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1 shrink-0"
+                    >
+                      {copiedKey === 'hc-uri-local' ? (
+                        <Check className="h-3 w-3 text-emerald-400" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                      Copier
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-1.5">
+              <div className="font-semibold text-white">
+                Étape 3 — Récupérer Client ID &amp; Client Secret
+              </div>
+              <p className="text-slate-300">
+                De retour sur <strong>Applications</strong>, cliquez sur <strong>Details</strong>{' '}
+                sur votre application puis copiez immédiatement <strong>Client ID</strong> et{' '}
+                <strong>Client Secret</strong>.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-white flex items-center gap-1.5">
+                  <KeyRound className="h-3.5 w-3.5 text-cyan-400" />
+                  Étape 4 — Renseigner .env.local (et Vercel) puis redémarrer
+                </span>
                 <button
                   type="button"
-                  onClick={() => copyText('hc-uri-local', localHcRedirectUri)}
-                  className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1 shrink-0"
+                  onClick={() =>
+                    copyText(
+                      'hc-env',
+                      'SIEMENSHOMECONNET_CLIENT_ID="votre-client-id"\nSIEMENSHOMECONNET_CLIENT_SECRET="votre-client-secret"\nSIEMENSHOMECONNET_ENV="prod"'
+                    )
+                  }
+                  className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
                 >
-                  {copiedKey === 'hc-uri-local' ? (
+                  {copiedKey === 'hc-env' ? (
                     <Check className="h-3 w-3 text-emerald-400" />
                   ) : (
                     <Copy className="h-3 w-3" />
@@ -534,54 +615,74 @@ KASA_REGION="eu" # eu, us, ap ou global`}
                   Copier
                 </button>
               </div>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5">
-                <KeyRound className="h-3.5 w-3.5 text-cyan-400" />
-                Variables d&apos;environnement Siemens Home Connect
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  copyText(
-                    'hc-env',
-                    'SIEMENSHOMECONNET_CLIENT_ID="votre-client-id"\nSIEMENSHOMECONNET_CLIENT_SECRET="votre-client-secret"\nSIEMENSHOMECONNET_ENV="prod"'
-                  )
-                }
-                className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
-              >
-                {copiedKey === 'hc-env' ? (
-                  <Check className="h-3 w-3 text-emerald-400" />
-                ) : (
-                  <Copy className="h-3 w-3" />
-                )}
-                Copier
-              </button>
-            </div>
-            <pre className="font-mono text-[11px] text-cyan-300 overflow-x-auto leading-relaxed">
-              {`SIEMENSHOMECONNET_CLIENT_ID="votre-client-id"
+              <pre className="font-mono text-[11px] text-cyan-300 overflow-x-auto leading-relaxed">
+{`SIEMENSHOMECONNET_CLIENT_ID="votre-client-id"
 SIEMENSHOMECONNET_CLIENT_SECRET="votre-client-secret"
 SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
-            </pre>
+              </pre>
+              <p className="text-[11px] text-slate-400">
+                Sauvegardez <code>.env.local</code> et redémarrez <code>npm run dev</code> (ou
+                redéployez sur Vercel) pour prendre en compte les variables.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-1.5">
+              <div className="font-semibold text-white">
+                Étape 5 — Connecter (SingleKey ID) et synchroniser
+              </div>
+              <ol className="list-decimal list-inside space-y-1 text-slate-300">
+                <li>
+                  Ouvrez l&apos;onglet <strong>Appareils</strong> puis cliquez sur{' '}
+                  <strong>Connecter Home Connect</strong>.
+                </li>
+                <li>
+                  Authentifiez-vous avec votre <strong>SingleKey ID</strong> (compte mobile Home
+                  Connect) et validez les droits demandés (<code>IdentifyAppliance</code>,{' '}
+                  <code>Monitor</code>, <code>Settings</code> — zéro permission <code>Control</code>).
+                </li>
+                <li>
+                  De retour sur le cockpit avec le badge vert <strong>Connecté</strong>, cliquez sur{' '}
+                  <strong>Synchroniser Home Connect</strong>.
+                </li>
+              </ol>
+            </div>
           </div>
 
           <details className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-xs">
             <summary className="cursor-pointer select-none font-semibold text-slate-200 flex items-center gap-2">
               <Wrench className="h-3.5 w-3.5 text-amber-400" />
-              Dépannage &amp; quotas Home Connect
+              Dépannage, pièges courants &amp; quotas Home Connect
             </summary>
             <ul className="mt-2.5 space-y-1.5 text-[11px] text-slate-300 list-disc list-inside leading-relaxed">
+              <li>
+                <code>redirect_uri_mismatch</code> : l&apos;URL saisie dans{' '}
+                <strong>Redirect URIs</strong> doit être strictement identique (<code>http</code> vs{' '}
+                <code>https</code>, port <code>:3000</code>, aucun <code>/</code> final).
+              </li>
+              <li>
+                <code>unauthorized_client</code> : vérifiez que <strong>OAuth Flow</strong> est bien
+                sur <strong>Authorization Code Grant Flow</strong> et <strong>Status</strong> sur{' '}
+                <strong>Enabled</strong>.
+              </li>
+              <li>
+                <strong>Délai d&apos;activation BSH :</strong> après avoir cliqué sur{' '}
+                <strong>Save</strong> sur <code>developer.home-connect.com</code>, attendez 1 à 2
+                minutes avant le premier test OAuth.
+              </li>
+              <li>
+                <strong>Aucun appareil remonté :</strong> vérifiez que vos appareils Siemens sont bien
+                appairés dans l&apos;application mobile Home Connect avec le même{' '}
+                <strong>SingleKey ID</strong> (et en minuscules côté portail développeur).
+              </li>
               <li>
                 <strong>Quotas API BSH :</strong> limite de 1 000 requêtes/jour et 50 req/min. La
                 collecte réutilise le jeton OAuth pendant 24 h et n&apos;interroge ni les appareils
                 hors ligne ni les paramètres superflus lors du cron.
               </li>
               <li>
-                <strong>Simulateur :</strong> basculez <code>SIEMENSHOMECONNET_ENV=&quot;simulator&quot;</code>{' '}
-                (ou le sélecteur avant connexion) pour tester des appareils virtuels Siemens sur{' '}
+                <strong>Simulateur :</strong> basculez{' '}
+                <code>SIEMENSHOMECONNET_ENV=&quot;simulator&quot;</code> (ou le sélecteur avant
+                connexion) pour tester des appareils virtuels Siemens sur{' '}
                 <code>simulator.home-connect.com</code>.
               </li>
               <li>
