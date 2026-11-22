@@ -35,38 +35,91 @@ export interface CoverSummary {
 }
 
 export const SOMFY_COVER_UI_CLASSES = new Set<string>([
+  'Shutter',
   'RollerShutter',
   'ExteriorScreen',
   'Awning',
+  'HorizontalAwning',
+  'VerticalExteriorAwning',
   'Pergola',
   'Curtain',
+  'Blind',
+  'ExteriorBlind',
   'VenetianBlind',
   'ExteriorVenetianBlind',
+  'ExteriorVenetianShutter',
+  'VerticalInteriorBlind',
+  'VeluxInteriorBlind',
   'GarageDoor',
   'Gate',
   'Window',
+  'RoofWindow',
   'SwingingShutter',
   'Screen',
 ]);
 
+const SOMFY_COVER_UI_CLASSES_LOWER = new Set<string>(
+  [...SOMFY_COVER_UI_CLASSES].map((item) => item.toLowerCase())
+);
+
+const SOMFY_COVER_KEYWORD_RE =
+  /(shutter|blind|awning|pergola|curtain|screen|garagedoor|gate|window)/i;
+
 export const TUYA_COVER_CATEGORIES = new Set<string>(['cl', 'clkg', 'mc', 'ckmkzq']);
 
-const DEPLOYMENT_UI_CLASSES = new Set<string>(['Awning', 'Pergola']);
+const DEPLOYMENT_UI_CLASSES_LOWER = new Set<string>([
+  'awning',
+  'horizontalawning',
+  'verticalexteriorawning',
+  'pergola',
+]);
 
 const UI_CLASS_KIND_META: Record<string, { kind: CoverKind; label: string }> = {
-  RollerShutter: { kind: 'shutter', label: 'Volet roulant' },
-  SwingingShutter: { kind: 'shutter', label: 'Volet battant' },
-  ExteriorScreen: { kind: 'blind', label: 'Screen extérieur' },
-  Screen: { kind: 'blind', label: 'Store écran' },
-  VenetianBlind: { kind: 'blind', label: 'Store vénitien' },
-  ExteriorVenetianBlind: { kind: 'blind', label: 'BSO (brise-soleil)' },
-  Awning: { kind: 'awning', label: 'Store banne' },
-  Pergola: { kind: 'awning', label: 'Pergola' },
-  Curtain: { kind: 'curtain', label: 'Rideau motorisé' },
-  GarageDoor: { kind: 'garage', label: 'Porte de garage' },
-  Gate: { kind: 'gate', label: 'Portail' },
-  Window: { kind: 'window', label: 'Fenêtre motorisée' },
+  shutter: { kind: 'shutter', label: 'Volet' },
+  rollershutter: { kind: 'shutter', label: 'Volet roulant' },
+  swingingshutter: { kind: 'shutter', label: 'Volet battant' },
+  exteriorvenetianshutter: { kind: 'shutter', label: 'Volet vénitien' },
+  exteriorscreen: { kind: 'blind', label: 'Screen extérieur' },
+  screen: { kind: 'blind', label: 'Store écran' },
+  blind: { kind: 'blind', label: 'Store' },
+  exteriorblind: { kind: 'blind', label: 'Store extérieur' },
+  venetianblind: { kind: 'blind', label: 'Store vénitien' },
+  exteriorvenetianblind: { kind: 'blind', label: 'BSO (brise-soleil)' },
+  verticalinteriorblind: { kind: 'blind', label: 'Store intérieur vertical' },
+  veluxinteriorblind: { kind: 'blind', label: 'Store Velux' },
+  awning: { kind: 'awning', label: 'Store banne' },
+  horizontalawning: { kind: 'awning', label: 'Store banne' },
+  verticalexteriorawning: { kind: 'awning', label: 'Store vertical extérieur' },
+  pergola: { kind: 'awning', label: 'Pergola' },
+  curtain: { kind: 'curtain', label: 'Rideau motorisé' },
+  garagedoor: { kind: 'garage', label: 'Porte de garage' },
+  gate: { kind: 'gate', label: 'Portail' },
+  window: { kind: 'window', label: 'Fenêtre motorisée' },
+  roofwindow: { kind: 'window', label: 'Fenêtre de toit' },
 };
+
+function inferSomfyCoverKind(
+  uiClass: string | null | undefined,
+  controllableName?: string | null
+): { kind: CoverKind; label: string } {
+  const key = (uiClass ?? '').trim().toLowerCase();
+  if (key && UI_CLASS_KIND_META[key]) {
+    return UI_CLASS_KIND_META[key];
+  }
+  const combined = `${uiClass ?? ''} ${controllableName ?? ''}`.toLowerCase();
+  if (combined.includes('garage')) return { kind: 'garage', label: 'Porte de garage' };
+  if (combined.includes('gate')) return { kind: 'gate', label: 'Portail' };
+  if (combined.includes('awning') || combined.includes('pergola')) {
+    return { kind: 'awning', label: uiClass?.trim() || 'Store banne' };
+  }
+  if (combined.includes('curtain')) return { kind: 'curtain', label: 'Rideau motorisé' };
+  if (combined.includes('window')) return { kind: 'window', label: 'Fenêtre motorisée' };
+  if (combined.includes('blind') || combined.includes('screen')) {
+    return { kind: 'blind', label: uiClass?.trim() || 'Store' };
+  }
+  if (combined.includes('shutter')) return { kind: 'shutter', label: uiClass?.trim() || 'Volet' };
+  return { kind: 'shutter', label: uiClass?.trim() || 'Volet / Store' };
+}
 
 const DISCRETE_RSSI_LABELS_FR: Record<string, string> = {
   good: 'Bon',
@@ -130,8 +183,24 @@ function extractSomfyBatteryPct(rawMap: Map<string, unknown>): number | null {
   }
 }
 
-export function isSomfyCoverUiClass(uiClass: string | null | undefined): boolean {
-  return Boolean(uiClass && SOMFY_COVER_UI_CLASSES.has(uiClass));
+export function isSomfyCoverUiClass(
+  uiClass: string | null | undefined,
+  controllableName?: string | null
+): boolean {
+  const lowerUi = (uiClass ?? '').trim().toLowerCase();
+  if (lowerUi && SOMFY_COVER_UI_CLASSES_LOWER.has(lowerUi)) {
+    return true;
+  }
+  const combined = `${lowerUi} ${(controllableName ?? '').toLowerCase()}`;
+  if (
+    !combined.trim() ||
+    combined.includes('sensor') ||
+    combined.includes('pod') ||
+    combined.includes('gateway')
+  ) {
+    return false;
+  }
+  return SOMFY_COVER_KEYWORD_RE.test(combined);
 }
 
 export function isCoverDevice(
@@ -145,10 +214,25 @@ export function isCoverDevice(
     (typeof rawMap.get('somfy:uiClass') === 'string'
       ? (rawMap.get('somfy:uiClass') as string)
       : null) ?? device.tuyaCategory;
+  const controllableName =
+    typeof rawMap.get('somfy:controllableName') === 'string'
+      ? (rawMap.get('somfy:controllableName') as string)
+      : null;
 
   if (device.primaryVendor === 'somfy' || rawMap.has('somfy:uiClass')) {
-    if (uiClass && SOMFY_COVER_UI_CLASSES.has(uiClass)) return true;
-    if (rawMap.has('core:ClosureState') || rawMap.has('core:DeploymentState')) return true;
+    if (isSomfyCoverUiClass(uiClass, controllableName)) return true;
+    const isSensorLike = /sensor|alarm|siren|heating|light|plug/i.test(uiClass ?? '');
+    if (
+      !isSensorLike &&
+      (rawMap.has('core:ClosureState') ||
+        rawMap.has('core:DeploymentState') ||
+        rawMap.has('core:SlateOrientationState') ||
+        rawMap.has('core:OpenClosedState') ||
+        rawMap.has('core:OpenClosedUnknownState') ||
+        rawMap.has('core:OpenClosedPartialState'))
+    ) {
+      return true;
+    }
     return false;
   }
 
@@ -186,14 +270,18 @@ export function extractCoverSummary(
         : null) ??
       device.tuyaCategory ??
       'RollerShutter';
+    const controllableName =
+      typeof rawMap.get('somfy:controllableName') === 'string'
+        ? (rawMap.get('somfy:controllableName') as string)
+        : null;
     const rawProto = rawMap.get('somfy:protocol');
     const protocol: SomfyProtocol =
       rawProto === 'io' || rawProto === 'RTS' || rawProto === 'Zigbee' || rawProto === 'Overkiz'
         ? rawProto
         : 'Overkiz';
 
-    const kindMeta = UI_CLASS_KIND_META[uiClass] ?? { kind: 'shutter' as CoverKind, label: uiClass };
-    const isDeploymentDevice = DEPLOYMENT_UI_CLASSES.has(uiClass);
+    const kindMeta = inferSomfyCoverKind(uiClass, controllableName);
+    const isDeploymentDevice = DEPLOYMENT_UI_CLASSES_LOWER.has(uiClass.trim().toLowerCase());
 
     const deploymentRaw = toFiniteNumber(rawMap.get('core:DeploymentState'));
     const closureRaw = toFiniteNumber(rawMap.get('core:ClosureState'));

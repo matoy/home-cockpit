@@ -275,10 +275,16 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     return cover !== null && (cover.state === 'open' || cover.state === 'partial');
   }).length;
 
-  const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutGrid; badge?: number }> = [
-    { id: 'overview', label: 'Synthèse & Pièces', icon: LayoutGrid },
-    { id: 'energy', label: 'Énergie & Puissance', icon: BarChart3 },
-    { id: 'climate', label: 'Climat (°C / %)', icon: Thermometer },
+  const tabs: Array<{
+    id: TabId;
+    label: string;
+    title?: string;
+    icon: typeof LayoutGrid;
+    badge?: number;
+  }> = [
+    { id: 'overview', label: 'Synthèse', title: 'Synthèse & Pièces', icon: LayoutGrid },
+    { id: 'energy', label: 'Énergie', title: 'Énergie & Puissance', icon: BarChart3 },
+    { id: 'climate', label: 'Climat', title: 'Climat (°C / %)', icon: Thermometer },
     {
       id: 'contacts',
       label: 'Ouvertures',
@@ -514,7 +520,10 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
         )}
 
         {/* Navigation par onglets */}
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 flex gap-1 overflow-x-auto border-t border-slate-800/60">
+        <nav
+          aria-label="Navigation principale"
+          className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-wrap items-center gap-x-1 gap-y-0.5 border-t border-slate-800/60"
+        >
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -522,8 +531,9 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-xs font-medium transition ${active
-                  ? 'border-indigo-500 text-white'
+                title={tab.title ?? tab.label}
+                className={`flex items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-xs font-medium transition ${active
+                  ? 'border-indigo-500 bg-indigo-500/10 rounded-t-lg text-white'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
                   }`}
               >
@@ -537,7 +547,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
               </button>
             );
           })}
-        </div>
+        </nav>
       </header>
 
       {/* Contenu principal */}

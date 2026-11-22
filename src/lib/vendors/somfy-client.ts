@@ -619,7 +619,7 @@ export function normalizeSomfyDevice(
     raw.enabled !== false &&
     statusState !== 'unavailable';
 
-  const isCover = isSomfyCoverUiClass(uiClass);
+  const isCover = isSomfyCoverUiClass(uiClass, controllableName);
 
   // IMPORTANT : Les volets, stores, pergolas, portails et fenêtres motorisées vont uniquement
   // dans "Volets & Stores", sans jamais polluer les onglets "Climat" ni "Ouvertures".
