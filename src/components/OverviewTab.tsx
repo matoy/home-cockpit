@@ -277,19 +277,18 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                               <span className="truncate text-slate-300">
                                 {dev.customName || dev.name}
                               </span>
-                              {(dev.systems.length > 1 || dev.primaryVendor !== 'tuya') &&
-                                dev.systems.map((sys) => {
-                                  const meta = VENDOR_REGISTRY[sys];
-                                  return (
-                                    <span
-                                      key={sys}
-                                      title={meta.label}
-                                      className={`shrink-0 rounded border px-1 py-0.2 text-[9px] font-semibold uppercase ${meta.badgeClass}`}
-                                    >
-                                      {meta.shortLabel}
-                                    </span>
-                                  );
-                                })}
+                              {dev.systems.map((sys) => {
+                                const meta = VENDOR_REGISTRY[sys];
+                                return (
+                                  <span
+                                    key={sys}
+                                    title={meta.label}
+                                    className={`shrink-0 rounded border px-1 py-0.2 text-[9px] font-semibold uppercase ${meta.badgeClass}`}
+                                  >
+                                    {meta.shortLabel}
+                                  </span>
+                                );
+                              })}
                             </div>
                             <div className="flex items-center gap-2 shrink-0 text-slate-400 font-mono text-[11px]">
                               {dev.lastPowerW !== null && (

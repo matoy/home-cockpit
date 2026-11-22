@@ -276,6 +276,17 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
   }
 
   const lastLog = data.logs[0];
+  const activeSystem = data.selectedSystem;
+  const systemScopedDevices =
+    activeSystem === 'all'
+      ? data.devices
+      : data.devices.filter((d) => d.systems.includes(activeSystem));
+  const roomDeviceCounts = new Map<number, number>();
+  for (const dev of systemScopedDevices) {
+    if (dev.roomId !== null) {
+      roomDeviceCounts.set(dev.roomId, (roomDeviceCounts.get(dev.roomId) ?? 0) + 1);
+    }
+  }
   const openCoversCount = data.devices.filter((d) => {
     if (data.selectedSystem !== 'all' && !d.systems.includes(data.selectedSystem)) {
       return false;
@@ -429,12 +440,13 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             <select
               value={roomId}
               onChange={(e) => void handleRoomChange(e.target.value)}
+              aria-label="Filtrer par pièce"
               className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
             >
-              <option value="all">Toutes les pièces</option>
+              <option value="all">Toutes les pièces ({systemScopedDevices.length})</option>
               {data.rooms.map((r) => (
                 <option key={r.id} value={String(r.id)}>
-                  {r.name}
+                  {r.name} ({roomDeviceCounts.get(r.id) ?? 0})
                 </option>
               ))}
             </select>
