@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getDashboardData } from '@/lib/data-service';
+import { VENDOR_IDS } from '@/lib/vendors/registry';
 import type { SystemFilter, TimeRange } from '@/types';
 
 const VALID_RANGES = new Set<TimeRange>(['24h', '7d', '30d', '365d', 'custom']);
-const VALID_SYSTEMS = new Set<SystemFilter>(['all', 'tuya', 'google_home']);
+const VALID_SYSTEMS = new Set<SystemFilter>(['all', ...VENDOR_IDS]);
 
 export async function GET(request: Request) {
   try {

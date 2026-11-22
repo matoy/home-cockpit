@@ -6,9 +6,14 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as { vendor?: unknown };
     const rawVendor = body.vendor ?? 'all';
 
-    if (rawVendor !== 'tuya' && rawVendor !== 'google_home' && rawVendor !== 'all') {
+    if (
+      rawVendor !== 'tuya' &&
+      rawVendor !== 'kasa' &&
+      rawVendor !== 'google_home' &&
+      rawVendor !== 'all'
+    ) {
       return NextResponse.json(
-        { error: 'Paramètre vendor invalide (attendu : tuya, google_home ou all).' },
+        { error: 'Paramètre vendor invalide (attendu : tuya, kasa, google_home ou all).' },
         { status: 400 }
       );
     }

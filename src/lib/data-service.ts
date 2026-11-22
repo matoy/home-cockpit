@@ -24,7 +24,18 @@ import {
   makeGoogleDeviceId,
   refreshGoogleAccessToken,
 } from './vendors/google-home-client';
-import { isValidVendorId, normalizeSystems, VENDOR_IDS, VENDOR_REGISTRY } from './vendors/registry';
+import {
+  fetchKasaInventory,
+  getKasaConfig,
+  makeKasaDeviceId,
+} from './vendors/kasa-client';
+import {
+  isValidVendorId,
+  normalizeSystems,
+  type NormalizedVendorDevice,
+  VENDOR_IDS,
+  VENDOR_REGISTRY,
+} from './vendors/registry';
 import {
   autoDetectDpConfig,
   extractMetricsFromStatus,
@@ -74,6 +85,7 @@ const RANGE_HOURS: Record<Exclude<TimeRange, 'custom'>, number> = {
 
 export function getEnvStatus(googleHomeConnected = false): EnvStatus {
   const tuya = getTuyaConfig();
+  const kasa = getKasaConfig();
   const google = getGoogleHomeConfig();
   const databaseConfigured = isDatabaseConfigured();
   return {
@@ -82,6 +94,8 @@ export function getEnvStatus(googleHomeConnected = false): EnvStatus {
     tuyaConfigured: tuya.configured,
     tuyaRegion: tuya.region,
     tuyaUserUidConfigured: Boolean(tuya.userUid),
+    kasaConfigured: kasa.configured,
+    kasaRegion: kasa.region,
     appPasswordConfigured: isAppPasswordConfigured(),
     scheduleSecretConfigured: Boolean(process.env.SCHEDULE_SECRET?.trim()),
     googleHomeApiEnabled: google.apiEnabled,
@@ -541,12 +555,16 @@ function buildVendorConnectionSummaries(params: {
   tuyaConnected: boolean;
   tuyaLastSyncedAt: string | null;
   tuyaLastError: string | null;
+  kasaConnected: boolean;
+  kasaLastSyncedAt: string | null;
+  kasaLastError: string | null;
   ghConnected: boolean;
   ghMode: GoogleHomeMode;
   ghLastSyncedAt: string | null;
   ghLastError: string | null;
 }): VendorConnectionSummary[] {
   const tuyaCfg = getTuyaConfig();
+  const kasaCfg = getKasaConfig();
   const googleCfg = getGoogleHomeConfig();
 
   const countFor = (vendor: VendorId) =>
@@ -562,6 +580,16 @@ function buildVendorConnectionSummaries(params: {
       devicesCount: countFor('tuya'),
       lastSyncedAt: params.tuyaLastSyncedAt,
       lastError: params.tuyaLastError,
+    },
+    {
+      vendor: 'kasa',
+      label: VENDOR_REGISTRY.kasa.label,
+      mode: 'cloud_account',
+      configured: kasaCfg.configured,
+      connected: params.kasaConnected,
+      devicesCount: countFor('kasa'),
+      lastSyncedAt: params.kasaLastSyncedAt,
+      lastError: params.kasaLastError,
     },
     {
       vendor: 'google_home',
@@ -589,6 +617,7 @@ export async function getDashboardData(
     const state = getDemoState();
     const ghState = state.vendorConnections.google_home;
     const tuyaState = state.vendorConnections.tuya;
+    const kasaState = state.vendorConnections.kasa;
     const env = {
       ...getEnvStatus(ghState.connected),
       googleHomeMode:
@@ -607,6 +636,9 @@ export async function getDashboardData(
       tuyaConnected: tuyaState.connected,
       tuyaLastSyncedAt: tuyaState.lastSyncedAt,
       tuyaLastError: tuyaState.lastError,
+      kasaConnected: kasaState.connected,
+      kasaLastSyncedAt: kasaState.lastSyncedAt,
+      kasaLastError: kasaState.lastError,
       ghConnected: ghState.connected,
       ghMode: env.googleHomeMode,
       ghLastSyncedAt: ghState.lastSyncedAt,
@@ -673,9 +705,11 @@ export async function getDashboardData(
   );
 
   const tuyaConn = connRows.find((c) => c.vendor === 'tuya');
+  const kasaConn = connRows.find((c) => c.vendor === 'kasa');
   const ghConn = connRows.find((c) => c.vendor === 'google_home');
   const googleCfg = getGoogleHomeConfig();
   const tuyaCfg = getTuyaConfig();
+  const kasaCfg = getKasaConfig();
 
   const ghMode: GoogleHomeMode =
     ghConn?.mode === 'mcp' || ghConn?.mode === 'sdm' ? ghConn.mode : googleCfg.defaultMode;
@@ -683,6 +717,10 @@ export async function getDashboardData(
     googleCfg.apiEnabled &&
     Boolean(ghConn && ghConn.status === 'connected' && (ghConn.accessToken || ghConn.refreshToken));
   const tuyaConnected = tuyaCfg.configured || mappedDevices.some((d) => d.systems.includes('tuya'));
+  const kasaConnected =
+    kasaCfg.configured ||
+    kasaConn?.status === 'connected' ||
+    mappedDevices.some((d) => d.systems.includes('kasa'));
 
   const env: EnvStatus = {
     ...getEnvStatus(ghConnected),
@@ -694,6 +732,9 @@ export async function getDashboardData(
     tuyaConnected,
     tuyaLastSyncedAt: tuyaConn?.lastSyncedAt ? tuyaConn.lastSyncedAt.toISOString() : null,
     tuyaLastError: tuyaConn?.lastError ?? null,
+    kasaConnected,
+    kasaLastSyncedAt: kasaConn?.lastSyncedAt ? kasaConn.lastSyncedAt.toISOString() : null,
+    kasaLastError: kasaConn?.lastError ?? null,
     ghConnected,
     ghMode,
     ghLastSyncedAt: ghConn?.lastSyncedAt ? ghConn.lastSyncedAt.toISOString() : null,
@@ -1464,8 +1505,8 @@ export async function syncGoogleHomeDevices(): Promise<{
         primaryVendor
       );
 
-      if (primaryVendor === 'tuya') {
-        // Priorité télémétrique Tuya : on conserve les mesures W / kWh / DP / IP / MAC de Tuya
+      if (primaryVendor === 'tuya' || primaryVendor === 'kasa') {
+        // Priorité télémétrique Tuya / Kasa : on conserve les mesures W / kWh / DP / IP / MAC d'origine
         await db
           .update(devices)
           .set({
@@ -1578,6 +1619,395 @@ export async function syncGoogleHomeDevices(): Promise<{
     .where(eq(vendorConnections.vendor, 'google_home'));
 
   const baseMsg = `${inventory.devices.length} appareil(x) et ${inventory.roomNames.length} pièce(s) synchronisés depuis Google Home (${mode.toUpperCase()}, ${newCount} nouveau(x)).`;
+  return {
+    syncedCount: inventory.devices.length,
+    newCount,
+    mode: 'live',
+    message: inventory.warning ? `${baseMsg} (${inventory.warning})` : baseMsg,
+  };
+}
+
+function buildKasaDpConfig(kd: NormalizedVendorDevice): DpConfig {
+  if (kd.powerW !== null || kd.addEleKwh !== null || kd.category === 'power') {
+    return {
+      power: { code: 'power_w', scale: 1 },
+      voltage: { code: 'voltage_v', scale: 1 },
+      addEle: { code: 'total_kwh', scale: 1 },
+    };
+  }
+  return {};
+}
+
+async function loadCachedKasaSession(
+  db: AppDatabase
+): Promise<{ cachedToken: string | null; cachedCloudUrl: string | null }> {
+  const rows = await db
+    .select()
+    .from(vendorConnections)
+    .where(eq(vendorConnections.vendor, 'kasa'))
+    .limit(1);
+  const conn = rows[0];
+  if (!conn) return { cachedToken: null, cachedCloudUrl: null };
+  const cachedToken = decryptSecret(conn.accessToken);
+  const rawUrl = conn.config && typeof conn.config.cloudUrl === 'string' ? conn.config.cloudUrl : null;
+  return { cachedToken, cachedCloudUrl: rawUrl };
+}
+
+async function persistKasaConnectionInDb(
+  db: AppDatabase,
+  params: {
+    status: 'connected' | 'error' | 'disconnected';
+    sessionToken?: string | null;
+    cloudUrl?: string | null;
+    region: string;
+    lastSyncedAt?: Date;
+    lastError: string | null;
+  }
+): Promise<void> {
+  const now = new Date();
+  const encryptedToken = params.sessionToken ? encryptSecret(params.sessionToken) : undefined;
+  const config = {
+    region: params.region,
+    ...(params.cloudUrl ? { cloudUrl: params.cloudUrl } : {}),
+  };
+
+  await db
+    .insert(vendorConnections)
+    .values({
+      vendor: 'kasa',
+      mode: 'cloud_account',
+      status: params.status,
+      ...(encryptedToken ? { accessToken: encryptedToken } : {}),
+      config,
+      ...(params.lastSyncedAt ? { lastSyncedAt: params.lastSyncedAt } : {}),
+      lastError: params.lastError,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: vendorConnections.vendor,
+      set: {
+        mode: 'cloud_account',
+        status: params.status,
+        ...(encryptedToken ? { accessToken: encryptedToken } : {}),
+        config,
+        ...(params.lastSyncedAt ? { lastSyncedAt: params.lastSyncedAt } : {}),
+        lastError: params.lastError,
+        updatedAt: now,
+      },
+    });
+}
+
+export async function syncKasaDevices(): Promise<{
+  syncedCount: number;
+  newCount: number;
+  mode: 'live' | 'demo';
+  message: string;
+}> {
+  const db = getDb();
+  const kasaCfg = getKasaConfig();
+  const now = new Date();
+
+  if (!kasaCfg.configured) {
+    if (!db) {
+      const state = getDemoState();
+      state.vendorConnections.kasa.lastSyncedAt = now.toISOString();
+      state.vendorConnections.kasa.lastError = null;
+      const kasaCount = state.devices.filter((d) => d.systems.includes('kasa')).length;
+      return {
+        syncedCount: kasaCount,
+        newCount: 0,
+        mode: 'demo',
+        message: `Mode démo actif : ${kasaCount} appareil(s) Kasa Cloud simulé(s) déjà synchronisé(s).`,
+      };
+    }
+    throw new Error(
+      'Identifiants Kasa manquants. Configurez KASA_EMAIL et KASA_PASSWORD dans Vercel / .env.local.'
+    );
+  }
+
+  let inventory;
+  if (!db) {
+    inventory = await fetchKasaInventory({ includeTelemetry: true });
+    const state = getDemoState();
+    const { roomNameToId } = ensureMissingRoomsInDemo(inventory.roomNames);
+    let newCount = 0;
+
+    for (const kd of inventory.devices) {
+      const mappedRoomId = kd.roomName
+        ? (roomNameToId.get(kd.roomName.trim().toLowerCase()) ?? null)
+        : null;
+      const existingLink = state.vendorLinks.find(
+        (l) => l.vendor === 'kasa' && l.externalId === kd.externalId
+      );
+      const existing = existingLink
+        ? state.devices.find((d) => d.id === existingLink.deviceId)
+        : undefined;
+
+      if (existing) {
+        existing.systems = mergeDeviceSystems(
+          normalizeSystems(existing.systems, existing.primaryVendor),
+          'kasa',
+          existing.primaryVendor
+        );
+        if (existing.primaryVendor === 'tuya') {
+          if (existing.roomId === null && mappedRoomId !== null) existing.roomId = mappedRoomId;
+        } else {
+          existing.name = kd.name;
+          if (mappedRoomId !== null) existing.roomId = mappedRoomId;
+          existing.category = kd.category;
+          existing.tuyaCategory = kd.deviceType ?? 'kasa';
+          existing.productName =
+            [kd.manufacturer, kd.model].filter(Boolean).join(' · ') || existing.productName;
+          existing.macAddress = kd.macAddress ?? existing.macAddress;
+          existing.isOnline = kd.isOnline;
+          if (Object.keys(existing.dpConfig ?? {}).length === 0) {
+            existing.dpConfig = buildKasaDpConfig(kd);
+          }
+          existing.lastRawStatus = kd.rawTraits;
+          existing.lastSeenAt = now.toISOString();
+          if (kd.powerW !== null) existing.lastPowerW = kd.powerW;
+          if (kd.voltageV !== undefined && kd.voltageV !== null) existing.lastVoltageV = kd.voltageV;
+          if (kd.addEleKwh !== undefined && kd.addEleKwh !== null) existing.lastAddEleKwh = kd.addEleKwh;
+        }
+        if (existingLink) {
+          existingLink.externalName = kd.name;
+        }
+      } else {
+        let candidateId = makeKasaDeviceId(kd.externalId);
+        if (state.devices.some((d) => d.id === candidateId)) {
+          candidateId = `${candidateId}_${now.getTime().toString(36).slice(-4)}`;
+        }
+        state.devices.push({
+          id: candidateId,
+          name: kd.name,
+          customName: null,
+          primaryVendor: 'kasa',
+          systems: ['kasa'],
+          roomId: mappedRoomId,
+          category: kd.category,
+          tuyaCategory: kd.deviceType ?? 'kasa',
+          productName: [kd.manufacturer, kd.model].filter(Boolean).join(' · ') || 'TP-Link Kasa',
+          ipAddress: kd.ipAddress ?? null,
+          macAddress: kd.macAddress ?? null,
+          isOnline: kd.isOnline,
+          isMonitored: kd.category !== 'other',
+          excludeFromTotals: false,
+          energyMode: 'hybrid',
+          dpConfig: buildKasaDpConfig(kd),
+          lastRawStatus: kd.rawTraits,
+          lastSeenAt: now.toISOString(),
+          lastPowerW: kd.powerW,
+          lastVoltageV: kd.voltageV ?? null,
+          lastAddEleKwh: kd.addEleKwh ?? null,
+          lastTempC: kd.tempC,
+          lastHumidityPct: kd.humidityPct,
+          lastBatteryPct: kd.batteryPct,
+          lastContactOpen: kd.contactOpen,
+        });
+        state.vendorLinks.push({
+          id: state.nextLinkId++,
+          deviceId: candidateId,
+          vendor: 'kasa',
+          externalId: kd.externalId,
+          externalName: kd.name,
+          isPrimaryTelemetry: true,
+          linkedAt: now.toISOString(),
+        });
+        newCount++;
+      }
+    }
+
+    state.vendorConnections.kasa = {
+      mode: 'cloud_account',
+      connected: true,
+      lastSyncedAt: now.toISOString(),
+      lastError: inventory.warning ?? null,
+    };
+
+    const baseMsg = `${inventory.devices.length} appareil(s) et ${inventory.roomNames.length} pièce(s)/groupe(s) synchronisés depuis Kasa Cloud (${newCount} nouveau(x)).`;
+    return {
+      syncedCount: inventory.devices.length,
+      newCount,
+      mode: 'demo',
+      message: inventory.warning ? `${baseMsg} (${inventory.warning})` : baseMsg,
+    };
+  }
+
+  await seedDefaultDataIfEmpty(db);
+  const { cachedToken, cachedCloudUrl } = await loadCachedKasaSession(db);
+
+  try {
+    inventory = await fetchKasaInventory({
+      cachedToken,
+      cachedCloudUrl,
+      includeTelemetry: true,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur synchronisation Kasa Cloud';
+    await persistKasaConnectionInDb(db, {
+      status: 'error',
+      region: kasaCfg.region,
+      lastError: msg,
+    });
+    throw err;
+  }
+
+  const { roomNameToId } = await ensureMissingRoomsInDb(db, inventory.roomNames);
+  const [existingDeviceRows, kasaLinkRows] = await Promise.all([
+    db.select().from(devices),
+    db.select().from(deviceVendorLinks).where(eq(deviceVendorLinks.vendor, 'kasa')),
+  ]);
+
+  const deviceById = new Map(existingDeviceRows.map((d) => [d.id, d]));
+  const linkByExternalId = new Map(kasaLinkRows.map((l) => [l.externalId, l]));
+  let newCount = 0;
+
+  for (const kd of inventory.devices) {
+    const mappedRoomId = kd.roomName
+      ? (roomNameToId.get(kd.roomName.trim().toLowerCase()) ?? null)
+      : null;
+    const existingLink = linkByExternalId.get(kd.externalId);
+    const linkedDevice = existingLink ? deviceById.get(existingLink.deviceId) : undefined;
+    const productName =
+      [kd.manufacturer, kd.model].filter(Boolean).join(' · ') || 'TP-Link Kasa';
+    const vendorMetadata = {
+      manufacturer: kd.manufacturer,
+      model: kd.model,
+      deviceType: kd.deviceType,
+      macAddress: kd.macAddress ?? null,
+    };
+
+    if (linkedDevice) {
+      const primaryVendor: VendorId = isValidVendorId(linkedDevice.primaryVendor)
+        ? linkedDevice.primaryVendor
+        : 'kasa';
+      const nextSystems = mergeDeviceSystems(
+        normalizeSystems(linkedDevice.systems, primaryVendor),
+        'kasa',
+        primaryVendor
+      );
+
+      if (primaryVendor === 'tuya') {
+        await db
+          .update(devices)
+          .set({
+            systems: nextSystems,
+            roomId: linkedDevice.roomId ?? mappedRoomId,
+          })
+          .where(eq(devices.id, linkedDevice.id));
+      } else {
+        const nextRoomId = mappedRoomId ?? linkedDevice.roomId;
+        const nextDpConfig =
+          linkedDevice.dpConfig && Object.keys(linkedDevice.dpConfig).length > 0
+            ? linkedDevice.dpConfig
+            : buildKasaDpConfig(kd);
+
+        await db
+          .update(devices)
+          .set({
+            name: kd.name,
+            systems: nextSystems,
+            roomId: nextRoomId,
+            category: kd.category,
+            tuyaCategory: kd.deviceType ?? 'kasa',
+            productName,
+            macAddress: kd.macAddress ?? linkedDevice.macAddress,
+            isOnline: kd.isOnline,
+            dpConfig: nextDpConfig,
+            lastRawStatus: kd.rawTraits,
+            lastSeenAt: now,
+            lastPowerW: kd.powerW ?? linkedDevice.lastPowerW,
+            lastVoltageV: kd.voltageV ?? linkedDevice.lastVoltageV,
+            lastAddEleKwh: kd.addEleKwh ?? linkedDevice.lastAddEleKwh,
+            lastTempC: kd.tempC ?? linkedDevice.lastTempC,
+            lastHumidityPct: kd.humidityPct ?? linkedDevice.lastHumidityPct,
+            lastBatteryPct: kd.batteryPct ?? linkedDevice.lastBatteryPct,
+            lastContactOpen:
+              kd.contactOpen !== null ? kd.contactOpen : linkedDevice.lastContactOpen,
+          })
+          .where(eq(devices.id, linkedDevice.id));
+
+        if (nextRoomId !== null && nextRoomId !== linkedDevice.roomId) {
+          await db
+            .update(metricReadings)
+            .set({ roomId: nextRoomId })
+            .where(and(eq(metricReadings.deviceId, linkedDevice.id), isNull(metricReadings.roomId)));
+        }
+      }
+
+      await db
+        .update(deviceVendorLinks)
+        .set({
+          externalName: kd.name,
+          vendorMetadata,
+        })
+        .where(eq(deviceVendorLinks.id, existingLink!.id));
+    } else {
+      let candidateId = makeKasaDeviceId(kd.externalId);
+      if (deviceById.has(candidateId)) {
+        candidateId = `${candidateId}_${now.getTime().toString(36).slice(-4)}`;
+      }
+      const isMonitored = kd.category !== 'other';
+
+      const [inserted] = await db
+        .insert(devices)
+        .values({
+          id: candidateId,
+          name: kd.name,
+          customName: null,
+          primaryVendor: 'kasa',
+          systems: ['kasa'],
+          roomId: mappedRoomId,
+          category: kd.category,
+          tuyaCategory: kd.deviceType ?? 'kasa',
+          productName,
+          ipAddress: kd.ipAddress ?? null,
+          macAddress: kd.macAddress ?? null,
+          isOnline: kd.isOnline,
+          isMonitored,
+          excludeFromTotals: false,
+          energyMode: 'hybrid',
+          dpConfig: buildKasaDpConfig(kd),
+          lastRawStatus: kd.rawTraits,
+          lastSeenAt: now,
+          lastPowerW: kd.powerW,
+          lastVoltageV: kd.voltageV ?? null,
+          lastAddEleKwh: kd.addEleKwh ?? null,
+          lastTempC: kd.tempC,
+          lastHumidityPct: kd.humidityPct,
+          lastBatteryPct: kd.batteryPct,
+          lastContactOpen: kd.contactOpen,
+        })
+        .returning();
+
+      await db
+        .insert(deviceVendorLinks)
+        .values({
+          deviceId: candidateId,
+          vendor: 'kasa',
+          externalId: kd.externalId,
+          externalName: kd.name,
+          vendorMetadata,
+          isPrimaryTelemetry: true,
+          linkedAt: now,
+        })
+        .onConflictDoNothing();
+
+      deviceById.set(candidateId, inserted);
+      newCount++;
+    }
+  }
+
+  await persistKasaConnectionInDb(db, {
+    status: 'connected',
+    sessionToken: inventory.sessionToken,
+    cloudUrl: inventory.cloudUrl,
+    region: kasaCfg.region,
+    lastSyncedAt: now,
+    lastError: inventory.warning ?? null,
+  });
+
+  const baseMsg = `${inventory.devices.length} appareil(s) et ${inventory.roomNames.length} pièce(s)/groupe(s) synchronisés depuis Kasa Cloud (${newCount} nouveau(x)).`;
   return {
     syncedCount: inventory.devices.length,
     newCount,
@@ -1900,32 +2330,159 @@ async function collectGoogleHomeReadingsInDb(
   return readingsToInsert.length;
 }
 
+async function collectKasaReadingsInDb(
+  db: AppDatabase,
+  kasaDevices: Array<typeof devices.$inferSelect>,
+  now: Date
+): Promise<number> {
+  const kasaCfg = getKasaConfig();
+  if (kasaDevices.length === 0 || !kasaCfg.configured) return 0;
+
+  const { cachedToken, cachedCloudUrl } = await loadCachedKasaSession(db);
+  let inventory;
+  try {
+    inventory = await fetchKasaInventory({
+      cachedToken,
+      cachedCloudUrl,
+      includeTelemetry: true,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur collecte Kasa Cloud';
+    await persistKasaConnectionInDb(db, {
+      status: 'error',
+      region: kasaCfg.region,
+      lastError: msg,
+    });
+    throw err;
+  }
+
+  await persistKasaConnectionInDb(db, {
+    status: 'connected',
+    sessionToken: inventory.sessionToken,
+    cloudUrl: inventory.cloudUrl,
+    region: kasaCfg.region,
+    lastError: inventory.warning ?? null,
+  });
+
+  const kasaLinks = await db
+    .select()
+    .from(deviceVendorLinks)
+    .where(eq(deviceVendorLinks.vendor, 'kasa'));
+  const deviceIdByExternalId = new Map(kasaLinks.map((l) => [l.externalId, l.deviceId]));
+  const deviceById = new Map(kasaDevices.map((d) => [d.id, d]));
+
+  const readingsToInsert: Array<typeof metricReadings.$inferInsert> = [];
+
+  for (const kd of inventory.devices) {
+    const devId = deviceIdByExternalId.get(kd.externalId) ?? makeKasaDeviceId(kd.externalId);
+    const dev = deviceById.get(devId);
+    if (!dev || !dev.isMonitored) continue;
+
+    const hasPower = kd.powerW !== null || (kd.addEleKwh !== undefined && kd.addEleKwh !== null);
+    const hasClimate = kd.tempC !== null || kd.humidityPct !== null;
+    const hasContact = kd.contactOpen !== null;
+
+    const energyRes = hasPower
+      ? computeHybridEnergyKwh({
+          energyMode: (dev.energyMode as EnergyMode) || 'hybrid',
+          powerW: kd.powerW,
+          currentAddEleKwh: kd.addEleKwh ?? null,
+          previousAddEleKwh: dev.lastAddEleKwh,
+          previousSeenAt: dev.lastSeenAt,
+          now,
+        })
+      : null;
+
+    await db
+      .update(devices)
+      .set({
+        isOnline: kd.isOnline,
+        lastRawStatus: kd.rawTraits,
+        lastSeenAt: now,
+        ...(kd.macAddress ? { macAddress: kd.macAddress } : {}),
+        ...(kd.powerW !== null ? { lastPowerW: kd.powerW } : {}),
+        ...(kd.voltageV !== undefined && kd.voltageV !== null
+          ? { lastVoltageV: kd.voltageV }
+          : {}),
+        ...(kd.addEleKwh !== undefined && kd.addEleKwh !== null
+          ? { lastAddEleKwh: kd.addEleKwh }
+          : {}),
+        ...(kd.tempC !== null ? { lastTempC: kd.tempC } : {}),
+        ...(kd.humidityPct !== null ? { lastHumidityPct: kd.humidityPct } : {}),
+        ...(kd.batteryPct !== null ? { lastBatteryPct: kd.batteryPct } : {}),
+        ...(kd.contactOpen !== null ? { lastContactOpen: kd.contactOpen } : {}),
+      })
+      .where(eq(devices.id, dev.id));
+
+    if (hasPower || hasClimate || hasContact) {
+      readingsToInsert.push({
+        deviceId: dev.id,
+        roomId: dev.roomId,
+        recordedAt: now,
+        powerW: kd.powerW,
+        voltageV: kd.voltageV ?? null,
+        energyKwh: energyRes ? energyRes.energyKwh : null,
+        energySource: energyRes ? energyRes.source : null,
+        tempC: kd.tempC,
+        humidityPct: kd.humidityPct,
+        contactOpen: kd.contactOpen,
+      });
+    }
+  }
+
+  if (readingsToInsert.length > 0) {
+    await db.insert(metricReadings).values(readingsToInsert);
+  }
+  return readingsToInsert.length;
+}
+
 export async function runCollection(trigger: 'schedule' | 'manual'): Promise<CollectionLogRecord> {
   const db = getDb();
   const tuya = getTuyaConfig();
+  const kasa = getKasaConfig();
   const startedMs = Date.now();
 
   if (!tuya.configured) {
     if (!db) {
       return simulateDemoCollection(trigger);
     }
-    await ensureSchemaInitialized(db);
+    await seedDefaultDataIfEmpty(db);
     const now = new Date();
-    const ghMonitored = (await db.select().from(devices)).filter(
-      (d) =>
-        d.isMonitored &&
-        !d.id.startsWith('manual_') &&
-        d.primaryVendor === 'google_home'
-    );
     try {
-      const ghInserted = await collectGoogleHomeReadingsInDb(db, ghMonitored, now);
-      if (ghInserted > 0 || ghMonitored.length > 0) {
+      let allDevices = await db.select().from(devices);
+      if (allDevices.length === 0 && kasa.configured) {
+        await syncKasaDevices();
+        allDevices = await db.select().from(devices);
+      }
+
+      const kasaMonitored = allDevices.filter(
+        (d) =>
+          d.isMonitored &&
+          !d.id.startsWith('manual_') &&
+          d.primaryVendor === 'kasa'
+      );
+      const ghMonitored = allDevices.filter(
+        (d) =>
+          d.isMonitored &&
+          !d.id.startsWith('manual_') &&
+          d.primaryVendor === 'google_home'
+      );
+
+      const kasaInserted = kasa.configured
+        ? await collectKasaReadingsInDb(db, kasaMonitored, now)
+        : 0;
+      const ghInserted = await collectGoogleHomeReadingsInDb(db, ghMonitored, now).catch((err) => {
+        if (!kasa.configured) throw err;
+        return 0;
+      });
+
+      if (kasa.configured || ghInserted > 0 || ghMonitored.length > 0) {
         const [logRow] = await db
           .insert(collectionLogs)
           .values({
             trigger,
-            devicesCount: ghMonitored.length,
-            readingsInserted: ghInserted,
+            devicesCount: kasaMonitored.length + ghMonitored.length,
+            readingsInserted: kasaInserted + ghInserted,
             status: 'success',
             errorMessage: null,
             durationMs: Date.now() - startedMs,
@@ -1934,7 +2491,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
         return mapDbLog(logRow);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erreur collecte Google Home';
+      const msg =
+        err instanceof Error ? err.message : 'Erreur collecte Kasa / Google Home';
       const [logRow] = await db
         .insert(collectionLogs)
         .values({
@@ -1949,7 +2507,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       return mapDbLog(logRow);
     }
 
-    const errMsg = 'Aucun fournisseur configuré (TUYA_ACCESS_ID / Google Home non connectés).';
+    const errMsg =
+      'Aucun fournisseur configuré (TUYA_ACCESS_ID / KASA_EMAIL / Google Home non connectés).';
     const [inserted] = await db
       .insert(collectionLogs)
       .values({
@@ -2081,7 +2640,7 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
     return log;
   }
 
-  // Mode complet : Neon Postgres + Multi-Vendors (Tuya Cloud + Google Home)
+  // Mode complet : Neon Postgres + Multi-Vendors (Tuya Cloud + Kasa Cloud + Google Home)
   try {
     await seedDefaultDataIfEmpty(db);
     let allDevices = await db.select().from(devices);
@@ -2095,6 +2654,12 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
         d.isMonitored &&
         !d.id.startsWith('manual_') &&
         (!d.primaryVendor || d.primaryVendor === 'tuya')
+    );
+    const kasaMonitored = allDevices.filter(
+      (d) =>
+        d.isMonitored &&
+        !d.id.startsWith('manual_') &&
+        d.primaryVendor === 'kasa'
     );
     const googleMonitored = allDevices.filter(
       (d) =>
@@ -2169,16 +2734,17 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       await db.insert(metricReadings).values(readingsToInsert);
     }
 
-    const ghInserted = await collectGoogleHomeReadingsInDb(db, googleMonitored, now).catch(
-      () => 0
-    );
+    const [kasaInserted, ghInserted] = await Promise.all([
+      collectKasaReadingsInDb(db, kasaMonitored, now).catch(() => 0),
+      collectGoogleHomeReadingsInDb(db, googleMonitored, now).catch(() => 0),
+    ]);
 
     const [logRow] = await db
       .insert(collectionLogs)
       .values({
         trigger,
-        devicesCount: tuyaMonitored.length + googleMonitored.length,
-        readingsInserted: readingsToInsert.length + ghInserted,
+        devicesCount: tuyaMonitored.length + kasaMonitored.length + googleMonitored.length,
+        readingsInserted: readingsToInsert.length + kasaInserted + ghInserted,
         status: 'success',
         errorMessage: null,
         durationMs: Date.now() - startedMs,
@@ -2297,7 +2863,7 @@ export async function deleteRoom(id: number): Promise<void> {
 }
 
 export interface RoomVendorSyncResult {
-  vendor: 'tuya' | 'google_home' | 'all';
+  vendor: 'tuya' | 'kasa' | 'google_home' | 'all';
   roomsFound: number;
   createdCount: number;
   assignedDevicesCount: number;
@@ -2508,7 +3074,7 @@ async function syncRoomsFromGoogleHome(): Promise<RoomVendorSyncResult> {
       : 'tuya';
 
     const shouldUpdate =
-      primaryVendor === 'tuya'
+      primaryVendor === 'tuya' || primaryVendor === 'kasa'
         ? linkedDevice.roomId === null
         : linkedDevice.roomId !== mappedRoomId;
 
@@ -2543,10 +3109,168 @@ async function syncRoomsFromGoogleHome(): Promise<RoomVendorSyncResult> {
   };
 }
 
+async function syncRoomsFromKasa(): Promise<RoomVendorSyncResult> {
+  const db = getDb();
+  const kasaCfg = getKasaConfig();
+  const now = new Date();
+
+  if (!kasaCfg.configured) {
+    if (!db) {
+      const state = getDemoState();
+      state.vendorConnections.kasa.lastSyncedAt = now.toISOString();
+      state.vendorConnections.kasa.lastError = null;
+      return {
+        vendor: 'kasa',
+        roomsFound: state.rooms.length,
+        createdCount: 0,
+        assignedDevicesCount: 0,
+        mode: 'demo',
+        message: `Mode démo actif : ${state.rooms.length} pièce(s) Kasa Cloud simulée(s) déjà disponible(s).`,
+      };
+    }
+    throw new Error(
+      'Identifiants Kasa manquants. Configurez KASA_EMAIL et KASA_PASSWORD dans Vercel / .env.local.'
+    );
+  }
+
+  if (!db) {
+    const inventory = await fetchKasaInventory({ includeTelemetry: true });
+    const state = getDemoState();
+    const { roomNameToId, createdCount } = ensureMissingRoomsInDemo(inventory.roomNames);
+    let assignedDevicesCount = 0;
+
+    for (const kd of inventory.devices) {
+      if (!kd.roomName) continue;
+      const mappedRoomId = roomNameToId.get(kd.roomName.trim().toLowerCase()) ?? null;
+      if (mappedRoomId === null) continue;
+      const existingLink = state.vendorLinks.find(
+        (l) => l.vendor === 'kasa' && l.externalId === kd.externalId
+      );
+      const linkedDevice = existingLink
+        ? state.devices.find((d) => d.id === existingLink.deviceId)
+        : undefined;
+      if (!linkedDevice) continue;
+      const shouldUpdate =
+        linkedDevice.primaryVendor === 'tuya'
+          ? linkedDevice.roomId === null
+          : linkedDevice.roomId !== mappedRoomId;
+      if (shouldUpdate) {
+        linkedDevice.roomId = mappedRoomId;
+        assignedDevicesCount++;
+      }
+    }
+
+    state.vendorConnections.kasa = {
+      mode: 'cloud_account',
+      connected: true,
+      lastSyncedAt: now.toISOString(),
+      lastError: inventory.warning ?? null,
+    };
+
+    const baseMsg = `Kasa Cloud : ${inventory.roomNames.length} pièce(s)/groupe(s) détecté(s) (${createdCount} créée(s), ${assignedDevicesCount} appareil(s) rattaché(s)).`;
+    return {
+      vendor: 'kasa',
+      roomsFound: inventory.roomNames.length,
+      createdCount,
+      assignedDevicesCount,
+      mode: 'demo',
+      message: inventory.warning ? `${baseMsg} (${inventory.warning})` : baseMsg,
+    };
+  }
+
+  await seedDefaultDataIfEmpty(db);
+  const { cachedToken, cachedCloudUrl } = await loadCachedKasaSession(db);
+  let inventory;
+  try {
+    inventory = await fetchKasaInventory({
+      cachedToken,
+      cachedCloudUrl,
+      includeTelemetry: true,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur synchronisation pièces Kasa Cloud';
+    await persistKasaConnectionInDb(db, {
+      status: 'error',
+      region: kasaCfg.region,
+      lastError: msg,
+    });
+    throw err;
+  }
+
+  const { roomNameToId, createdCount } = await ensureMissingRoomsInDb(db, inventory.roomNames);
+  const [existingDeviceRows, kasaLinkRows] = await Promise.all([
+    db
+      .select({
+        id: devices.id,
+        primaryVendor: devices.primaryVendor,
+        roomId: devices.roomId,
+      })
+      .from(devices),
+    db.select().from(deviceVendorLinks).where(eq(deviceVendorLinks.vendor, 'kasa')),
+  ]);
+
+  const deviceById = new Map(existingDeviceRows.map((d) => [d.id, d]));
+  const linkByExternalId = new Map(kasaLinkRows.map((l) => [l.externalId, l]));
+
+  let assignedDevicesCount = 0;
+  const updatedDeviceIds = new Set<string>();
+
+  for (const kd of inventory.devices) {
+    if (!kd.roomName) continue;
+    const mappedRoomId = roomNameToId.get(kd.roomName.trim().toLowerCase()) ?? null;
+    if (mappedRoomId === null) continue;
+
+    const existingLink = linkByExternalId.get(kd.externalId);
+    const linkedDevice = existingLink ? deviceById.get(existingLink.deviceId) : undefined;
+    if (!linkedDevice || updatedDeviceIds.has(linkedDevice.id)) continue;
+
+    const primaryVendor: VendorId = isValidVendorId(linkedDevice.primaryVendor)
+      ? linkedDevice.primaryVendor
+      : 'kasa';
+    const shouldUpdate =
+      primaryVendor === 'tuya'
+        ? linkedDevice.roomId === null
+        : linkedDevice.roomId !== mappedRoomId;
+
+    if (shouldUpdate) {
+      await db
+        .update(devices)
+        .set({ roomId: mappedRoomId })
+        .where(eq(devices.id, linkedDevice.id));
+      await db
+        .update(metricReadings)
+        .set({ roomId: mappedRoomId })
+        .where(and(eq(metricReadings.deviceId, linkedDevice.id), isNull(metricReadings.roomId)));
+      updatedDeviceIds.add(linkedDevice.id);
+      assignedDevicesCount++;
+    }
+  }
+
+  await persistKasaConnectionInDb(db, {
+    status: 'connected',
+    sessionToken: inventory.sessionToken,
+    cloudUrl: inventory.cloudUrl,
+    region: kasaCfg.region,
+    lastSyncedAt: now,
+    lastError: inventory.warning ?? null,
+  });
+
+  const baseMsg = `Kasa Cloud : ${inventory.roomNames.length} pièce(s)/groupe(s) détecté(s) (${createdCount} créée(s), ${assignedDevicesCount} appareil(s) rattaché(s)).`;
+  return {
+    vendor: 'kasa',
+    roomsFound: inventory.roomNames.length,
+    createdCount,
+    assignedDevicesCount,
+    mode: 'live',
+    message: inventory.warning ? `${baseMsg} (${inventory.warning})` : baseMsg,
+  };
+}
+
 export async function syncRoomsFromVendor(
-  vendor: 'tuya' | 'google_home' | 'all' = 'all'
+  vendor: 'tuya' | 'kasa' | 'google_home' | 'all' = 'all'
 ): Promise<RoomVendorSyncResult> {
   if (vendor === 'tuya') return syncRoomsFromTuya();
+  if (vendor === 'kasa') return syncRoomsFromKasa();
   if (vendor === 'google_home') return syncRoomsFromGoogleHome();
 
   const db = getDb();
@@ -2555,12 +3279,16 @@ export async function syncRoomsFromVendor(
 
   if (!db) {
     tasks.push({ label: 'Tuya', run: syncRoomsFromTuya });
+    tasks.push({ label: 'Kasa', run: syncRoomsFromKasa });
     if (googleApiEnabled) {
       tasks.push({ label: 'Google Home', run: syncRoomsFromGoogleHome });
     }
   } else {
     if (getTuyaConfig().configured) {
       tasks.push({ label: 'Tuya', run: syncRoomsFromTuya });
+    }
+    if (getKasaConfig().configured) {
+      tasks.push({ label: 'Kasa', run: syncRoomsFromKasa });
     }
     if (googleApiEnabled) {
       const ghRows = await db
@@ -2580,8 +3308,8 @@ export async function syncRoomsFromVendor(
     if (tasks.length === 0) {
       throw new Error(
         googleApiEnabled
-          ? 'Aucun système configuré ou connecté pour synchroniser les pièces (configurez Tuya ou connectez Google Home).'
-          : 'Tuya n’est pas encore configuré pour synchroniser les pièces.'
+          ? 'Aucun système configuré ou connecté pour synchroniser les pièces (configurez Tuya, Kasa ou connectez Google Home).'
+          : 'Aucun système configuré pour synchroniser les pièces (configurez Tuya ou Kasa).'
       );
     }
   }

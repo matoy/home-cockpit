@@ -66,7 +66,7 @@ export function mergeDeviceSystems(
 }
 
 /**
- * Détecte les appareils Google Home autonomes qui correspondent probablement déjà à un appareil Tuya
+ * Détecte les appareils Google Home autonomes qui correspondent probablement déjà à un appareil principal (Tuya ou Kasa)
  * afin de proposer une fusion en 1 clic sans créer de faux positifs silencieux.
  */
 export function findDuplicateCandidates(
@@ -81,9 +81,9 @@ export function findDuplicateCandidates(
       normalizeSystems(d.systems, d.primaryVendor).length === 1
   );
 
-  const linkableTuya = devices.filter(
+  const linkablePrimary = devices.filter(
     (d) =>
-      d.primaryVendor === 'tuya' &&
+      (d.primaryVendor === 'tuya' || d.primaryVendor === 'kasa') &&
       !normalizeSystems(d.systems, d.primaryVendor).includes('google_home')
   );
 
@@ -95,27 +95,27 @@ export function findDuplicateCandidates(
     );
 
     let bestMatch: {
-      tuya: DeviceRecord;
+      target: DeviceRecord;
       confidence: 'high' | 'medium';
       score: number;
       reason: string;
     } | null = null;
 
-    for (const tuya of linkableTuya) {
-      const tuyaNames = [tuya.name, tuya.customName].filter(
+    for (const target of linkablePrimary) {
+      const targetNames = [target.name, target.customName].filter(
         (n): n is string => Boolean(n && n.trim())
       );
 
       let maxSim = 0;
       for (const gn of ghNames) {
-        for (const tn of tuyaNames) {
+        for (const tn of targetNames) {
           const sim = tokenSimilarity(gn, tn);
           if (sim > maxSim) maxSim = sim;
         }
       }
 
       const sameRoom =
-        gh.roomId !== null && tuya.roomId !== null && gh.roomId === tuya.roomId;
+        gh.roomId !== null && target.roomId !== null && gh.roomId === target.roomId;
 
       let confidence: 'high' | 'medium' | null = null;
       let reason = '';
@@ -136,7 +136,7 @@ export function findDuplicateCandidates(
       const rankScore = (confidence === 'high' ? 2 : 1) + maxSim + (sameRoom ? 0.2 : 0);
       if (!bestMatch || rankScore > bestMatch.score) {
         bestMatch = {
-          tuya,
+          target,
           confidence,
           score: rankScore,
           reason,
@@ -146,8 +146,8 @@ export function findDuplicateCandidates(
 
     if (bestMatch) {
       const room =
-        bestMatch.tuya.roomId !== null
-          ? roomMap.get(bestMatch.tuya.roomId) ?? null
+        bestMatch.target.roomId !== null
+          ? roomMap.get(bestMatch.target.roomId) ?? null
           : gh.roomId !== null
             ? roomMap.get(gh.roomId) ?? null
             : null;
@@ -156,9 +156,9 @@ export function findDuplicateCandidates(
         sourceDeviceId: gh.id,
         sourceName: gh.customName || gh.name,
         sourceVendor: 'google_home',
-        targetDeviceId: bestMatch.tuya.id,
-        targetName: bestMatch.tuya.customName || bestMatch.tuya.name,
-        targetVendor: 'tuya',
+        targetDeviceId: bestMatch.target.id,
+        targetName: bestMatch.target.customName || bestMatch.target.name,
+        targetVendor: bestMatch.target.primaryVendor,
         roomName: room?.name ?? null,
         confidence: bestMatch.confidence,
         reason: bestMatch.reason,

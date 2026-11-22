@@ -1,6 +1,6 @@
 import type { DeviceCategory, RawDpStatus, VendorId } from '@/types';
 
-export const VENDOR_IDS: readonly VendorId[] = ['tuya', 'google_home'];
+export const VENDOR_IDS: readonly VendorId[] = ['tuya', 'kasa', 'google_home'];
 
 export interface VendorMeta {
   id: VendorId;
@@ -22,6 +22,16 @@ export const VENDOR_REGISTRY: Record<VendorId, VendorMeta> = {
     dotClass: 'bg-orange-400',
     description:
       'Appareils Smart Life / Tuya Cloud (puissance, kWh, climat, ouvertures, scénarios)',
+  },
+  kasa: {
+    id: 'kasa',
+    label: 'Kasa',
+    shortLabel: 'K',
+    accentColor: '#14b8a6',
+    badgeClass: 'border-teal-500/40 bg-teal-500/15 text-teal-300',
+    dotClass: 'bg-teal-400',
+    description:
+      'Appareils TP-Link Kasa via Cloud (100 % cloud, lecture seule : prises, multiprises, ampoules, W / kWh)',
   },
   google_home: {
     id: 'google_home',
@@ -49,6 +59,10 @@ export interface NormalizedVendorDevice {
   batteryPct: number | null;
   contactOpen: boolean | null;
   powerW: number | null;
+  voltageV?: number | null;
+  addEleKwh?: number | null;
+  macAddress?: string | null;
+  ipAddress?: string | null;
   rawTraits: RawDpStatus[];
 }
 
@@ -64,7 +78,7 @@ export interface VendorAdapter {
 }
 
 export function isValidVendorId(value: unknown): value is VendorId {
-  return value === 'tuya' || value === 'google_home';
+  return value === 'tuya' || value === 'kasa' || value === 'google_home';
 }
 
 export function getVendorMeta(vendor: VendorId): VendorMeta {

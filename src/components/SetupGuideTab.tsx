@@ -84,6 +84,13 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
         ? 'Renseigné pour liste directe /v1.0/users/{uid}/devices'
         : 'Optionnel (repli sur associated-users)',
     },
+    {
+      label: 'TP-Link Kasa Cloud (KASA_EMAIL & PASSWORD)',
+      ok: env.kasaConfigured,
+      detail: env.kasaConfigured
+        ? `Cloud 100 % lecture seule · Région : ${env.kasaRegion.toUpperCase()}`
+        : 'Optionnel — ajoutez KASA_EMAIL et KASA_PASSWORD (et KASA_REGION=eu)',
+    },
     ...(showGoogleHomeApi
       ? [
           {
@@ -305,6 +312,118 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Étape Kasa Cloud */}
+      <div
+        id="setup-kasa-cloud"
+        className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-4 scroll-mt-24"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-xl bg-teal-500/15 p-2 text-teal-400">
+              <Cloud className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-white">
+                TP-Link Kasa Cloud — Appareils, pièces/groupes &amp; kWh (100 % cloud, lecture seule)
+              </h3>
+              <p className="text-xs text-slate-400">
+                Connexion directe au cloud TP-Link (<code>*.tplinkcloud.com</code>) compatible Vercel
+                serverless · zéro découverte locale LAN et zéro commande d&apos;allumage/extinction.
+              </p>
+            </div>
+          </div>
+
+          <span
+            className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${
+              env.kasaConfigured
+                ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                : 'border-slate-700 bg-slate-800 text-slate-400'
+            }`}
+          >
+            {env.kasaConfigured
+              ? `Configuré (${env.kasaRegion.toUpperCase()})`
+              : 'Non configuré'}
+          </span>
+        </div>
+
+        <ol className="list-decimal list-inside space-y-2 text-xs text-slate-300 leading-relaxed">
+          <li>
+            Ajoutez vos identifiants de compte TP-Link / Kasa dans <code>.env.local</code> et sur
+            Vercel : <code>KASA_EMAIL</code>, <code>KASA_PASSWORD</code> et{' '}
+            <code>KASA_REGION=&quot;eu&quot;</code> (<code>eu</code>, <code>us</code>,{' '}
+            <code>ap</code> ou <code>global</code>).
+          </li>
+          <li>
+            <strong className="text-amber-300">Important (erreur -20675) :</strong> désactivez la
+            double authentification (<strong>2FA / MFA</strong>) dans l&apos;application mobile
+            Kasa/Tapo afin que l&apos;API cloud puisse authentifier votre session automatiquement.
+          </li>
+          <li>
+            <strong>Mesures énergétiques &amp; multiprises :</strong> les prises équipées d&apos;un
+            compteur (HS110, KP115, KP125, HS300) remontent automatiquement puissance (W), tension
+            (V) et cumul kWh à chaque collecte, y compris chaque prise individuelle d&apos;une
+            multiprise HS300.
+          </li>
+          <li>
+            <strong>Pièces et groupes Kasa :</strong> si votre compte Kasa Cloud expose des groupes ou
+            pièces, ils sont importés dans <strong>Pièces</strong>. À défaut, assignez librement la
+            pièce de chaque appareil depuis <strong>Appareils</strong>.
+          </li>
+        </ol>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5">
+              <KeyRound className="h-3.5 w-3.5 text-teal-400" />
+              Variables d&apos;environnement TP-Link Kasa Cloud
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                copyText(
+                  'kasa-env',
+                  'KASA_EMAIL="votre-email@exemple.com"\nKASA_PASSWORD="votre-mot-de-passe"\nKASA_REGION="eu"'
+                )
+              }
+              className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
+            >
+              {copiedKey === 'kasa-env' ? (
+                <Check className="h-3 w-3 text-emerald-400" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
+              Copier
+            </button>
+          </div>
+          <pre className="font-mono text-[11px] text-teal-300 overflow-x-auto leading-relaxed">
+{`KASA_EMAIL="votre-email@exemple.com"
+KASA_PASSWORD="votre-mot-de-passe"
+KASA_REGION="eu" # eu, us, ap ou global`}
+          </pre>
+        </div>
+
+        {onNavigateTab && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onNavigateTab('devices')}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 px-3 py-1.5 text-xs font-medium text-white transition"
+            >
+              Synchroniser Kasa dans Appareils
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigateTab('rooms')}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
+            >
+              Synchroniser pièces Kasa
+              <ArrowRight className="h-3.5 w-3.5 text-teal-400" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Étape 4 : Google Home Multi-Vendors */}

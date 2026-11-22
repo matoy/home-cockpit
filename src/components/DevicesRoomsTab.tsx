@@ -101,6 +101,7 @@ export function DevicesRoomsTab({
 }: DevicesRoomsTabProps) {
   const showGoogleHomeApi = data.env.googleHomeApiEnabled;
   const [syncingTuya, setSyncingTuya] = useState(false);
+  const [syncingKasa, setSyncingKasa] = useState(false);
   const [syncingGoogle, setSyncingGoogle] = useState(false);
   const [disconnectingGoogle, setDisconnectingGoogle] = useState(false);
   const [selectedGoogleMode, setSelectedGoogleMode] = useState<GoogleHomeMode>(
@@ -331,9 +332,10 @@ export function DevicesRoomsTab({
   );
 
   const { systemCounts, unassignedCount, roomDeviceCounts, filteredDevices } = useMemo(() => {
-    const sysCounts = {
+    const sysCounts: Record<'all' | VendorId | 'multi', number> = {
       all: data.devices.length,
       tuya: 0,
+      kasa: 0,
       google_home: 0,
       multi: 0,
     };
@@ -361,6 +363,7 @@ export function DevicesRoomsTab({
 
     for (const dev of data.devices) {
       if (dev.systems.includes('tuya')) sysCounts.tuya += 1;
+      if (dev.systems.includes('kasa')) sysCounts.kasa += 1;
       if (dev.systems.includes('google_home')) sysCounts.google_home += 1;
       if (dev.systems.length > 1) sysCounts.multi += 1;
 
@@ -404,6 +407,25 @@ export function DevicesRoomsTab({
       });
     } finally {
       setSyncingTuya(false);
+    }
+  }
+
+  async function handleSyncKasa() {
+    setSyncingKasa(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/vendors/kasa/sync', { method: 'POST' });
+      const json = (await res.json()) as { message?: string; error?: string };
+      if (!res.ok) throw new Error(json.error || 'Échec de synchronisation Kasa');
+      setSyncMessage({ ok: true, text: json.message || 'Synchronisation Kasa Cloud terminée.' });
+      await onRefresh();
+    } catch (err) {
+      setSyncMessage({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Erreur Kasa Cloud',
+      });
+    } finally {
+      setSyncingKasa(false);
     }
   }
 
@@ -468,7 +490,7 @@ export function DevicesRoomsTab({
       });
       setSyncMessage({
         ok: true,
-        text: 'Appareils fusionnés sans doublon. La liaison Google Home ↔ Tuya est mémorisée.',
+        text: 'Appareils fusionnés sans doublon. La liaison multi-systèmes est mémorisée.',
       });
       await onRefresh();
     } catch (err) {
@@ -568,6 +590,7 @@ export function DevicesRoomsTab({
   }
 
   const tuyaVendor = data.vendors.find((v) => v.vendor === 'tuya');
+  const kasaVendor = data.vendors.find((v) => v.vendor === 'kasa');
   const ghVendor = data.vendors.find((v) => v.vendor === 'google_home');
   const isGhConnected = Boolean(ghVendor?.connected);
 
@@ -576,7 +599,9 @@ export function DevicesRoomsTab({
       {/* Synchronisation Multi-Vendors */}
       <div
         className={
-          showGoogleHomeApi ? 'grid grid-cols-1 lg:grid-cols-2 gap-4' : 'grid grid-cols-1 gap-4'
+          showGoogleHomeApi
+            ? 'grid grid-cols-1 lg:grid-cols-3 gap-4'
+            : 'grid grid-cols-1 lg:grid-cols-2 gap-4'
         }
       >
         {/* Tuya Cloud */}
@@ -626,6 +651,62 @@ export function DevicesRoomsTab({
             >
               <RefreshCw className={`h-3.5 w-3.5 ${syncingTuya ? 'animate-spin' : ''}`} />
               {syncingTuya ? 'Synchronisation...' : 'Synchroniser Tuya'}
+            </button>
+          </div>
+        </div>
+
+        {/* TP-Link Kasa Cloud (100 % cloud, lecture seule) */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="w-full">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.kasa.badgeClass}`}
+                >
+                  {VENDOR_REGISTRY.kasa.label}
+                </span>
+                <span className="text-xs text-slate-400">
+                  {kasaVendor?.devicesCount ?? systemCounts.kasa} appareil(s)
+                </span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                    data.env.kasaConfigured || data.env.mode === 'demo'
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  {data.env.mode === 'demo'
+                    ? 'Mode Démo'
+                    : data.env.kasaConfigured
+                      ? `Connecté (${data.env.kasaRegion.toUpperCase()})`
+                      : 'Non configuré'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-2">
+                {VENDOR_REGISTRY.kasa.description}. Relevés W, tension et kWh en lecture seule sans accès LAN.
+              </p>
+              {kasaVendor?.lastError && (
+                <p className="text-[11px] text-amber-300 mt-1.5">{kasaVendor.lastError}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <span className="text-[11px] text-slate-500">
+              {kasaVendor?.lastSyncedAt
+                ? `Synchro : ${new Date(kasaVendor.lastSyncedAt).toLocaleString('fr-FR')}`
+                : data.env.mode === 'live' && !data.env.kasaConfigured
+                  ? 'Ajoutez KASA_EMAIL & KASA_PASSWORD (voir Guide Setup)'
+                  : '100 % cloud · zéro commande envoyée'}
+            </span>
+            <button
+              type="button"
+              onClick={handleSyncKasa}
+              disabled={syncingKasa}
+              className="flex items-center gap-2 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncingKasa ? 'animate-spin' : ''}`} />
+              {syncingKasa ? 'Synchronisation...' : 'Synchroniser Kasa'}
             </button>
           </div>
         </div>
@@ -760,16 +841,16 @@ export function DevicesRoomsTab({
         </div>
       )}
 
-      {/* Bannière de déduplication Tuya <-> Google Home */}
+      {/* Bannière de déduplication multi-systèmes */}
       {visibleDuplicateCandidates.length > 0 && (
         <div className="rounded-2xl border border-amber-500/35 bg-amber-500/10 p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-semibold text-amber-200">
               <GitMerge className="h-4 w-4 text-amber-400 shrink-0" />
-              Doublons potentiels Tuya ↔ Google Home détectés ({visibleDuplicateCandidates.length})
+              Doublons potentiels multi-systèmes détectés ({visibleDuplicateCandidates.length})
             </div>
             <span className="text-[11px] text-amber-300/80">
-              Fusionnez en 1 clic pour combiner les badges sur une seule ligne et conserver les mesures Tuya.
+              Fusionnez en 1 clic pour combiner les badges sur une seule ligne et conserver les mesures principales (Tuya / Kasa).
             </span>
           </div>
 

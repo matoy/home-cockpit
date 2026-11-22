@@ -1,6 +1,6 @@
 export type DeviceCategory = 'power' | 'climate' | 'contact' | 'hybrid' | 'other';
 
-export type VendorId = 'tuya' | 'google_home';
+export type VendorId = 'tuya' | 'kasa' | 'google_home';
 
 export type SystemFilter = 'all' | VendorId;
 
@@ -38,7 +38,7 @@ export interface DeviceVendorLinkRecord {
 export interface VendorConnectionSummary {
   vendor: VendorId;
   label: string;
-  mode: 'cloud_key' | GoogleHomeMode;
+  mode: 'cloud_key' | 'cloud_account' | GoogleHomeMode;
   configured: boolean;
   connected: boolean;
   devicesCount: number;
@@ -222,6 +222,8 @@ export interface EnvStatus {
   tuyaConfigured: boolean;
   tuyaRegion: string;
   tuyaUserUidConfigured: boolean;
+  kasaConfigured: boolean;
+  kasaRegion: string;
   appPasswordConfigured: boolean;
   scheduleSecretConfigured: boolean;
   googleHomeApiEnabled: boolean;

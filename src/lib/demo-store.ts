@@ -12,7 +12,7 @@ import type {
 } from '@/types';
 
 export interface DemoVendorConnectionState {
-  mode: 'cloud_key' | GoogleHomeMode;
+  mode: 'cloud_key' | 'cloud_account' | GoogleHomeMode;
   connected: boolean;
   lastSyncedAt: string | null;
   lastError: string | null;
@@ -568,6 +568,72 @@ function createInitialDemoState(): DemoState {
       lastBatteryPct: null,
       lastContactOpen: null,
     },
+    {
+      id: 'kasa_demo_hs110_lavelinge',
+      name: 'Prise Kasa Lave-Linge',
+      customName: 'Lave-Linge (Kasa HS110)',
+      primaryVendor: 'kasa',
+      systems: ['kasa', 'google_home'],
+      roomId: 5,
+      category: 'power',
+      tuyaCategory: 'IOT.SMARTPLUGSWITCH',
+      productName: 'TP-Link · HS110(EU)',
+      ipAddress: null,
+      macAddress: '50:C7:BF:24:8A:10',
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {
+        power: { code: 'power_w', scale: 1 },
+        voltage: { code: 'voltage_v', scale: 1 },
+        addEle: { code: 'total_kwh', scale: 1 },
+      },
+      lastRawStatus: [
+        { code: 'relay_state', value: true },
+        { code: 'power_w', value: 48 },
+        { code: 'voltage_v', value: 230.5 },
+        { code: 'total_kwh', value: 19.4 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: 48,
+      lastVoltageV: 230.5,
+      lastAddEleKwh: 19.4,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
+    {
+      id: 'kasa_demo_kl130_salon',
+      name: 'Ampoule Kasa Salon',
+      customName: 'Lampe Ambiance Salon',
+      primaryVendor: 'kasa',
+      systems: ['kasa'],
+      roomId: 1,
+      category: 'other',
+      tuyaCategory: 'IOT.SMARTBULB',
+      productName: 'TP-Link · KL130(EU)',
+      ipAddress: null,
+      macAddress: '50:C7:BF:24:9C:22',
+      isOnline: true,
+      isMonitored: false,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'relay_state', value: true },
+        { code: 'brightness', value: 75 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
   ];
 
   // Deux périodes tarifaires (2025 -> 2026) pour illustrer la gestion multi-périodes
@@ -611,6 +677,7 @@ function createInitialDemoState(): DemoState {
     ['bf81a2c9salonplug01', 12.0],
     ['bf81a2c9bureaudesk1', 20.0],
     ['bf81a2c9cuisinefrigo', 28.0],
+    ['kasa_demo_hs110_lavelinge', 14.0],
   ]);
 
   for (let step = totalSteps; step >= 0; step--) {
@@ -856,6 +923,29 @@ function createInitialDemoState(): DemoState {
         tempC: null,
         humidityPct: null,
         contactOpen: open,
+      });
+    }
+
+    // 12. Kasa Lave-Linge HS110 (cycles ponctuels + veille ~2.5W)
+    {
+      const noise = pseudoNoise(step * 5.7);
+      const isWashWindow = step % 48 >= 18 && step % 48 <= 21 && (step % 3 === 0 || noise > 0.45);
+      const powerW = Math.round((isWashWindow ? 420 + noise * 950 : 2.2 + noise * 1.4) * 10) / 10;
+      const prevAdd = cumulativeAddEle.get('kasa_demo_hs110_lavelinge') ?? 14;
+      const kwh = Math.round((powerW / 1000) * 0.5 * 10000) / 10000;
+      cumulativeAddEle.set('kasa_demo_hs110_lavelinge', prevAdd + kwh);
+      readings.push({
+        id: nextReadingId++,
+        deviceId: 'kasa_demo_hs110_lavelinge',
+        roomId: 5,
+        recordedAt: ts.toISOString(),
+        powerW,
+        voltageV: 230.2 + Math.round(noise * 20) / 10,
+        energyKwh: kwh,
+        energySource: 'add_ele',
+        tempC: null,
+        humidityPct: null,
+        contactOpen: null,
       });
     }
   }
@@ -1137,12 +1227,20 @@ function createInitialDemoState(): DemoState {
       id: nextLinkId++,
       deviceId: d.id,
       vendor: d.primaryVendor,
-      externalId: d.primaryVendor === 'google_home' ? `enterprises/demo/devices/${d.id}` : d.id,
+      externalId:
+        d.primaryVendor === 'google_home'
+          ? `enterprises/demo/devices/${d.id}`
+          : d.primaryVendor === 'kasa'
+            ? d.id.replace(/^kasa_/, '')
+            : d.id,
       externalName: d.name,
       isPrimaryTelemetry: true,
       linkedAt: syncedIso,
     });
-    if (d.primaryVendor === 'tuya' && d.systems.includes('google_home')) {
+    if (
+      (d.primaryVendor === 'tuya' || d.primaryVendor === 'kasa') &&
+      d.systems.includes('google_home')
+    ) {
       vendorLinks.push({
         id: nextLinkId++,
         deviceId: d.id,
@@ -1159,6 +1257,12 @@ function createInitialDemoState(): DemoState {
   const vendorConnections: Record<VendorId, DemoVendorConnectionState> = {
     tuya: {
       mode: 'cloud_key',
+      connected: true,
+      lastSyncedAt: syncedIso,
+      lastError: null,
+    },
+    kasa: {
+      mode: 'cloud_account',
       connected: true,
       lastSyncedAt: syncedIso,
       lastError: null,
