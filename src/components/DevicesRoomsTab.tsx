@@ -20,6 +20,7 @@ import {
   GitMerge,
   Unlink,
   ExternalLink,
+  Search,
 } from 'lucide-react';
 import { VENDOR_IDS, VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import type {
@@ -46,6 +47,47 @@ const SCALE_OPTIONS = [
   { label: '÷ 100 (× 0.01)', value: 0.01 },
   { label: '÷ 1000 (× 0.001)', value: 0.001 },
 ];
+
+function normalizeSearchText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function buildDeviceSearchHaystack(dev: DeviceRecord, roomName?: string): string {
+  const parts: Array<string | number | null | undefined> = [
+    dev.id,
+    dev.name,
+    dev.customName,
+    dev.productName,
+    dev.tuyaCategory,
+    dev.category,
+    dev.ipAddress,
+    dev.macAddress,
+    dev.macAddress ? dev.macAddress.replace(/[^a-zA-Z0-9]/g, '') : null,
+    roomName ?? 'non assignée sans pièce',
+    dev.systems.length > 1 ? 'multi-systèmes multi' : null,
+    ...dev.systems.flatMap((s) => [s, VENDOR_REGISTRY[s].label]),
+    ...(dev.vendorLinks ?? []).flatMap((l) => [l.externalId, l.externalName]),
+    dev.energyMode,
+    dev.energyMode === 'hybrid'
+      ? 'hybride'
+      : dev.energyMode === 'add_ele'
+        ? 'compteur'
+        : 'integration',
+    dev.isOnline ? 'en ligne online' : 'hors ligne offline',
+    dev.excludeFromTotals ? 'exclu cascade' : null,
+    dev.isMonitored ? 'suivi' : 'non suivi ignore',
+    ...Object.values(dev.dpConfig ?? {}).map((f) => f?.code),
+    dev.lastPowerW !== null ? `${dev.lastPowerW}w` : null,
+    dev.lastTempC !== null ? `${dev.lastTempC}°c` : null,
+    dev.lastHumidityPct !== null ? `${dev.lastHumidityPct}%` : null,
+    dev.lastBatteryPct !== null ? `${dev.lastBatteryPct}%` : null,
+  ];
+
+  return normalizeSearchText(parts.filter((p) => p !== null && p !== undefined && p !== '').join(' '));
+}
 
 export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
   const [syncingTuya, setSyncingTuya] = useState(false);
@@ -80,11 +122,12 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
   const [savingLink, setSavingLink] = useState(false);
   const [linkFeedback, setLinkFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
-  // Filtre des appareils par système & pièce
+  // Filtres des appareils (système, pièce, recherche textuelle)
   const [systemFilter, setSystemFilter] = useState<SystemFilter | 'multi'>(
     data.selectedSystem ?? 'all'
   );
   const [roomFilter, setRoomFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     setSystemFilter(data.selectedSystem ?? 'all');
@@ -119,10 +162,22 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
       multi: 0,
     };
 
+    const roomNameById = new Map<number, string>(data.rooms.map((r) => [r.id, r.name]));
+    const searchTokens = normalizeSearchText(searchQuery).trim().split(/\s+/).filter(Boolean);
+
     const matchesSystem = (dev: DeviceRecord): boolean => {
       if (systemFilter === 'all') return true;
       if (systemFilter === 'multi') return dev.systems.length > 1;
       return dev.systems.includes(systemFilter);
+    };
+
+    const matchesSearch = (dev: DeviceRecord): boolean => {
+      if (searchTokens.length === 0) return true;
+      const haystack = buildDeviceSearchHaystack(
+        dev,
+        dev.roomId !== null ? roomNameById.get(dev.roomId) : undefined
+      );
+      return searchTokens.every((token) => haystack.includes(token));
     };
 
     const counts = new Map<number, number>();
@@ -133,7 +188,7 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
       if (dev.systems.includes('google_home')) sysCounts.google_home += 1;
       if (dev.systems.length > 1) sysCounts.multi += 1;
 
-      if (!matchesSystem(dev)) continue;
+      if (!matchesSystem(dev) || !matchesSearch(dev)) continue;
 
       if (dev.roomId === null) {
         unassigned += 1;
@@ -143,7 +198,7 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
     }
 
     const filtered = data.devices.filter((dev) => {
-      if (!matchesSystem(dev)) return false;
+      if (!matchesSystem(dev) || !matchesSearch(dev)) return false;
       if (roomFilter === 'all') return true;
       if (roomFilter === 'unassigned') return dev.roomId === null;
       return String(dev.roomId) === roomFilter;
@@ -155,7 +210,7 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
       roomDeviceCounts: counts,
       filteredDevices: filtered,
     };
-  }, [data.devices, roomFilter, systemFilter]);
+  }, [data.devices, data.rooms, roomFilter, systemFilter, searchQuery]);
 
   async function handleSyncTuya() {
     setSyncingTuya(true);
@@ -944,15 +999,40 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
       {/* Liste des appareils */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-800 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-semibold text-white">
                 Appareils détectés ({filteredDevices.length}
-                {roomFilter !== 'all' || systemFilter !== 'all' ? ` / ${data.devices.length}` : ''})
+                {roomFilter !== 'all' || systemFilter !== 'all' || searchQuery.trim() !== ''
+                  ? ` / ${data.devices.length}`
+                  : ''}
+                )
               </h3>
               <p className="text-xs text-slate-400">
-                Filtrez par système ou pièce, déclarez les liaisons multi-systèmes sans doublons et calibrez vos calculs kWh
+                Filtrez par texte, système ou pièce, déclarez les liaisons multi-systèmes sans doublons et calibrez vos calculs kWh
               </p>
+            </div>
+
+            <div className="relative w-full sm:w-80">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Rechercher (nom, IP, MAC, pièce, système, DP...)"
+                aria-label="Rechercher un appareil"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 pl-8 pr-8 py-1.5 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  title="Effacer la recherche"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -1095,7 +1175,20 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
               {filteredDevices.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="px-4 py-8 text-center text-xs text-slate-500">
-                    Aucun appareil dans ce filtre.
+                    <div>Aucun appareil ne correspond aux filtres actifs.</div>
+                    {(roomFilter !== 'all' || systemFilter !== 'all' || searchQuery.trim() !== '') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery('');
+                          setRoomFilter('all');
+                          setSystemFilter('all');
+                        }}
+                        className="mt-2.5 inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1 text-[11px] text-slate-200 transition"
+                      >
+                        Réinitialiser les filtres
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (
