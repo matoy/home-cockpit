@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { GoogleHomeMode } from '@/types';
+import type { GoogleHomeMode, HomeConnectEnv } from '@/types';
 
 const SECRET_PREFIX = 'v1:';
 
@@ -57,20 +57,14 @@ export interface SignedOAuthState {
   returnTab?: 'devices' | 'rooms';
 }
 
-/**
- * Signe un paramètre OAuth `state` anti-CSRF par HMAC-SHA256.
- */
-export function signOAuthState(payload: SignedOAuthState): string {
+function signHmacPayload(payload: object): string {
   const key = deriveAesKey();
   const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
   const sig = crypto.createHmac('sha256', key).update(encoded).digest('base64url');
   return `${encoded}.${sig}`;
 }
 
-/**
- * Vérifie et décode un paramètre OAuth `state` signé.
- */
-export function verifyOAuthState(token: string | null | undefined): SignedOAuthState | null {
+function verifyHmacPayload(token: string | null | undefined): Record<string, unknown> | null {
   if (!token) return null;
   const dotIdx = token.indexOf('.');
   if (dotIdx <= 0) return null;
@@ -88,24 +82,71 @@ export function verifyOAuthState(token: string | null | undefined): SignedOAuthS
   }
 
   try {
-    const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as {
-      nonce?: unknown;
-      mode?: unknown;
-      returnTab?: unknown;
-    };
-    if (
-      typeof parsed.nonce === 'string' &&
-      parsed.nonce.length >= 8 &&
-      (parsed.mode === 'mcp' || parsed.mode === 'sdm')
-    ) {
-      return {
-        nonce: parsed.nonce,
-        mode: parsed.mode,
-        returnTab: parsed.returnTab === 'rooms' ? 'rooms' : 'devices',
-      };
-    }
-    return null;
+    const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Signe un paramètre OAuth `state` anti-CSRF par HMAC-SHA256.
+ */
+export function signOAuthState(payload: SignedOAuthState): string {
+  return signHmacPayload(payload);
+}
+
+/**
+ * Vérifie et décode un paramètre OAuth `state` signé.
+ */
+export function verifyOAuthState(token: string | null | undefined): SignedOAuthState | null {
+  const parsed = verifyHmacPayload(token);
+  if (!parsed) return null;
+  if (
+    typeof parsed.nonce === 'string' &&
+    parsed.nonce.length >= 8 &&
+    (parsed.mode === 'mcp' || parsed.mode === 'sdm')
+  ) {
+    return {
+      nonce: parsed.nonce,
+      mode: parsed.mode,
+      returnTab: parsed.returnTab === 'rooms' ? 'rooms' : 'devices',
+    };
+  }
+  return null;
+}
+
+export interface SignedHomeConnectOAuthState {
+  nonce: string;
+  env: HomeConnectEnv;
+  returnTab?: 'devices' | 'rooms';
+}
+
+/**
+ * Signe un paramètre OAuth `state` Siemens Home Connect anti-CSRF par HMAC-SHA256.
+ */
+export function signHomeConnectOAuthState(payload: SignedHomeConnectOAuthState): string {
+  return signHmacPayload(payload);
+}
+
+/**
+ * Vérifie et décode un paramètre OAuth `state` Siemens Home Connect signé.
+ */
+export function verifyHomeConnectOAuthState(
+  token: string | null | undefined
+): SignedHomeConnectOAuthState | null {
+  const parsed = verifyHmacPayload(token);
+  if (!parsed) return null;
+  if (
+    typeof parsed.nonce === 'string' &&
+    parsed.nonce.length >= 8 &&
+    (parsed.env === 'prod' || parsed.env === 'simulator' || parsed.env === 'cn')
+  ) {
+    return {
+      nonce: parsed.nonce,
+      env: parsed.env,
+      returnTab: parsed.returnTab === 'rooms' ? 'rooms' : 'devices',
+    };
+  }
+  return null;
 }

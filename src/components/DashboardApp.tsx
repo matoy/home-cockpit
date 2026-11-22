@@ -81,6 +81,9 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     const ghStatus = params.get('gh');
     const ghMode = params.get('gh_mode');
     const ghError = params.get('gh_error');
+    const hcStatus = params.get('hc');
+    const hcEnv = params.get('hc_env');
+    const hcError = params.get('hc_error');
 
     if (tabParam === 'devices') {
       setActiveTab('devices');
@@ -96,9 +99,17 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     } else if (ghError) {
       setToast(`Erreur Google Home : ${ghError}`);
       setTimeout(() => setToast(null), 7000);
+    } else if (hcStatus === 'connected') {
+      setToast(
+        `Siemens Home Connect connecté (${(hcEnv || 'prod').toUpperCase()}). Cliquez sur « Synchroniser Home Connect ».`
+      );
+      setTimeout(() => setToast(null), 6000);
+    } else if (hcError) {
+      setToast(`Erreur Siemens Home Connect : ${hcError}`);
+      setTimeout(() => setToast(null), 7000);
     }
 
-    if (tabParam || ghStatus || ghError) {
+    if (tabParam || ghStatus || ghError || hcStatus || hcError) {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
@@ -228,6 +239,15 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     }, 60);
   }
 
+  function handleOpenHomeConnectGuide() {
+    setActiveTab('guide');
+    setTimeout(() => {
+      document
+        .getElementById('setup-home-connect')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  }
+
   function handleOpenRoomDevices(targetRoomId: string) {
     setDevicesRoomFilter(targetRoomId);
     setActiveTab('devices');
@@ -331,11 +351,31 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
               className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
             >
               <option value="all">Tous les systèmes ({data.devices.length})</option>
-              {data.vendors.map((v) => (
-                <option key={v.vendor} value={v.vendor}>
-                  {v.label} ({v.devicesCount})
-                </option>
-              ))}
+              {data.vendors
+                .filter((v) => {
+                  if (v.vendor === 'tuya' || systemFilter === v.vendor) return true;
+                  if (v.vendor === 'kasa') {
+                    return data.env.kasaConfigured || (data.env.mode === 'live' && v.devicesCount > 0);
+                  }
+                  if (v.vendor === 'home_connect') {
+                    return (
+                      data.env.homeConnectConfigured ||
+                      (data.env.mode === 'live' && v.devicesCount > 0)
+                    );
+                  }
+                  if (v.vendor === 'google_home') {
+                    return (
+                      data.env.googleHomeApiEnabled ||
+                      (data.env.mode === 'live' && v.devicesCount > 0)
+                    );
+                  }
+                  return true;
+                })
+                .map((v) => (
+                  <option key={v.vendor} value={v.vendor}>
+                    {v.label} ({v.devicesCount})
+                  </option>
+                ))}
             </select>
 
             {/* Filtre pièce */}
@@ -517,6 +557,9 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             initialRoomFilter={devicesRoomFilter}
             onOpenRoomsTab={() => setActiveTab('rooms')}
             onOpenGoogleGuide={data.env.googleHomeApiEnabled ? handleOpenGoogleGuide : undefined}
+            onOpenHomeConnectGuide={
+              data.env.homeConnectConfigured ? handleOpenHomeConnectGuide : undefined
+            }
           />
         )}
         {activeTab === 'rooms' && (

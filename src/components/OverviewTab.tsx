@@ -13,6 +13,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { hasValidHumidityMeasurement, hasValidTempMeasurement } from '@/lib/device-utils';
+import { extractHomeConnectSummary } from '@/lib/vendors/home-connect-display';
 import { VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import type { ComfortStatus, DashboardPayload, TabId } from '@/types';
 
@@ -260,68 +261,90 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                   {/* Appareils de la pièce */}
                   {rs.devices.length > 0 && (
                     <div className="mt-3 space-y-1.5">
-                      {rs.devices.map((dev) => (
-                        <div
-                          key={dev.id}
-                          className="flex items-center justify-between gap-2 text-xs rounded-lg bg-slate-950/40 px-2.5 py-1.5"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            {dev.isOnline ? (
-                              <Wifi className="h-3 w-3 text-emerald-400 shrink-0" />
-                            ) : (
-                              <WifiOff className="h-3 w-3 text-slate-500 shrink-0" />
-                            )}
-                            <span className="truncate text-slate-300">
-                              {dev.customName || dev.name}
-                            </span>
-                            {(dev.systems.length > 1 || dev.primaryVendor !== 'tuya') &&
-                              dev.systems.map((sys) => {
-                                const meta = VENDOR_REGISTRY[sys];
-                                return (
-                                  <span
-                                    key={sys}
-                                    title={meta.label}
-                                    className={`shrink-0 rounded border px-1 py-0.2 text-[9px] font-semibold uppercase ${meta.badgeClass}`}
-                                  >
-                                    {meta.shortLabel}
-                                  </span>
-                                );
-                              })}
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0 text-slate-400 font-mono text-[11px]">
-                            {dev.lastPowerW !== null && (
-                              <span
-                                className={
-                                  dev.excludeFromTotals ? 'text-amber-300/80' : 'text-indigo-300'
-                                }
-                                title={
-                                  dev.excludeFromTotals
-                                    ? 'En cascade : exclu du total de la pièce et de la maison'
-                                    : undefined
-                                }
-                              >
-                                {dev.lastPowerW.toFixed(0)}W
-                                {dev.excludeFromTotals ? ' (cascade)' : ''}
+                      {rs.devices.map((dev) => {
+                        const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
+                        return (
+                          <div
+                            key={dev.id}
+                            className="flex items-center justify-between gap-2 text-xs rounded-lg bg-slate-950/40 px-2.5 py-1.5"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              {dev.isOnline ? (
+                                <Wifi className="h-3 w-3 text-emerald-400 shrink-0" />
+                              ) : (
+                                <WifiOff className="h-3 w-3 text-slate-500 shrink-0" />
+                              )}
+                              <span className="truncate text-slate-300">
+                                {dev.customName || dev.name}
                               </span>
-                            )}
-                            {dev.lastTempC !== null && hasValidTempMeasurement(dev) && (
-                              <span className="text-emerald-300">{dev.lastTempC.toFixed(1)}°C</span>
-                            )}
-                            {dev.lastHumidityPct !== null && hasValidHumidityMeasurement(dev) && (
-                              <span className="text-sky-300">{dev.lastHumidityPct.toFixed(0)}%</span>
-                            )}
-                            {dev.lastContactOpen !== null && (
-                              <span
-                                className={
-                                  dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'
-                                }
-                              >
-                                {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
-                              </span>
-                            )}
+                              {(dev.systems.length > 1 || dev.primaryVendor !== 'tuya') &&
+                                dev.systems.map((sys) => {
+                                  const meta = VENDOR_REGISTRY[sys];
+                                  return (
+                                    <span
+                                      key={sys}
+                                      title={meta.label}
+                                      className={`shrink-0 rounded border px-1 py-0.2 text-[9px] font-semibold uppercase ${meta.badgeClass}`}
+                                    >
+                                      {meta.shortLabel}
+                                    </span>
+                                  );
+                                })}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0 text-slate-400 font-mono text-[11px]">
+                              {dev.lastPowerW !== null && (
+                                <span
+                                  className={
+                                    dev.excludeFromTotals ? 'text-amber-300/80' : 'text-indigo-300'
+                                  }
+                                  title={
+                                    dev.excludeFromTotals
+                                      ? 'En cascade : exclu du total de la pièce et de la maison'
+                                      : undefined
+                                  }
+                                >
+                                  {dev.lastPowerW.toFixed(0)}W
+                                  {dev.excludeFromTotals ? ' (cascade)' : ''}
+                                </span>
+                              )}
+                              {dev.lastTempC !== null && hasValidTempMeasurement(dev) && (
+                                <span className="text-emerald-300">{dev.lastTempC.toFixed(1)}°C</span>
+                              )}
+                              {dev.lastHumidityPct !== null && hasValidHumidityMeasurement(dev) && (
+                                <span className="text-sky-300">{dev.lastHumidityPct.toFixed(0)}%</span>
+                              )}
+                              {dev.lastContactOpen !== null && (
+                                <span
+                                  className={
+                                    dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'
+                                  }
+                                >
+                                  {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
+                                </span>
+                              )}
+                              {hcSummary && (hcSummary.compactText || hcSummary.doorOpen) && (
+                                <span
+                                  className={
+                                    hcSummary.doorOpen
+                                      ? 'text-amber-300'
+                                      : hcSummary.operationTone === 'cyan'
+                                        ? 'text-cyan-300'
+                                        : hcSummary.operationTone === 'emerald'
+                                          ? 'text-emerald-300'
+                                          : 'text-slate-300'
+                                  }
+                                  title={hcSummary.activeProgram ?? undefined}
+                                >
+                                  {hcSummary.compactText}
+                                  {hcSummary.doorOpen
+                                    ? `${hcSummary.compactText ? ' · ' : ''}Porte ouverte`
+                                    : ''}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

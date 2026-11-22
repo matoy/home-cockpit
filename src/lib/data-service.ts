@@ -30,6 +30,13 @@ import {
   makeKasaDeviceId,
 } from './vendors/kasa-client';
 import {
+  fetchHomeConnectInventory,
+  getHomeConnectConfig,
+  HomeConnectApiError,
+  makeHomeConnectDeviceId,
+  refreshHomeConnectAccessToken,
+} from './vendors/home-connect-client';
+import {
   isValidVendorId,
   normalizeSystems,
   type NormalizedVendorDevice,
@@ -65,6 +72,7 @@ import type {
   EnvStatus,
   GoogleHomeMode,
   HcSlot,
+  HomeConnectEnv,
   MetricReadingRecord,
   RawDpStatus,
   RoomRecord,
@@ -83,9 +91,13 @@ const RANGE_HOURS: Record<Exclude<TimeRange, 'custom'>, number> = {
   '365d': 24 * 365,
 };
 
-export function getEnvStatus(googleHomeConnected = false): EnvStatus {
+export function getEnvStatus(
+  googleHomeConnected = false,
+  homeConnectConnected = false
+): EnvStatus {
   const tuya = getTuyaConfig();
   const kasa = getKasaConfig();
+  const hc = getHomeConnectConfig();
   const google = getGoogleHomeConfig();
   const databaseConfigured = isDatabaseConfigured();
   return {
@@ -96,6 +108,9 @@ export function getEnvStatus(googleHomeConnected = false): EnvStatus {
     tuyaUserUidConfigured: Boolean(tuya.userUid),
     kasaConfigured: kasa.configured,
     kasaRegion: kasa.region,
+    homeConnectConfigured: hc.configured,
+    homeConnectConnected: hc.configured && homeConnectConnected,
+    homeConnectEnv: hc.defaultEnv,
     appPasswordConfigured: isAppPasswordConfigured(),
     scheduleSecretConfigured: Boolean(process.env.SCHEDULE_SECRET?.trim()),
     googleHomeApiEnabled: google.apiEnabled,
@@ -558,6 +573,10 @@ function buildVendorConnectionSummaries(params: {
   kasaConnected: boolean;
   kasaLastSyncedAt: string | null;
   kasaLastError: string | null;
+  hcConnected: boolean;
+  hcEnv: HomeConnectEnv;
+  hcLastSyncedAt: string | null;
+  hcLastError: string | null;
   ghConnected: boolean;
   ghMode: GoogleHomeMode;
   ghLastSyncedAt: string | null;
@@ -565,6 +584,7 @@ function buildVendorConnectionSummaries(params: {
 }): VendorConnectionSummary[] {
   const tuyaCfg = getTuyaConfig();
   const kasaCfg = getKasaConfig();
+  const hcCfg = getHomeConnectConfig();
   const googleCfg = getGoogleHomeConfig();
 
   const countFor = (vendor: VendorId) =>
@@ -590,6 +610,16 @@ function buildVendorConnectionSummaries(params: {
       devicesCount: countFor('kasa'),
       lastSyncedAt: params.kasaLastSyncedAt,
       lastError: params.kasaLastError,
+    },
+    {
+      vendor: 'home_connect',
+      label: VENDOR_REGISTRY.home_connect.label,
+      mode: `oauth_${params.hcEnv}` as VendorConnectionSummary['mode'],
+      configured: hcCfg.configured,
+      connected: params.hcConnected,
+      devicesCount: countFor('home_connect'),
+      lastSyncedAt: params.hcLastSyncedAt,
+      lastError: params.hcLastError,
     },
     {
       vendor: 'google_home',
@@ -618,12 +648,20 @@ export async function getDashboardData(
     const ghState = state.vendorConnections.google_home;
     const tuyaState = state.vendorConnections.tuya;
     const kasaState = state.vendorConnections.kasa;
+    const hcState = state.vendorConnections.home_connect;
+    const hcEnv: HomeConnectEnv =
+      hcState.mode === 'oauth_simulator'
+        ? 'simulator'
+        : hcState.mode === 'oauth_cn'
+          ? 'cn'
+          : getHomeConnectConfig().defaultEnv;
     const env = {
-      ...getEnvStatus(ghState.connected),
+      ...getEnvStatus(ghState.connected, hcState.connected),
       googleHomeMode:
         ghState.mode === 'mcp' || ghState.mode === 'sdm'
           ? ghState.mode
           : getGoogleHomeConfig().defaultMode,
+      homeConnectEnv: hcEnv,
     };
     const devicesWithLinks: DeviceRecord[] = state.devices.map((d) => ({
       ...d,
@@ -639,6 +677,10 @@ export async function getDashboardData(
       kasaConnected: kasaState.connected,
       kasaLastSyncedAt: kasaState.lastSyncedAt,
       kasaLastError: kasaState.lastError,
+      hcConnected: hcState.connected,
+      hcEnv,
+      hcLastSyncedAt: hcState.lastSyncedAt,
+      hcLastError: hcState.lastError,
       ghConnected: ghState.connected,
       ghMode: env.googleHomeMode,
       ghLastSyncedAt: ghState.lastSyncedAt,
@@ -706,10 +748,12 @@ export async function getDashboardData(
 
   const tuyaConn = connRows.find((c) => c.vendor === 'tuya');
   const kasaConn = connRows.find((c) => c.vendor === 'kasa');
+  const hcConn = connRows.find((c) => c.vendor === 'home_connect');
   const ghConn = connRows.find((c) => c.vendor === 'google_home');
   const googleCfg = getGoogleHomeConfig();
   const tuyaCfg = getTuyaConfig();
   const kasaCfg = getKasaConfig();
+  const hcCfg = getHomeConnectConfig();
 
   const ghMode: GoogleHomeMode =
     ghConn?.mode === 'mcp' || ghConn?.mode === 'sdm' ? ghConn.mode : googleCfg.defaultMode;
@@ -721,10 +765,20 @@ export async function getDashboardData(
     kasaCfg.configured ||
     kasaConn?.status === 'connected' ||
     mappedDevices.some((d) => d.systems.includes('kasa'));
+  const hcEnv: HomeConnectEnv =
+    hcConn?.mode === 'oauth_simulator'
+      ? 'simulator'
+      : hcConn?.mode === 'oauth_cn'
+        ? 'cn'
+        : hcCfg.defaultEnv;
+  const hcConnected =
+    hcCfg.configured &&
+    Boolean(hcConn && hcConn.status === 'connected' && (hcConn.accessToken || hcConn.refreshToken));
 
   const env: EnvStatus = {
-    ...getEnvStatus(ghConnected),
+    ...getEnvStatus(ghConnected, hcConnected),
     googleHomeMode: ghMode,
+    homeConnectEnv: hcEnv,
   };
 
   const vendors = buildVendorConnectionSummaries({
@@ -735,6 +789,10 @@ export async function getDashboardData(
     kasaConnected,
     kasaLastSyncedAt: kasaConn?.lastSyncedAt ? kasaConn.lastSyncedAt.toISOString() : null,
     kasaLastError: kasaConn?.lastError ?? null,
+    hcConnected,
+    hcEnv,
+    hcLastSyncedAt: hcConn?.lastSyncedAt ? hcConn.lastSyncedAt.toISOString() : null,
+    hcLastError: hcConn?.lastError ?? null,
     ghConnected,
     ghMode,
     ghLastSyncedAt: ghConn?.lastSyncedAt ? ghConn.lastSyncedAt.toISOString() : null,
@@ -1505,8 +1563,12 @@ export async function syncGoogleHomeDevices(): Promise<{
         primaryVendor
       );
 
-      if (primaryVendor === 'tuya' || primaryVendor === 'kasa') {
-        // Priorité télémétrique Tuya / Kasa : on conserve les mesures W / kWh / DP / IP / MAC d'origine
+      if (
+        primaryVendor === 'tuya' ||
+        primaryVendor === 'kasa' ||
+        primaryVendor === 'home_connect'
+      ) {
+        // Priorité télémétrique Tuya / Kasa / Siemens Home Connect : on conserve les mesures et statuts d'origine
         await db
           .update(devices)
           .set({
@@ -2016,6 +2078,349 @@ export async function syncKasaDevices(): Promise<{
   };
 }
 
+function parseHomeConnectEnvFromMode(
+  mode: string | null | undefined,
+  fallback: HomeConnectEnv
+): HomeConnectEnv {
+  if (mode === 'oauth_simulator') return 'simulator';
+  if (mode === 'oauth_cn') return 'cn';
+  if (mode === 'oauth_prod') return 'prod';
+  return fallback;
+}
+
+async function ensureValidHomeConnectAccessToken(
+  db: AppDatabase,
+  conn: typeof vendorConnections.$inferSelect,
+  env: HomeConnectEnv,
+  forceRefresh = false
+): Promise<string> {
+  const plainAccess = decryptSecret(conn.accessToken);
+  const plainRefresh = decryptSecret(conn.refreshToken);
+
+  if (
+    !forceRefresh &&
+    plainAccess &&
+    (!conn.tokenExpiresAt || conn.tokenExpiresAt.getTime() > Date.now() + 300_000)
+  ) {
+    return plainAccess;
+  }
+
+  if (!plainRefresh) {
+    if (!forceRefresh && plainAccess) return plainAccess;
+    throw new Error('Jeton Siemens Home Connect expiré ou absent. Reconnectez Home Connect.');
+  }
+
+  const refreshed = await refreshHomeConnectAccessToken({ refreshToken: plainRefresh, env });
+  const expiresAt = new Date(Date.now() + refreshed.expiresInSec * 1000);
+
+  await db
+    .update(vendorConnections)
+    .set({
+      accessToken: encryptSecret(refreshed.accessToken),
+      refreshToken: refreshed.refreshToken ? encryptSecret(refreshed.refreshToken) : conn.refreshToken,
+      tokenExpiresAt: expiresAt,
+      lastError: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(vendorConnections.vendor, 'home_connect'));
+
+  return refreshed.accessToken;
+}
+
+export async function saveHomeConnectConnection(params: {
+  env: HomeConnectEnv;
+  accessToken: string;
+  refreshToken: string | null;
+  expiresInSec: number;
+}): Promise<void> {
+  const now = new Date();
+  const mode = `oauth_${params.env}`;
+  const db = getDb();
+
+  if (!db) {
+    const state = getDemoState();
+    state.vendorConnections.home_connect = {
+      mode: mode as DemoVendorMode,
+      connected: true,
+      lastSyncedAt: now.toISOString(),
+      lastError: null,
+    };
+    return;
+  }
+
+  await ensureSchemaInitialized(db);
+  const existingRows = await db
+    .select()
+    .from(vendorConnections)
+    .where(eq(vendorConnections.vendor, 'home_connect'))
+    .limit(1);
+
+  const encryptedAccess = encryptSecret(params.accessToken);
+  const encryptedRefresh = params.refreshToken
+    ? encryptSecret(params.refreshToken)
+    : existingRows[0]?.refreshToken ?? null;
+  const expiresAt = new Date(Date.now() + params.expiresInSec * 1000);
+
+  await db
+    .insert(vendorConnections)
+    .values({
+      vendor: 'home_connect',
+      mode,
+      status: 'connected',
+      accessToken: encryptedAccess,
+      refreshToken: encryptedRefresh,
+      tokenExpiresAt: expiresAt,
+      config: { env: params.env },
+      lastError: null,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: vendorConnections.vendor,
+      set: {
+        mode,
+        status: 'connected',
+        accessToken: encryptedAccess,
+        refreshToken: encryptedRefresh,
+        tokenExpiresAt: expiresAt,
+        config: { env: params.env },
+        lastError: null,
+        updatedAt: now,
+      },
+    });
+}
+
+type DemoVendorMode = VendorConnectionSummary['mode'];
+
+export async function disconnectHomeConnect(): Promise<void> {
+  const db = getDb();
+  if (!db) {
+    const state = getDemoState();
+    state.vendorConnections.home_connect.connected = false;
+    state.vendorConnections.home_connect.lastError = null;
+    return;
+  }
+
+  await ensureSchemaInitialized(db);
+  await db
+    .update(vendorConnections)
+    .set({
+      status: 'disconnected',
+      accessToken: null,
+      refreshToken: null,
+      tokenExpiresAt: null,
+      lastError: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(vendorConnections.vendor, 'home_connect'));
+}
+
+export async function syncHomeConnectDevices(): Promise<{
+  syncedCount: number;
+  newCount: number;
+  mode: 'live' | 'demo';
+  message: string;
+}> {
+  const db = getDb();
+  const hcCfg = getHomeConnectConfig();
+  const now = new Date();
+
+  if (!db) {
+    const state = getDemoState();
+    state.vendorConnections.home_connect.connected = true;
+    state.vendorConnections.home_connect.lastSyncedAt = now.toISOString();
+    state.vendorConnections.home_connect.lastError = null;
+    const hcCount = state.devices.filter((d) => d.systems.includes('home_connect')).length;
+    return {
+      syncedCount: hcCount,
+      newCount: 0,
+      mode: 'demo',
+      message: `Mode démo actif : ${hcCount} appareil(s) Siemens Home Connect simulé(s) synchronisé(s).`,
+    };
+  }
+
+  await seedDefaultDataIfEmpty(db);
+  if (!hcCfg.configured) {
+    throw new Error(
+      'Identifiants Siemens Home Connect manquants (SIEMENS_HOME_CONNECT_CLIENT_ID et SECRET).'
+    );
+  }
+
+  const connRows = await db
+    .select()
+    .from(vendorConnections)
+    .where(eq(vendorConnections.vendor, 'home_connect'))
+    .limit(1);
+
+  const conn = connRows[0];
+  if (!conn || conn.status !== 'connected' || (!conn.accessToken && !conn.refreshToken)) {
+    throw new Error(
+      'Siemens Home Connect n’est pas connecté. Cliquez d’abord sur « Connecter Home Connect ».'
+    );
+  }
+
+  const hcEnv = parseHomeConnectEnvFromMode(conn.mode, hcCfg.defaultEnv);
+  let inventory;
+  try {
+    const accessToken = await ensureValidHomeConnectAccessToken(db, conn, hcEnv);
+    try {
+      inventory = await fetchHomeConnectInventory({
+        accessToken,
+        env: hcEnv,
+        mode: 'full',
+      });
+    } catch (err) {
+      if (err instanceof HomeConnectApiError && err.status === 401 && conn.refreshToken) {
+        const refreshedToken = await ensureValidHomeConnectAccessToken(db, conn, hcEnv, true);
+        inventory = await fetchHomeConnectInventory({
+          accessToken: refreshedToken,
+          env: hcEnv,
+          mode: 'full',
+        });
+      } else {
+        throw err;
+      }
+    }
+  } catch (err) {
+    const msg =
+      err instanceof Error ? err.message : 'Erreur synchronisation Siemens Home Connect';
+    await db
+      .update(vendorConnections)
+      .set({ lastError: msg, updatedAt: now })
+      .where(eq(vendorConnections.vendor, 'home_connect'));
+    throw err;
+  }
+
+  const [existingDeviceRows, hcLinkRows] = await Promise.all([
+    db.select().from(devices),
+    db.select().from(deviceVendorLinks).where(eq(deviceVendorLinks.vendor, 'home_connect')),
+  ]);
+
+  const deviceById = new Map(existingDeviceRows.map((d) => [d.id, d]));
+  const linkByExternalId = new Map(hcLinkRows.map((l) => [l.externalId, l]));
+  let newCount = 0;
+
+  for (const hc of inventory.devices) {
+    const existingLink = linkByExternalId.get(hc.externalId);
+    const linkedDevice = existingLink ? deviceById.get(existingLink.deviceId) : undefined;
+    const productName =
+      [hc.manufacturer, hc.model].filter(Boolean).join(' · ') || 'Siemens Home Connect';
+    const vendorMetadata = {
+      manufacturer: hc.manufacturer,
+      model: hc.model,
+      deviceType: hc.deviceType,
+    };
+
+    if (linkedDevice) {
+      const primaryVendor: VendorId = isValidVendorId(linkedDevice.primaryVendor)
+        ? linkedDevice.primaryVendor
+        : 'home_connect';
+      const nextSystems = mergeDeviceSystems(
+        normalizeSystems(linkedDevice.systems, primaryVendor),
+        'home_connect',
+        primaryVendor
+      );
+
+      if (primaryVendor === 'tuya' || primaryVendor === 'kasa') {
+        await db
+          .update(devices)
+          .set({ systems: nextSystems })
+          .where(eq(devices.id, linkedDevice.id));
+      } else {
+        await db
+          .update(devices)
+          .set({
+            name: hc.name,
+            systems: nextSystems,
+            tuyaCategory: hc.deviceType ?? 'home_connect',
+            productName,
+            isOnline: hc.isOnline,
+            lastRawStatus: hc.rawTraits,
+            lastSeenAt: now,
+          })
+          .where(eq(devices.id, linkedDevice.id));
+      }
+
+      await db
+        .update(deviceVendorLinks)
+        .set({
+          externalName: hc.name,
+          vendorMetadata,
+        })
+        .where(eq(deviceVendorLinks.id, existingLink!.id));
+    } else {
+      let candidateId = makeHomeConnectDeviceId(hc.externalId);
+      if (deviceById.has(candidateId)) {
+        candidateId = `${candidateId}_${now.getTime().toString(36).slice(-4)}`;
+      }
+
+      const [inserted] = await db
+        .insert(devices)
+        .values({
+          id: candidateId,
+          name: hc.name,
+          customName: null,
+          primaryVendor: 'home_connect',
+          systems: ['home_connect'],
+          roomId: null,
+          category: 'other',
+          tuyaCategory: hc.deviceType ?? 'home_connect',
+          productName,
+          ipAddress: null,
+          macAddress: null,
+          isOnline: hc.isOnline,
+          isMonitored: true,
+          excludeFromTotals: false,
+          energyMode: 'hybrid',
+          dpConfig: {},
+          lastRawStatus: hc.rawTraits,
+          lastSeenAt: now,
+          lastPowerW: null,
+          lastVoltageV: null,
+          lastAddEleKwh: null,
+          lastTempC: null,
+          lastHumidityPct: null,
+          lastBatteryPct: null,
+          lastContactOpen: null,
+        })
+        .returning();
+
+      await db
+        .insert(deviceVendorLinks)
+        .values({
+          deviceId: candidateId,
+          vendor: 'home_connect',
+          externalId: hc.externalId,
+          externalName: hc.name,
+          vendorMetadata,
+          isPrimaryTelemetry: true,
+          linkedAt: now,
+        })
+        .onConflictDoNothing();
+
+      deviceById.set(candidateId, inserted);
+      newCount++;
+    }
+  }
+
+  await db
+    .update(vendorConnections)
+    .set({
+      status: 'connected',
+      lastSyncedAt: now,
+      lastError: inventory.warning ?? null,
+      updatedAt: now,
+    })
+    .where(eq(vendorConnections.vendor, 'home_connect'));
+
+  const baseMsg = `${inventory.devices.length} appareil(s) Siemens Home Connect synchronisé(s) (${hcEnv.toUpperCase()}, ${newCount} nouveau(x)).`;
+  return {
+    syncedCount: inventory.devices.length,
+    newCount,
+    mode: 'live',
+    message: inventory.warning ? `${baseMsg} (${inventory.warning})` : baseMsg,
+  };
+}
+
 export async function toggleDeviceSystemTag(params: {
   deviceId: string;
   vendor: VendorId;
@@ -2384,13 +2789,13 @@ async function collectKasaReadingsInDb(
 
     const energyRes = hasPower
       ? computeHybridEnergyKwh({
-          energyMode: (dev.energyMode as EnergyMode) || 'hybrid',
-          powerW: kd.powerW,
-          currentAddEleKwh: kd.addEleKwh ?? null,
-          previousAddEleKwh: dev.lastAddEleKwh,
-          previousSeenAt: dev.lastSeenAt,
-          now,
-        })
+        energyMode: (dev.energyMode as EnergyMode) || 'hybrid',
+        powerW: kd.powerW,
+        currentAddEleKwh: kd.addEleKwh ?? null,
+        previousAddEleKwh: dev.lastAddEleKwh,
+        previousSeenAt: dev.lastSeenAt,
+        now,
+      })
       : null;
 
     await db
@@ -2436,10 +2841,96 @@ async function collectKasaReadingsInDb(
   return readingsToInsert.length;
 }
 
+async function collectHomeConnectStatusInDb(
+  db: AppDatabase,
+  hcDevices: Array<typeof devices.$inferSelect>,
+  now: Date
+): Promise<number> {
+  const hcCfg = getHomeConnectConfig();
+  if (hcDevices.length === 0 || !hcCfg.configured) return 0;
+
+  const connRows = await db
+    .select()
+    .from(vendorConnections)
+    .where(eq(vendorConnections.vendor, 'home_connect'))
+    .limit(1);
+  const conn = connRows[0];
+  if (!conn || conn.status !== 'connected' || (!conn.accessToken && !conn.refreshToken)) {
+    return 0;
+  }
+
+  const hcEnv = parseHomeConnectEnvFromMode(conn.mode, hcCfg.defaultEnv);
+  let inventory;
+  try {
+    const accessToken = await ensureValidHomeConnectAccessToken(db, conn, hcEnv);
+    try {
+      inventory = await fetchHomeConnectInventory({
+        accessToken,
+        env: hcEnv,
+        mode: 'poll',
+      });
+    } catch (err) {
+      if (err instanceof HomeConnectApiError && err.status === 401 && conn.refreshToken) {
+        const refreshed = await ensureValidHomeConnectAccessToken(db, conn, hcEnv, true);
+        inventory = await fetchHomeConnectInventory({
+          accessToken: refreshed,
+          env: hcEnv,
+          mode: 'poll',
+        });
+      } else {
+        throw err;
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur collecte Siemens Home Connect';
+    await db
+      .update(vendorConnections)
+      .set({ lastError: msg, updatedAt: now })
+      .where(eq(vendorConnections.vendor, 'home_connect'));
+    throw err;
+  }
+
+  const hcLinks = await db
+    .select()
+    .from(deviceVendorLinks)
+    .where(eq(deviceVendorLinks.vendor, 'home_connect'));
+  const deviceIdByExternalId = new Map(hcLinks.map((l) => [l.externalId, l.deviceId]));
+  const deviceById = new Map(hcDevices.map((d) => [d.id, d]));
+
+  let updatedCount = 0;
+  for (const hc of inventory.devices) {
+    const devId = deviceIdByExternalId.get(hc.externalId) ?? makeHomeConnectDeviceId(hc.externalId);
+    const dev = deviceById.get(devId);
+    if (!dev || !dev.isMonitored) continue;
+
+    await db
+      .update(devices)
+      .set({
+        isOnline: hc.isOnline,
+        lastRawStatus: hc.rawTraits,
+        lastSeenAt: now,
+      })
+      .where(eq(devices.id, dev.id));
+    updatedCount++;
+  }
+
+  await db
+    .update(vendorConnections)
+    .set({
+      status: 'connected',
+      lastError: inventory.warning ?? null,
+      updatedAt: now,
+    })
+    .where(eq(vendorConnections.vendor, 'home_connect'));
+
+  return updatedCount;
+}
+
 export async function runCollection(trigger: 'schedule' | 'manual'): Promise<CollectionLogRecord> {
   const db = getDb();
   const tuya = getTuyaConfig();
   const kasa = getKasaConfig();
+  const hcCfg = getHomeConnectConfig();
   const startedMs = Date.now();
 
   if (!tuya.configured) {
@@ -2461,6 +2952,12 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           !d.id.startsWith('manual_') &&
           d.primaryVendor === 'kasa'
       );
+      const hcMonitored = allDevices.filter(
+        (d) =>
+          d.isMonitored &&
+          !d.id.startsWith('manual_') &&
+          d.primaryVendor === 'home_connect'
+      );
       const ghMonitored = allDevices.filter(
         (d) =>
           d.isMonitored &&
@@ -2471,17 +2968,29 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       const kasaInserted = kasa.configured
         ? await collectKasaReadingsInDb(db, kasaMonitored, now)
         : 0;
+      const hcUpdated = hcCfg.configured
+        ? await collectHomeConnectStatusInDb(db, hcMonitored, now).catch((err) => {
+          if (!kasa.configured && ghMonitored.length === 0) throw err;
+          return 0;
+        })
+        : 0;
       const ghInserted = await collectGoogleHomeReadingsInDb(db, ghMonitored, now).catch((err) => {
-        if (!kasa.configured) throw err;
+        if (!kasa.configured && hcMonitored.length === 0) throw err;
         return 0;
       });
 
-      if (kasa.configured || ghInserted > 0 || ghMonitored.length > 0) {
+      if (
+        kasa.configured ||
+        hcUpdated > 0 ||
+        hcMonitored.length > 0 ||
+        ghInserted > 0 ||
+        ghMonitored.length > 0
+      ) {
         const [logRow] = await db
           .insert(collectionLogs)
           .values({
             trigger,
-            devicesCount: kasaMonitored.length + ghMonitored.length,
+            devicesCount: kasaMonitored.length + hcMonitored.length + ghMonitored.length,
             readingsInserted: kasaInserted + ghInserted,
             status: 'success',
             errorMessage: null,
@@ -2492,7 +3001,9 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       }
     } catch (err) {
       const msg =
-        err instanceof Error ? err.message : 'Erreur collecte Kasa / Google Home';
+        err instanceof Error
+          ? err.message
+          : 'Erreur collecte Kasa / Siemens Home Connect / Google Home';
       const [logRow] = await db
         .insert(collectionLogs)
         .values({
@@ -2508,7 +3019,7 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
     }
 
     const errMsg =
-      'Aucun fournisseur configuré (TUYA_ACCESS_ID / KASA_EMAIL / Google Home non connectés).';
+      'Aucun fournisseur configuré (TUYA_ACCESS_ID / KASA_EMAIL / SIEMENS_HOME_CONNECT / Google Home non connectés).';
     const [inserted] = await db
       .insert(collectionLogs)
       .values({
@@ -2661,6 +3172,12 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
         !d.id.startsWith('manual_') &&
         d.primaryVendor === 'kasa'
     );
+    const hcMonitored = allDevices.filter(
+      (d) =>
+        d.isMonitored &&
+        !d.id.startsWith('manual_') &&
+        d.primaryVendor === 'home_connect'
+    );
     const googleMonitored = allDevices.filter(
       (d) =>
         d.isMonitored &&
@@ -2737,13 +3254,15 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
     const [kasaInserted, ghInserted] = await Promise.all([
       collectKasaReadingsInDb(db, kasaMonitored, now).catch(() => 0),
       collectGoogleHomeReadingsInDb(db, googleMonitored, now).catch(() => 0),
+      collectHomeConnectStatusInDb(db, hcMonitored, now).catch(() => 0),
     ]);
 
     const [logRow] = await db
       .insert(collectionLogs)
       .values({
         trigger,
-        devicesCount: tuyaMonitored.length + kasaMonitored.length + googleMonitored.length,
+        devicesCount:
+          tuyaMonitored.length + kasaMonitored.length + hcMonitored.length + googleMonitored.length,
         readingsInserted: readingsToInsert.length + kasaInserted + ghInserted,
         status: 'success',
         errorMessage: null,
@@ -3074,7 +3593,7 @@ async function syncRoomsFromGoogleHome(): Promise<RoomVendorSyncResult> {
       : 'tuya';
 
     const shouldUpdate =
-      primaryVendor === 'tuya' || primaryVendor === 'kasa'
+      primaryVendor === 'tuya' || primaryVendor === 'kasa' || primaryVendor === 'home_connect'
         ? linkedDevice.roomId === null
         : linkedDevice.roomId !== mappedRoomId;
 
@@ -3674,16 +4193,16 @@ export async function updateDevice(
 
     const links =
       sanitizedInput.systems !== undefined ||
-      sanitizedInput.primaryVendor !== undefined ||
-      sanitizedInput.name !== undefined ||
-      sanitizedInput.customName !== undefined
+        sanitizedInput.primaryVendor !== undefined ||
+        sanitizedInput.name !== undefined ||
+        sanitizedInput.customName !== undefined
         ? syncManualLinksInDemo({
-            deviceId: id,
-            systems: nextSystems,
-            primaryVendor: nextPrimary,
-            externalName: dev.customName || dev.name,
-            nowIso: now.toISOString(),
-          })
+          deviceId: id,
+          systems: nextSystems,
+          primaryVendor: nextPrimary,
+          externalName: dev.customName || dev.name,
+          nowIso: now.toISOString(),
+        })
         : state.vendorLinks.filter((l) => l.deviceId === id);
 
     return { ...dev, vendorLinks: links };
@@ -3730,16 +4249,16 @@ export async function updateDevice(
   const externalName = updated.customName || updated.name;
   const links = hasSystemUpdate
     ? await syncManualLinksInDb({
-        db,
-        deviceId: id,
-        systems: nextSystems!,
-        primaryVendor: nextPrimary,
-        externalName,
-        now,
-      })
+      db,
+      deviceId: id,
+      systems: nextSystems!,
+      primaryVendor: nextPrimary,
+      externalName,
+      now,
+    })
     : (
-        await db.select().from(deviceVendorLinks).where(eq(deviceVendorLinks.deviceId, id))
-      ).map(mapDbVendorLink);
+      await db.select().from(deviceVendorLinks).where(eq(deviceVendorLinks.deviceId, id))
+    ).map(mapDbVendorLink);
 
   return mapDbDevice(updated, links);
 }

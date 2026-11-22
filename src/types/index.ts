@@ -1,10 +1,12 @@
 export type DeviceCategory = 'power' | 'climate' | 'contact' | 'hybrid' | 'other';
 
-export type VendorId = 'tuya' | 'kasa' | 'google_home';
+export type VendorId = 'tuya' | 'kasa' | 'home_connect' | 'google_home';
 
 export type SystemFilter = 'all' | VendorId;
 
 export type GoogleHomeMode = 'mcp' | 'sdm';
+
+export type HomeConnectEnv = 'prod' | 'simulator' | 'cn';
 
 export type EnergyMode = 'hybrid' | 'add_ele' | 'integration';
 
@@ -38,7 +40,7 @@ export interface DeviceVendorLinkRecord {
 export interface VendorConnectionSummary {
   vendor: VendorId;
   label: string;
-  mode: 'cloud_key' | 'cloud_account' | GoogleHomeMode;
+  mode: 'cloud_key' | 'cloud_account' | 'oauth_prod' | 'oauth_simulator' | 'oauth_cn' | GoogleHomeMode;
   configured: boolean;
   connected: boolean;
   devicesCount: number;
@@ -224,6 +226,9 @@ export interface EnvStatus {
   tuyaUserUidConfigured: boolean;
   kasaConfigured: boolean;
   kasaRegion: string;
+  homeConnectConfigured: boolean;
+  homeConnectConnected: boolean;
+  homeConnectEnv: HomeConnectEnv;
   appPasswordConfigured: boolean;
   scheduleSecretConfigured: boolean;
   googleHomeApiEnabled: boolean;
@@ -345,11 +350,11 @@ export interface AutomationDiagnostic {
   ruleName: string;
   severity: 'warning' | 'info' | 'error';
   kind:
-    | 'offline_dependency'
-    | 'low_battery_dependency'
-    | 'missing_device'
-    | 'potential_conflict'
-    | 'empty_rule';
+  | 'offline_dependency'
+  | 'low_battery_dependency'
+  | 'missing_device'
+  | 'potential_conflict'
+  | 'empty_rule';
   message: string;
 }
 

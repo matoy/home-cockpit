@@ -12,7 +12,13 @@ import type {
 } from '@/types';
 
 export interface DemoVendorConnectionState {
-  mode: 'cloud_key' | 'cloud_account' | GoogleHomeMode;
+  mode:
+  | 'cloud_key'
+  | 'cloud_account'
+  | 'oauth_prod'
+  | 'oauth_simulator'
+  | 'oauth_cn'
+  | GoogleHomeMode;
   connected: boolean;
   lastSyncedAt: string | null;
   lastError: string | null;
@@ -634,6 +640,77 @@ function createInitialDemoState(): DemoState {
       lastBatteryPct: null,
       lastContactOpen: null,
     },
+    {
+      id: 'hc_siemens_dishwasher_cuisine',
+      name: 'Lave-vaisselle Siemens iQ500',
+      customName: 'Lave-vaisselle iQ500',
+      primaryVendor: 'home_connect',
+      systems: ['home_connect'],
+      roomId: 3,
+      category: 'other',
+      tuyaCategory: 'Dishwasher',
+      productName: 'SIEMENS · SN65ZX49CE/01',
+      ipAddress: null,
+      macAddress: null,
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'appliance_type', value: 'Dishwasher' },
+        { code: 'brand', value: 'SIEMENS' },
+        { code: 'operation_state', value: 'Run' },
+        { code: 'power_state', value: 'On' },
+        { code: 'door_state', value: 'Closed' },
+        { code: 'active_program', value: 'Eco 50°' },
+        { code: 'program_progress', value: 68 },
+        { code: 'remaining_seconds', value: 2280 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
+    {
+      id: 'hc_siemens_fridge_cuisine',
+      name: 'Réfrigérateur Siemens iQ700',
+      customName: 'Frigo & Congél. Siemens',
+      primaryVendor: 'home_connect',
+      systems: ['home_connect'],
+      roomId: 3,
+      category: 'other',
+      tuyaCategory: 'FridgeFreezer',
+      productName: 'SIEMENS · KG39NAI45/02',
+      ipAddress: null,
+      macAddress: null,
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'appliance_type', value: 'FridgeFreezer' },
+        { code: 'brand', value: 'SIEMENS' },
+        { code: 'power_state', value: 'On' },
+        { code: 'door_fridge', value: 'Closed' },
+        { code: 'door_freezer', value: 'Closed' },
+        { code: 'fridge_temp_c', value: 4 },
+        { code: 'freezer_temp_c', value: -18 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
   ];
 
   // Deux périodes tarifaires (2025 -> 2026) pour illustrer la gestion multi-périodes
@@ -1232,13 +1309,17 @@ function createInitialDemoState(): DemoState {
           ? `enterprises/demo/devices/${d.id}`
           : d.primaryVendor === 'kasa'
             ? d.id.replace(/^kasa_/, '')
-            : d.id,
+            : d.primaryVendor === 'home_connect'
+              ? d.id.replace(/^hc_/, '')
+              : d.id,
       externalName: d.name,
       isPrimaryTelemetry: true,
       linkedAt: syncedIso,
     });
     if (
-      (d.primaryVendor === 'tuya' || d.primaryVendor === 'kasa') &&
+      (d.primaryVendor === 'tuya' ||
+        d.primaryVendor === 'kasa' ||
+        d.primaryVendor === 'home_connect') &&
       d.systems.includes('google_home')
     ) {
       vendorLinks.push({
@@ -1263,6 +1344,12 @@ function createInitialDemoState(): DemoState {
     },
     kasa: {
       mode: 'cloud_account',
+      connected: true,
+      lastSyncedAt: syncedIso,
+      lastError: null,
+    },
+    home_connect: {
+      mode: 'oauth_prod',
       connected: true,
       lastSyncedAt: syncedIso,
       lastError: null,
@@ -1334,28 +1421,34 @@ export function simulateDemoCollection(trigger: 'schedule' | 'manual'): Collecti
     const energyRes =
       powerW !== null
         ? computeHybridEnergyKwh({
-            energyMode: dev.energyMode,
-            powerW,
-            currentAddEleKwh: addEleKwh,
-            previousAddEleKwh: dev.lastAddEleKwh,
-            previousSeenAt: dev.lastSeenAt,
-            now,
-          })
+          energyMode: dev.energyMode,
+          powerW,
+          currentAddEleKwh: addEleKwh,
+          previousAddEleKwh: dev.lastAddEleKwh,
+          previousSeenAt: dev.lastSeenAt,
+          now,
+        })
         : null;
 
-    state.readings.push({
-      id: state.nextReadingId++,
-      deviceId: dev.id,
-      roomId: dev.roomId,
-      recordedAt: now.toISOString(),
-      powerW,
-      voltageV: dev.lastVoltageV,
-      energyKwh: energyRes ? energyRes.energyKwh : null,
-      energySource: energyRes ? energyRes.source : null,
-      tempC,
-      humidityPct,
-      contactOpen,
-    });
+    const hasNumericOrContact =
+      powerW !== null || tempC !== null || humidityPct !== null || contactOpen !== null;
+
+    if (hasNumericOrContact) {
+      state.readings.push({
+        id: state.nextReadingId++,
+        deviceId: dev.id,
+        roomId: dev.roomId,
+        recordedAt: now.toISOString(),
+        powerW,
+        voltageV: dev.lastVoltageV,
+        energyKwh: energyRes ? energyRes.energyKwh : null,
+        energySource: energyRes ? energyRes.source : null,
+        tempC,
+        humidityPct,
+        contactOpen,
+      });
+      inserted += 1;
+    }
 
     dev.lastPowerW = powerW;
     dev.lastAddEleKwh = addEleKwh;
@@ -1363,7 +1456,6 @@ export function simulateDemoCollection(trigger: 'schedule' | 'manual'): Collecti
     dev.lastHumidityPct = humidityPct;
     dev.lastContactOpen = contactOpen;
     dev.lastSeenAt = now.toISOString();
-    inserted += 1;
   }
 
   const log: CollectionLogRecord = {

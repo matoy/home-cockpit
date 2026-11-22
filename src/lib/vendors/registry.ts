@@ -1,6 +1,6 @@
 import type { DeviceCategory, RawDpStatus, VendorId } from '@/types';
 
-export const VENDOR_IDS: readonly VendorId[] = ['tuya', 'kasa', 'google_home'];
+export const VENDOR_IDS: readonly VendorId[] = ['tuya', 'kasa', 'home_connect', 'google_home'];
 
 export interface VendorMeta {
   id: VendorId;
@@ -32,6 +32,16 @@ export const VENDOR_REGISTRY: Record<VendorId, VendorMeta> = {
     dotClass: 'bg-teal-400',
     description:
       'Appareils TP-Link Kasa via Cloud (100 % cloud, lecture seule : prises, multiprises, ampoules, W / kWh)',
+  },
+  home_connect: {
+    id: 'home_connect',
+    label: 'Siemens Home Connect',
+    shortLabel: 'SHC',
+    accentColor: '#06b6d4',
+    badgeClass: 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300',
+    dotClass: 'bg-cyan-400',
+    description:
+      'Électroménager Siemens / BSH Home Connect via Cloud OAuth (100 % lecture seule : état, programme, temps restant, températures internes)',
   },
   google_home: {
     id: 'google_home',
@@ -78,7 +88,7 @@ export interface VendorAdapter {
 }
 
 export function isValidVendorId(value: unknown): value is VendorId {
-  return value === 'tuya' || value === 'kasa' || value === 'google_home';
+  return value === 'tuya' || value === 'kasa' || value === 'home_connect' || value === 'google_home';
 }
 
 export function getVendorMeta(vendor: VendorId): VendorMeta {

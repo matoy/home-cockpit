@@ -24,6 +24,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { VENDOR_IDS, VENDOR_REGISTRY } from '@/lib/vendors/registry';
+import { extractHomeConnectSummary } from '@/lib/vendors/home-connect-display';
 import type {
   DashboardPayload,
   DeviceCategory,
@@ -31,6 +32,7 @@ import type {
   DpConfig,
   EnergyMode,
   GoogleHomeMode,
+  HomeConnectEnv,
   SystemFilter,
   VendorId,
 } from '@/types';
@@ -41,6 +43,7 @@ interface DevicesRoomsTabProps {
   initialRoomFilter?: string | null;
   onOpenRoomsTab?: () => void;
   onOpenGoogleGuide?: () => void;
+  onOpenHomeConnectGuide?: () => void;
 }
 
 const SCALE_OPTIONS = [
@@ -58,6 +61,7 @@ function normalizeSearchText(value: string): string {
 }
 
 function buildDeviceSearchHaystack(dev: DeviceRecord, roomName?: string): string {
+  const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
   const parts: Array<string | number | null | undefined> = [
     dev.id,
     dev.id.startsWith('manual_') ? 'manuel manual' : null,
@@ -87,6 +91,7 @@ function buildDeviceSearchHaystack(dev: DeviceRecord, roomName?: string): string
     dev.lastTempC !== null ? `${dev.lastTempC}°c` : null,
     dev.lastHumidityPct !== null ? `${dev.lastHumidityPct}%` : null,
     dev.lastBatteryPct !== null ? `${dev.lastBatteryPct}%` : null,
+    hcSummary?.searchableText,
   ];
 
   return normalizeSearchText(parts.filter((p) => p !== null && p !== undefined && p !== '').join(' '));
@@ -98,10 +103,18 @@ export function DevicesRoomsTab({
   initialRoomFilter,
   onOpenRoomsTab,
   onOpenGoogleGuide,
+  onOpenHomeConnectGuide,
 }: DevicesRoomsTabProps) {
+  const showKasa = data.env.kasaConfigured;
+  const showHomeConnect = data.env.homeConnectConfigured;
   const showGoogleHomeApi = data.env.googleHomeApiEnabled;
   const [syncingTuya, setSyncingTuya] = useState(false);
   const [syncingKasa, setSyncingKasa] = useState(false);
+  const [syncingHomeConnect, setSyncingHomeConnect] = useState(false);
+  const [disconnectingHomeConnect, setDisconnectingHomeConnect] = useState(false);
+  const [selectedHomeConnectEnv, setSelectedHomeConnectEnv] = useState<HomeConnectEnv>(
+    data.env.homeConnectEnv ?? 'prod'
+  );
   const [syncingGoogle, setSyncingGoogle] = useState(false);
   const [disconnectingGoogle, setDisconnectingGoogle] = useState(false);
   const [selectedGoogleMode, setSelectedGoogleMode] = useState<GoogleHomeMode>(
@@ -336,6 +349,7 @@ export function DevicesRoomsTab({
       all: data.devices.length,
       tuya: 0,
       kasa: 0,
+      home_connect: 0,
       google_home: 0,
       multi: 0,
     };
@@ -364,6 +378,7 @@ export function DevicesRoomsTab({
     for (const dev of data.devices) {
       if (dev.systems.includes('tuya')) sysCounts.tuya += 1;
       if (dev.systems.includes('kasa')) sysCounts.kasa += 1;
+      if (dev.systems.includes('home_connect')) sysCounts.home_connect += 1;
       if (dev.systems.includes('google_home')) sysCounts.google_home += 1;
       if (dev.systems.length > 1) sysCounts.multi += 1;
 
@@ -426,6 +441,47 @@ export function DevicesRoomsTab({
       });
     } finally {
       setSyncingKasa(false);
+    }
+  }
+
+  async function handleSyncHomeConnect() {
+    setSyncingHomeConnect(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/vendors/home-connect/sync', { method: 'POST' });
+      const json = (await res.json()) as { message?: string; error?: string };
+      if (!res.ok) throw new Error(json.error || 'Échec de synchronisation Siemens Home Connect');
+      setSyncMessage({
+        ok: true,
+        text: json.message || 'Synchronisation Siemens Home Connect terminée.',
+      });
+      await onRefresh();
+    } catch (err) {
+      setSyncMessage({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Erreur Siemens Home Connect',
+      });
+    } finally {
+      setSyncingHomeConnect(false);
+    }
+  }
+
+  async function handleDisconnectHomeConnect() {
+    setDisconnectingHomeConnect(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/vendors/home-connect/disconnect', { method: 'POST' });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error || 'Échec de déconnexion Siemens Home Connect');
+      setSyncMessage({ ok: true, text: 'Siemens Home Connect déconnecté.' });
+      await onRefresh();
+    } catch (err) {
+      setSyncMessage({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Erreur déconnexion Home Connect',
+      });
+    } finally {
+      setDisconnectingHomeConnect(false);
     }
   }
 
@@ -591,19 +647,38 @@ export function DevicesRoomsTab({
 
   const tuyaVendor = data.vendors.find((v) => v.vendor === 'tuya');
   const kasaVendor = data.vendors.find((v) => v.vendor === 'kasa');
+  const hcVendor = data.vendors.find((v) => v.vendor === 'home_connect');
+  const isHcConnected = Boolean(hcVendor?.connected);
   const ghVendor = data.vendors.find((v) => v.vendor === 'google_home');
   const isGhConnected = Boolean(ghVendor?.connected);
+
+  const visibleSyncCardsCount =
+    1 + (showKasa ? 1 : 0) + (showHomeConnect ? 1 : 0) + (showGoogleHomeApi ? 1 : 0);
+  const syncGridClass =
+    visibleSyncCardsCount === 1
+      ? 'grid grid-cols-1 gap-4'
+      : visibleSyncCardsCount === 2
+        ? 'grid grid-cols-1 lg:grid-cols-2 gap-4'
+        : visibleSyncCardsCount === 3
+          ? 'grid grid-cols-1 lg:grid-cols-3 gap-4'
+          : 'grid grid-cols-1 md:grid-cols-2 gap-4';
+
+  const hcModeEnvLabel = (
+    hcVendor?.mode === 'oauth_simulator'
+      ? 'SIMULATOR'
+      : hcVendor?.mode === 'oauth_cn'
+        ? 'CN'
+        : hcVendor?.mode === 'oauth_prod'
+          ? 'PROD'
+          : selectedHomeConnectEnv
+  )
+    .toString()
+    .toUpperCase();
 
   return (
     <div className="space-y-6">
       {/* Synchronisation Multi-Vendors */}
-      <div
-        className={
-          showGoogleHomeApi
-            ? 'grid grid-cols-1 lg:grid-cols-3 gap-4'
-            : 'grid grid-cols-1 lg:grid-cols-2 gap-4'
-        }
-      >
+      <div className={syncGridClass}>
         {/* Tuya Cloud */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4">
           <div className="flex items-start justify-between gap-3">
@@ -655,61 +730,176 @@ export function DevicesRoomsTab({
           </div>
         </div>
 
-        {/* TP-Link Kasa Cloud (100 % cloud, lecture seule) */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="w-full">
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.kasa.badgeClass}`}
-                >
-                  {VENDOR_REGISTRY.kasa.label}
-                </span>
-                <span className="text-xs text-slate-400">
-                  {kasaVendor?.devicesCount ?? systemCounts.kasa} appareil(s)
-                </span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    data.env.kasaConfigured || data.env.mode === 'demo'
-                      ? 'bg-emerald-500/15 text-emerald-300'
-                      : 'bg-slate-800 text-slate-400'
-                  }`}
-                >
-                  {data.env.mode === 'demo'
-                    ? 'Mode Démo'
-                    : data.env.kasaConfigured
-                      ? `Connecté (${data.env.kasaRegion.toUpperCase()})`
-                      : 'Non configuré'}
-                </span>
+        {/* TP-Link Kasa Cloud (masqué si non configuré) */}
+        {showKasa && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="w-full">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.kasa.badgeClass}`}
+                  >
+                    {VENDOR_REGISTRY.kasa.label}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {kasaVendor?.devicesCount ?? systemCounts.kasa} appareil(s)
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      data.env.kasaConfigured || data.env.mode === 'demo'
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {data.env.mode === 'demo'
+                      ? 'Mode Démo'
+                      : data.env.kasaConfigured
+                        ? `Connecté (${data.env.kasaRegion.toUpperCase()})`
+                        : 'Non configuré'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-2">
+                  {VENDOR_REGISTRY.kasa.description}. Relevés W, tension et kWh en lecture seule sans accès LAN.
+                </p>
+                {kasaVendor?.lastError && (
+                  <p className="text-[11px] text-amber-300 mt-1.5">{kasaVendor.lastError}</p>
+                )}
               </div>
-              <p className="text-xs text-slate-400 mt-2">
-                {VENDOR_REGISTRY.kasa.description}. Relevés W, tension et kWh en lecture seule sans accès LAN.
-              </p>
-              {kasaVendor?.lastError && (
-                <p className="text-[11px] text-amber-300 mt-1.5">{kasaVendor.lastError}</p>
-              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <span className="text-[11px] text-slate-500">
+                {kasaVendor?.lastSyncedAt
+                  ? `Synchro : ${new Date(kasaVendor.lastSyncedAt).toLocaleString('fr-FR')}`
+                  : data.env.mode === 'live' && !data.env.kasaConfigured
+                    ? 'Ajoutez KASA_EMAIL & KASA_PASSWORD (voir Guide Setup)'
+                    : '100 % cloud · zéro commande envoyée'}
+              </span>
+              <button
+                type="button"
+                onClick={handleSyncKasa}
+                disabled={syncingKasa}
+                className="flex items-center gap-2 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${syncingKasa ? 'animate-spin' : ''}`} />
+                {syncingKasa ? 'Synchronisation...' : 'Synchroniser Kasa'}
+              </button>
             </div>
           </div>
+        )}
 
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-            <span className="text-[11px] text-slate-500">
-              {kasaVendor?.lastSyncedAt
-                ? `Synchro : ${new Date(kasaVendor.lastSyncedAt).toLocaleString('fr-FR')}`
-                : data.env.mode === 'live' && !data.env.kasaConfigured
-                  ? 'Ajoutez KASA_EMAIL & KASA_PASSWORD (voir Guide Setup)'
-                  : '100 % cloud · zéro commande envoyée'}
-            </span>
-            <button
-              type="button"
-              onClick={handleSyncKasa}
-              disabled={syncingKasa}
-              className="flex items-center gap-2 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${syncingKasa ? 'animate-spin' : ''}`} />
-              {syncingKasa ? 'Synchronisation...' : 'Synchroniser Kasa'}
-            </button>
+        {/* Siemens Home Connect (masqué si non configuré) */}
+        {showHomeConnect && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="w-full">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.home_connect.badgeClass}`}
+                    >
+                      {VENDOR_REGISTRY.home_connect.label}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      {hcVendor?.devicesCount ?? systemCounts.home_connect} appareil(s)
+                    </span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        isHcConnected || data.env.mode === 'demo'
+                          ? 'bg-emerald-500/15 text-emerald-300'
+                          : 'bg-slate-800 text-slate-400'
+                      }`}
+                    >
+                      {data.env.mode === 'demo'
+                        ? 'Mode Démo'
+                        : isHcConnected
+                          ? `Connecté (${hcModeEnvLabel})`
+                          : 'Prêt (OAuth requis)'}
+                    </span>
+                  </div>
+
+                  {!isHcConnected && data.env.mode === 'live' && (
+                    <select
+                      value={selectedHomeConnectEnv}
+                      onChange={(e) => setSelectedHomeConnectEnv(e.target.value as HomeConnectEnv)}
+                      aria-label="Environnement Siemens Home Connect"
+                      className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 focus:border-cyan-500 focus:outline-none"
+                    >
+                      <option value="prod">Production (api.home-connect.com)</option>
+                      <option value="simulator">Simulateur (simulator.home-connect.com)</option>
+                      <option value="cn">Chine (.cn)</option>
+                    </select>
+                  )}
+                </div>
+
+                <p className="text-xs text-slate-400 mt-2">
+                  {VENDOR_REGISTRY.home_connect.description}. Lecture seule · programme, temps
+                  restant, porte &amp; températures internes.
+                </p>
+
+                {hcVendor?.lastError && (
+                  <p className="text-[11px] text-amber-300 mt-1.5">{hcVendor.lastError}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <span className="text-[11px] text-slate-500">
+                {hcVendor?.lastSyncedAt
+                  ? `Synchro : ${new Date(hcVendor.lastSyncedAt).toLocaleString('fr-FR')}`
+                  : '100 % lecture seule · sans Control'}
+              </span>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {onOpenHomeConnectGuide && (
+                  <button
+                    type="button"
+                    onClick={onOpenHomeConnectGuide}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:text-white transition"
+                    title="Afficher le guide de configuration Siemens Home Connect"
+                  >
+                    <BookOpen className="h-3.5 w-3.5 text-cyan-400" />
+                    Déroulé setup
+                  </button>
+                )}
+
+                {data.env.mode === 'live' && !isHcConnected ? (
+                  <a
+                    href={`/api/vendors/home-connect/oauth/start?env=${selectedHomeConnectEnv}`}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 px-3.5 py-2 text-xs font-medium text-white transition"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Connecter Home Connect ({selectedHomeConnectEnv.toUpperCase()})
+                  </a>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleSyncHomeConnect}
+                      disabled={syncingHomeConnect || disconnectingHomeConnect}
+                      className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${syncingHomeConnect ? 'animate-spin' : ''}`}
+                      />
+                      {syncingHomeConnect ? 'Synchronisation...' : 'Synchroniser Home Connect'}
+                    </button>
+                    {data.env.mode === 'live' && isHcConnected && (
+                      <button
+                        type="button"
+                        onClick={handleDisconnectHomeConnect}
+                        disabled={disconnectingHomeConnect || syncingHomeConnect}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3 py-2 text-xs text-slate-300 transition"
+                      >
+                        Déconnecter
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Google Home (masqué si GOOGLE_HOME_MODE=off ou non défini) */}
         {showGoogleHomeApi && (
@@ -974,7 +1164,16 @@ export function DevicesRoomsTab({
             >
               Tous ({systemCounts.all})
             </button>
-            {VENDOR_IDS.map((vId) => {
+            {VENDOR_IDS.filter((vId) => {
+              const count = systemCounts[vId];
+              if (vId === 'tuya' || systemFilter === vId) return true;
+              if (vId === 'kasa') return showKasa || (data.env.mode === 'live' && count > 0);
+              if (vId === 'home_connect')
+                return showHomeConnect || (data.env.mode === 'live' && count > 0);
+              if (vId === 'google_home')
+                return showGoogleHomeApi || (data.env.mode === 'live' && count > 0);
+              return true;
+            }).map((vId) => {
               const meta = VENDOR_REGISTRY[vId];
               const active = systemFilter === vId;
               const count = systemCounts[vId];
@@ -1252,26 +1451,63 @@ export function DevicesRoomsTab({
                       </td>
 
                       <td className="px-2.5 py-2.5 font-mono text-[11px] text-slate-300 min-w-0">
-                        <div className="flex flex-wrap gap-x-2 gap-y-0.5">
-                          {dev.lastPowerW !== null && (
-                            <span className="text-indigo-300">{dev.lastPowerW} W</span>
-                          )}
-                          {dev.lastTempC !== null && (
-                            <span className="text-emerald-300">{dev.lastTempC} °C</span>
-                          )}
-                          {dev.lastHumidityPct !== null && (
-                            <span className="text-sky-300">{dev.lastHumidityPct} %</span>
-                          )}
-                          {dev.lastContactOpen !== null && (
-                            <span
-                              className={
-                                dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'
-                              }
-                            >
-                              {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
-                            </span>
-                          )}
-                        </div>
+                        {(() => {
+                          const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
+                          return (
+                            <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                              {dev.lastPowerW !== null && (
+                                <span className="text-indigo-300">{dev.lastPowerW} W</span>
+                              )}
+                              {dev.lastTempC !== null && (
+                                <span className="text-emerald-300">{dev.lastTempC} °C</span>
+                              )}
+                              {dev.lastHumidityPct !== null && (
+                                <span className="text-sky-300">{dev.lastHumidityPct} %</span>
+                              )}
+                              {dev.lastContactOpen !== null && (
+                                <span
+                                  className={
+                                    dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'
+                                  }
+                                >
+                                  {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
+                                </span>
+                              )}
+                              {hcSummary?.operationLabel && (
+                                <span
+                                  title={hcSummary.activeProgram ?? undefined}
+                                  className={
+                                    hcSummary.operationTone === 'cyan'
+                                      ? 'text-cyan-300'
+                                      : hcSummary.operationTone === 'emerald'
+                                        ? 'text-emerald-300'
+                                        : hcSummary.operationTone === 'amber'
+                                          ? 'text-amber-300'
+                                          : hcSummary.operationTone === 'rose'
+                                            ? 'text-rose-300'
+                                            : 'text-slate-400'
+                                  }
+                                >
+                                  {hcSummary.operationLabel}
+                                  {hcSummary.progressPct !== null
+                                    ? ` · ${hcSummary.progressPct}%`
+                                    : ''}
+                                  {hcSummary.remainingLabel
+                                    ? ` · ${hcSummary.remainingLabel}`
+                                    : ''}
+                                </span>
+                              )}
+                              {hcSummary?.tempsLabel && (
+                                <span className="text-sky-300">{hcSummary.tempsLabel}</span>
+                              )}
+                              {hcSummary?.doorOpen && (
+                                <span className="rounded bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 text-[9.5px] text-amber-300">
+                                  Porte ouverte
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       <td className="px-2 py-2.5 text-center">
@@ -1511,22 +1747,55 @@ export function DevicesRoomsTab({
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                    <div className="flex flex-wrap gap-2 font-mono text-[11px] text-slate-300">
-                      {dev.lastPowerW !== null && (
-                        <span className="text-indigo-300">{dev.lastPowerW} W</span>
-                      )}
-                      {dev.lastTempC !== null && (
-                        <span className="text-emerald-300">{dev.lastTempC} °C</span>
-                      )}
-                      {dev.lastHumidityPct !== null && (
-                        <span className="text-sky-300">{dev.lastHumidityPct} %</span>
-                      )}
-                      {dev.lastContactOpen !== null && (
-                        <span className={dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'}>
-                          {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
-                        </span>
-                      )}
-                    </div>
+                    {(() => {
+                      const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
+                      return (
+                        <div className="flex flex-wrap gap-2 font-mono text-[11px] text-slate-300">
+                          {dev.lastPowerW !== null && (
+                            <span className="text-indigo-300">{dev.lastPowerW} W</span>
+                          )}
+                          {dev.lastTempC !== null && (
+                            <span className="text-emerald-300">{dev.lastTempC} °C</span>
+                          )}
+                          {dev.lastHumidityPct !== null && (
+                            <span className="text-sky-300">{dev.lastHumidityPct} %</span>
+                          )}
+                          {dev.lastContactOpen !== null && (
+                            <span className={dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'}>
+                              {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
+                            </span>
+                          )}
+                          {hcSummary?.operationLabel && (
+                            <span
+                              title={hcSummary.activeProgram ?? undefined}
+                              className={
+                                hcSummary.operationTone === 'cyan'
+                                  ? 'text-cyan-300'
+                                  : hcSummary.operationTone === 'emerald'
+                                    ? 'text-emerald-300'
+                                    : hcSummary.operationTone === 'amber'
+                                      ? 'text-amber-300'
+                                      : hcSummary.operationTone === 'rose'
+                                        ? 'text-rose-300'
+                                        : 'text-slate-400'
+                              }
+                            >
+                              {hcSummary.operationLabel}
+                              {hcSummary.progressPct !== null ? ` · ${hcSummary.progressPct}%` : ''}
+                              {hcSummary.remainingLabel ? ` · ${hcSummary.remainingLabel}` : ''}
+                            </span>
+                          )}
+                          {hcSummary?.tempsLabel && (
+                            <span className="text-sky-300">{hcSummary.tempsLabel}</span>
+                          )}
+                          {hcSummary?.doorOpen && (
+                            <span className="rounded bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[10px] text-amber-300">
+                              Porte ouverte
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <div className="flex items-center gap-4 text-[11px] text-slate-300">
                       <label className="inline-flex items-center gap-1.5 cursor-pointer">

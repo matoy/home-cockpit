@@ -35,6 +35,8 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
   const origin =
     typeof window !== 'undefined' ? window.location.origin : 'https://votre-app.vercel.app';
   const scheduleUrl = `${origin}/api/schedule/collect`;
+  const hcRedirectUri = `${origin}/api/vendors/home-connect/oauth/callback`;
+  const localHcRedirectUri = 'http://localhost:3000/api/vendors/home-connect/oauth/callback';
   const googleRedirectUri = `${origin}/api/vendors/google-home/oauth/callback`;
   const localGoogleRedirectUri = 'http://localhost:3000/api/vendors/google-home/oauth/callback';
 
@@ -46,6 +48,8 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
     }
   }
 
+  const showKasa = env.kasaConfigured;
+  const showHomeConnect = env.homeConnectConfigured;
   const showGoogleHomeApi = env.googleHomeApiEnabled;
 
   const googleOAuthDetail = env.googleHomeConfigured
@@ -84,13 +88,26 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
         ? 'Renseigné pour liste directe /v1.0/users/{uid}/devices'
         : 'Optionnel (repli sur associated-users)',
     },
-    {
-      label: 'TP-Link Kasa Cloud (KASA_EMAIL & PASSWORD)',
-      ok: env.kasaConfigured,
-      detail: env.kasaConfigured
-        ? `Cloud 100 % lecture seule · Région : ${env.kasaRegion.toUpperCase()}`
-        : 'Optionnel — ajoutez KASA_EMAIL et KASA_PASSWORD (et KASA_REGION=eu)',
-    },
+    ...(showKasa
+      ? [
+          {
+            label: 'TP-Link Kasa Cloud (KASA_EMAIL & PASSWORD)',
+            ok: env.kasaConfigured,
+            detail: `Cloud 100 % lecture seule · Région : ${env.kasaRegion.toUpperCase()}`,
+          },
+        ]
+      : []),
+    ...(showHomeConnect
+      ? [
+          {
+            label: 'Siemens Home Connect (SIEMENSHOMECONNET_CLIENT_ID & SECRET)',
+            ok: env.homeConnectConfigured,
+            detail: `Env : ${env.homeConnectEnv.toUpperCase()} · ${
+              env.homeConnectConnected ? 'OAuth connecté' : 'Prêt pour connexion OAuth'
+            }`,
+          },
+        ]
+      : []),
     ...(showGoogleHomeApi
       ? [
           {
@@ -314,11 +331,12 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
         </div>
       </div>
 
-      {/* Étape Kasa Cloud */}
-      <div
-        id="setup-kasa-cloud"
-        className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-4 scroll-mt-24"
-      >
+      {/* Étape Kasa Cloud (masqué si KASA_EMAIL / PASSWORD non configurés) */}
+      {showKasa && (
+        <div
+          id="setup-kasa-cloud"
+          className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-4 scroll-mt-24"
+        >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <div className="rounded-xl bg-teal-500/15 p-2 text-teal-400">
@@ -424,7 +442,176 @@ KASA_REGION="eu" # eu, us, ap ou global`}
             </button>
           </div>
         )}
-      </div>
+        </div>
+      )}
+
+      {/* Étape Siemens Home Connect (masqué si SIEMENSHOMECONNET_* non configuré) */}
+      {showHomeConnect && (
+        <div
+          id="setup-home-connect"
+          className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-4 scroll-mt-24"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="rounded-xl bg-cyan-500/15 p-2 text-cyan-400">
+                <Cloud className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-white">
+                  Siemens Home Connect — Électroménager en OAuth 2.0 (100 % lecture seule)
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Suivi des programmes actifs, temps restant, porte ouverte et températures four /
+                  réfrigérateur / congélateur sans impacter Climat ni Ouvertures.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 font-medium text-emerald-300">
+                Env : {env.homeConnectEnv.toUpperCase()}
+              </span>
+              <span
+                className={`rounded-full border px-2.5 py-0.5 font-medium ${
+                  env.homeConnectConnected
+                    ? 'border-cyan-500/30 bg-cyan-500/15 text-cyan-300'
+                    : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                }`}
+              >
+                Session OAuth : {env.homeConnectConnected ? 'Connectée' : 'À autoriser'}
+              </span>
+            </div>
+          </div>
+
+          <ol className="list-decimal list-inside space-y-2 text-xs text-slate-300 leading-relaxed">
+            <li>
+              Créez un compte développeur gratuit sur <strong>developer.home-connect.com</strong>{' '}
+              puis allez dans <strong>Applications → Register Application</strong>.
+            </li>
+            <li>
+              Choisissez <strong>OAuth Flow : Authorization Code Grant Flow</strong>, mettez{' '}
+              <strong>One-Time Token</strong> sur <strong>Off</strong>, et renseignez votre compte
+              Home Connect utilisateur (<strong>SingleKey ID</strong>) pour pouvoir autoriser vos
+              appareils.
+            </li>
+            <li>
+              Ajoutez l&apos;URI de redirection ci-dessous dans les <strong>Redirect URIs</strong>{' '}
+              de votre application Home Connect :
+            </li>
+          </ol>
+
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2">
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase text-slate-500">Redirect URI actuelle</div>
+                <div className="font-mono text-xs text-cyan-300 break-all">{hcRedirectUri}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => copyText('hc-uri', hcRedirectUri)}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1 shrink-0"
+              >
+                {copiedKey === 'hc-uri' ? (
+                  <Check className="h-3 w-3 text-emerald-400" />
+                ) : (
+                  <Copy className="h-3 w-3" />
+                )}
+                Copier
+              </button>
+            </div>
+            {hcRedirectUri !== localHcRedirectUri && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2">
+                <div className="min-w-0">
+                  <div className="text-[10px] uppercase text-slate-500">Redirect URI locale</div>
+                  <div className="font-mono text-xs text-slate-300 break-all">
+                    {localHcRedirectUri}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => copyText('hc-uri-local', localHcRedirectUri)}
+                  className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1 shrink-0"
+                >
+                  {copiedKey === 'hc-uri-local' ? (
+                    <Check className="h-3 w-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                  Copier
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5">
+                <KeyRound className="h-3.5 w-3.5 text-cyan-400" />
+                Variables d&apos;environnement Siemens Home Connect
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  copyText(
+                    'hc-env',
+                    'SIEMENSHOMECONNET_CLIENT_ID="votre-client-id"\nSIEMENSHOMECONNET_CLIENT_SECRET="votre-client-secret"\nSIEMENSHOMECONNET_ENV="prod"'
+                  )
+                }
+                className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
+              >
+                {copiedKey === 'hc-env' ? (
+                  <Check className="h-3 w-3 text-emerald-400" />
+                ) : (
+                  <Copy className="h-3 w-3" />
+                )}
+                Copier
+              </button>
+            </div>
+            <pre className="font-mono text-[11px] text-cyan-300 overflow-x-auto leading-relaxed">
+{`SIEMENSHOMECONNET_CLIENT_ID="votre-client-id"
+SIEMENSHOMECONNET_CLIENT_SECRET="votre-client-secret"
+SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
+            </pre>
+          </div>
+
+          <details className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-xs">
+            <summary className="cursor-pointer select-none font-semibold text-slate-200 flex items-center gap-2">
+              <Wrench className="h-3.5 w-3.5 text-amber-400" />
+              Dépannage &amp; quotas Home Connect
+            </summary>
+            <ul className="mt-2.5 space-y-1.5 text-[11px] text-slate-300 list-disc list-inside leading-relaxed">
+              <li>
+                <strong>Quotas API BSH :</strong> limite de 1 000 requêtes/jour et 50 req/min. La
+                collecte réutilise le jeton OAuth pendant 24 h et n&apos;interroge ni les appareils
+                hors ligne ni les paramètres superflus lors du cron.
+              </li>
+              <li>
+                <strong>Simulateur :</strong> basculez <code>SIEMENSHOMECONNET_ENV=&quot;simulator&quot;</code>{' '}
+                (ou le sélecteur avant connexion) pour tester des appareils virtuels Siemens sur{' '}
+                <code>simulator.home-connect.com</code>.
+              </li>
+              <li>
+                <strong>Énergie W/kWh :</strong> l&apos;API publique Home Connect n&apos;expose pas
+                la puissance en watts ; si votre appareil est sur une prise Tuya/Kasa, utilisez{' '}
+                <strong>Lier → Fusionner</strong> dans Appareils.
+              </li>
+            </ul>
+          </details>
+
+          {onNavigateTab && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onNavigateTab('devices')}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 px-3 py-1.5 text-xs font-medium text-white transition"
+              >
+                Connecter / synchroniser dans Appareils
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Étape 4 : Google Home Multi-Vendors */}
       {showGoogleHomeApi && (

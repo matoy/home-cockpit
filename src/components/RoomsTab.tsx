@@ -79,7 +79,15 @@ export function RoomsTab({
   const [savingRoom, setSavingRoom] = useState(false);
   const [roomFeedback, setRoomFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const showKasa = data.env.kasaConfigured;
   const showGoogleHomeApi = data.env.googleHomeApiEnabled;
+  const visibleRoomSyncCards = 1 + (showKasa ? 1 : 0) + (showGoogleHomeApi ? 1 : 0);
+  const roomsSyncGridClass =
+    visibleRoomSyncCards === 1
+      ? 'grid grid-cols-1 gap-4'
+      : visibleRoomSyncCards === 2
+        ? 'grid grid-cols-1 lg:grid-cols-2 gap-4'
+        : 'grid grid-cols-1 lg:grid-cols-3 gap-4';
   const tuyaVendor = data.vendors.find((v) => v.vendor === 'tuya');
   const kasaVendor = data.vendors.find((v) => v.vendor === 'kasa');
   const ghVendor = data.vendors.find((v) => v.vendor === 'google_home');
@@ -280,24 +288,20 @@ export function RoomsTab({
               des appareils sans écraser vos couleurs ni vos cibles °C / %.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void handleSyncRooms('all')}
-            disabled={syncingTarget !== null}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${syncingTarget === 'all' ? 'animate-spin' : ''}`} />
-            {syncingTarget === 'all' ? 'Synchronisation...' : 'Tout synchroniser'}
-          </button>
+          {(showKasa || showGoogleHomeApi) && (
+            <button
+              type="button"
+              onClick={() => void handleSyncRooms('all')}
+              disabled={syncingTarget !== null}
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncingTarget === 'all' ? 'animate-spin' : ''}`} />
+              {syncingTarget === 'all' ? 'Synchronisation...' : 'Tout synchroniser'}
+            </button>
+          )}
         </div>
 
-        <div
-          className={
-            showGoogleHomeApi
-              ? 'grid grid-cols-1 lg:grid-cols-3 gap-4'
-              : 'grid grid-cols-1 lg:grid-cols-2 gap-4'
-          }
-        >
+        <div className={roomsSyncGridClass}>
           {/* Tuya Cloud */}
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 flex flex-col justify-between gap-3">
             <div>
@@ -347,57 +351,59 @@ export function RoomsTab({
             </div>
           </div>
 
-          {/* Kasa Cloud */}
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 flex flex-col justify-between gap-3">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.kasa.badgeClass}`}
-                >
-                  {VENDOR_REGISTRY.kasa.label}
-                </span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    data.env.kasaConfigured || data.env.mode === 'demo'
-                      ? 'bg-emerald-500/15 text-emerald-300'
-                      : 'bg-slate-800 text-slate-400'
-                  }`}
-                >
-                  {data.env.mode === 'demo'
-                    ? 'Mode Démo'
-                    : data.env.kasaConfigured
-                      ? `Connecté (${data.env.kasaRegion.toUpperCase()})`
-                      : 'Non configuré'}
-                </span>
+          {/* Kasa Cloud (masqué si non configuré) */}
+          {showKasa && (
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 flex flex-col justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.kasa.badgeClass}`}
+                  >
+                    {VENDOR_REGISTRY.kasa.label}
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      data.env.kasaConfigured || data.env.mode === 'demo'
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {data.env.mode === 'demo'
+                      ? 'Mode Démo'
+                      : data.env.kasaConfigured
+                        ? `Connecté (${data.env.kasaRegion.toUpperCase()})`
+                        : 'Non configuré'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-2">
+                  Importe les pièces et groupes TP-Link Kasa Cloud (100 % cloud, lecture seule) et
+                  rattache vos appareils Kasa.
+                </p>
+                {kasaVendor?.lastError && (
+                  <p className="text-[11px] text-amber-300 mt-1">{kasaVendor.lastError}</p>
+                )}
               </div>
-              <p className="text-xs text-slate-400 mt-2">
-                Importe les pièces et groupes TP-Link Kasa Cloud (100 % cloud, lecture seule) et
-                rattache vos appareils Kasa.
-              </p>
-              {kasaVendor?.lastError && (
-                <p className="text-[11px] text-amber-300 mt-1">{kasaVendor.lastError}</p>
-              )}
-            </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <span className="text-[11px] text-slate-500">
-                {kasaVendor?.lastSyncedAt
-                  ? `Synchro : ${new Date(kasaVendor.lastSyncedAt).toLocaleString('fr-FR')}`
-                  : '100 % cloud · zéro accès local requis'}
-              </span>
-              <button
-                type="button"
-                onClick={() => void handleSyncRooms('kasa')}
-                disabled={syncingTarget !== null}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-50 px-3 py-1.5 text-xs font-medium text-white transition"
-              >
-                <RefreshCw
-                  className={`h-3.5 w-3.5 ${syncingTarget === 'kasa' ? 'animate-spin' : ''}`}
-                />
-                {syncingTarget === 'kasa' ? 'Synchronisation...' : 'Synchroniser pièces Kasa'}
-              </button>
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <span className="text-[11px] text-slate-500">
+                  {kasaVendor?.lastSyncedAt
+                    ? `Synchro : ${new Date(kasaVendor.lastSyncedAt).toLocaleString('fr-FR')}`
+                    : '100 % cloud · zéro accès local requis'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleSyncRooms('kasa')}
+                  disabled={syncingTarget !== null}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-50 px-3 py-1.5 text-xs font-medium text-white transition"
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${syncingTarget === 'kasa' ? 'animate-spin' : ''}`}
+                  />
+                  {syncingTarget === 'kasa' ? 'Synchronisation...' : 'Synchroniser pièces Kasa'}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Google Home */}
           {showGoogleHomeApi && (

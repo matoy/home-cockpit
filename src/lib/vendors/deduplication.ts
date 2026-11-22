@@ -83,7 +83,9 @@ export function findDuplicateCandidates(
 
   const linkablePrimary = devices.filter(
     (d) =>
-      (d.primaryVendor === 'tuya' || d.primaryVendor === 'kasa') &&
+      (d.primaryVendor === 'tuya' ||
+        d.primaryVendor === 'kasa' ||
+        d.primaryVendor === 'home_connect') &&
       !normalizeSystems(d.systems, d.primaryVendor).includes('google_home')
   );
 
