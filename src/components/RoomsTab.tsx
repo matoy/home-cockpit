@@ -79,6 +79,7 @@ export function RoomsTab({
   const [savingRoom, setSavingRoom] = useState(false);
   const [roomFeedback, setRoomFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const showGoogleHomeApi = data.env.googleHomeApiEnabled;
   const tuyaVendor = data.vendors.find((v) => v.vendor === 'tuya');
   const ghVendor = data.vendors.find((v) => v.vendor === 'google_home');
   const isGhConnected = Boolean(ghVendor?.connected);
@@ -278,18 +279,20 @@ export function RoomsTab({
               des appareils sans écraser vos couleurs ni vos cibles °C / %.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void handleSyncRooms('all')}
-            disabled={syncingTarget !== null}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${syncingTarget === 'all' ? 'animate-spin' : ''}`} />
-            {syncingTarget === 'all' ? 'Synchronisation...' : 'Tout synchroniser'}
-          </button>
+          {showGoogleHomeApi && (
+            <button
+              type="button"
+              onClick={() => void handleSyncRooms('all')}
+              disabled={syncingTarget !== null}
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncingTarget === 'all' ? 'animate-spin' : ''}`} />
+              {syncingTarget === 'all' ? 'Synchronisation...' : 'Tout synchroniser'}
+            </button>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className={showGoogleHomeApi ? 'grid grid-cols-1 lg:grid-cols-2 gap-4' : 'grid grid-cols-1 gap-4'}>
           {/* Tuya Cloud */}
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 flex flex-col justify-between gap-3">
             <div>
@@ -340,99 +343,101 @@ export function RoomsTab({
           </div>
 
           {/* Google Home */}
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 flex flex-col justify-between gap-3">
-            <div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.google_home.badgeClass}`}
-                  >
-                    {VENDOR_REGISTRY.google_home.label}
-                  </span>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                      isGhConnected
-                        ? 'bg-emerald-500/15 text-emerald-300'
-                        : 'bg-slate-800 text-slate-400'
-                    }`}
-                  >
-                    {data.env.mode === 'demo'
-                      ? 'Mode Démo'
-                      : isGhConnected
-                        ? `Connecté (${(ghVendor?.mode ?? selectedGoogleMode).toString().toUpperCase()})`
-                        : data.env.googleHomeConfigured
-                          ? 'Prêt (OAuth requis)'
-                          : 'OAuth non configuré'}
-                  </span>
+          {showGoogleHomeApi && (
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 flex flex-col justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.google_home.badgeClass}`}
+                    >
+                      {VENDOR_REGISTRY.google_home.label}
+                    </span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        isGhConnected
+                          ? 'bg-emerald-500/15 text-emerald-300'
+                          : 'bg-slate-800 text-slate-400'
+                      }`}
+                    >
+                      {data.env.mode === 'demo'
+                        ? 'Mode Démo'
+                        : isGhConnected
+                          ? `Connecté (${(ghVendor?.mode ?? selectedGoogleMode).toString().toUpperCase()})`
+                          : data.env.googleHomeConfigured
+                            ? 'Prêt (OAuth requis)'
+                            : 'OAuth non configuré'}
+                    </span>
+                  </div>
+
+                  {!isGhConnected && data.env.mode === 'live' && (
+                    <select
+                      value={selectedGoogleMode}
+                      onChange={(e) => setSelectedGoogleMode(e.target.value as GoogleHomeMode)}
+                      aria-label="Mode API Google Home"
+                      className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-200 focus:border-sky-500 focus:outline-none"
+                    >
+                      <option value="mcp">Mode Home MCP (tous appareils)</option>
+                      <option value="sdm">Mode Nest SDM (Nest)</option>
+                    </select>
+                  )}
                 </div>
-
-                {!isGhConnected && data.env.mode === 'live' && (
-                  <select
-                    value={selectedGoogleMode}
-                    onChange={(e) => setSelectedGoogleMode(e.target.value as GoogleHomeMode)}
-                    aria-label="Mode API Google Home"
-                    className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-200 focus:border-sky-500 focus:outline-none"
-                  >
-                    <option value="mcp">Mode Home MCP (tous appareils)</option>
-                    <option value="sdm">Mode Nest SDM (Nest)</option>
-                  </select>
+                <p className="text-xs text-slate-400 mt-2">
+                  Importe les pièces Google Home / Nest ({selectedGoogleMode.toUpperCase()}) et
+                  complète les appareils non encore assignés.
+                </p>
+                {ghVendor?.lastError && (
+                  <p className="text-[11px] text-rose-300 mt-1">{ghVendor.lastError}</p>
                 )}
               </div>
-              <p className="text-xs text-slate-400 mt-2">
-                Importe les pièces Google Home / Nest ({selectedGoogleMode.toUpperCase()}) et
-                complète les appareils non encore assignés.
-              </p>
-              {ghVendor?.lastError && (
-                <p className="text-[11px] text-rose-300 mt-1">{ghVendor.lastError}</p>
-              )}
-            </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <span className="text-[11px] text-slate-500">
-                {ghVendor?.lastSyncedAt
-                  ? `Synchro : ${new Date(ghVendor.lastSyncedAt).toLocaleString('fr-FR')}`
-                  : 'Lecture seule · zéro commande envoyée'}
-              </span>
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <span className="text-[11px] text-slate-500">
+                  {ghVendor?.lastSyncedAt
+                    ? `Synchro : ${new Date(ghVendor.lastSyncedAt).toLocaleString('fr-FR')}`
+                    : 'Lecture seule · zéro commande envoyée'}
+                </span>
 
-              <div className="flex flex-wrap items-center gap-2">
-                {onOpenGoogleGuide && (
-                  <button
-                    type="button"
-                    onClick={onOpenGoogleGuide}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:text-white transition"
-                    title="Afficher le déroulé opératoire pas-à-pas Google Home"
-                  >
-                    <BookOpen className="h-3.5 w-3.5 text-sky-400" />
-                    Déroulé setup
-                  </button>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {onOpenGoogleGuide && (
+                    <button
+                      type="button"
+                      onClick={onOpenGoogleGuide}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:text-white transition"
+                      title="Afficher le déroulé opératoire pas-à-pas Google Home"
+                    >
+                      <BookOpen className="h-3.5 w-3.5 text-sky-400" />
+                      Déroulé setup
+                    </button>
+                  )}
 
-                {data.env.mode === 'live' && !isGhConnected ? (
-                  <a
-                    href={`/api/vendors/google-home/oauth/start?mode=${selectedGoogleMode}&returnTab=rooms`}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 px-3 py-1.5 text-xs font-medium text-white transition"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Connecter Google Home ({selectedGoogleMode.toUpperCase()})
-                  </a>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => void handleSyncRooms('google_home')}
-                    disabled={syncingTarget !== null}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 px-3 py-1.5 text-xs font-medium text-white transition"
-                  >
-                    <RefreshCw
-                      className={`h-3.5 w-3.5 ${syncingTarget === 'google_home' ? 'animate-spin' : ''}`}
-                    />
-                    {syncingTarget === 'google_home'
-                      ? 'Synchronisation...'
-                      : 'Synchroniser pièces Google Home'}
-                  </button>
-                )}
+                  {data.env.mode === 'live' && !isGhConnected ? (
+                    <a
+                      href={`/api/vendors/google-home/oauth/start?mode=${selectedGoogleMode}&returnTab=rooms`}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 px-3 py-1.5 text-xs font-medium text-white transition"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Connecter Google Home ({selectedGoogleMode.toUpperCase()})
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleSyncRooms('google_home')}
+                      disabled={syncingTarget !== null}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 px-3 py-1.5 text-xs font-medium text-white transition"
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${syncingTarget === 'google_home' ? 'animate-spin' : ''}`}
+                      />
+                      {syncingTarget === 'google_home'
+                        ? 'Synchronisation...'
+                        : 'Synchroniser pièces Google Home'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         {syncMessage && (

@@ -46,6 +46,8 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
     }
   }
 
+  const showGoogleHomeApi = env.googleHomeApiEnabled;
+
   const googleOAuthDetail = env.googleHomeConfigured
     ? `Mode par défaut : ${env.googleHomeMode.toUpperCase()} · ${
         env.googleHomeConnected ? 'OAuth connecté' : 'Prêt pour connexion OAuth'
@@ -82,11 +84,17 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
         ? 'Renseigné pour liste directe /v1.0/users/{uid}/devices'
         : 'Optionnel (repli sur associated-users)',
     },
-    {
-      label: 'Google Home OAuth (GOOGLE_CLIENT_ID & SECRET)',
-      ok: env.googleHomeConfigured && (env.googleHomeMode !== 'sdm' || env.googleSdmProjectConfigured),
-      detail: googleOAuthDetail,
-    },
+    ...(showGoogleHomeApi
+      ? [
+          {
+            label: 'Google Home OAuth (GOOGLE_CLIENT_ID & SECRET)',
+            ok:
+              env.googleHomeConfigured &&
+              (env.googleHomeMode !== 'sdm' || env.googleSdmProjectConfigured),
+            detail: googleOAuthDetail,
+          },
+        ]
+      : []),
     {
       label: 'Protection Dashboard (APP_PASSWORD)',
       ok: env.appPasswordConfigured,
@@ -300,10 +308,11 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
       </div>
 
       {/* Étape 4 : Google Home Multi-Vendors */}
-      <div
-        id="setup-google-home"
-        className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-5 scroll-mt-24"
-      >
+      {showGoogleHomeApi && (
+        <div
+          id="setup-google-home"
+          className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-5 scroll-mt-24"
+        >
         {/* En-tête + badges d'état temps réel */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -846,6 +855,7 @@ TOKEN_ENCRYPTION_KEY="" # optionnel : clé AES-256 64 car. hex`}
           </ul>
         </details>
       </div>
+      )}
     </div>
   );
 }

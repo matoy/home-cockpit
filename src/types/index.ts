@@ -224,6 +224,7 @@ export interface EnvStatus {
   tuyaUserUidConfigured: boolean;
   appPasswordConfigured: boolean;
   scheduleSecretConfigured: boolean;
+  googleHomeApiEnabled: boolean;
   googleHomeConfigured: boolean;
   googleHomeMode: GoogleHomeMode;
   googleHomeConnected: boolean;

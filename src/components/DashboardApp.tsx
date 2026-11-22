@@ -516,7 +516,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             onRefresh={() => fetchDashboard(range, roomId)}
             initialRoomFilter={devicesRoomFilter}
             onOpenRoomsTab={() => setActiveTab('rooms')}
-            onOpenGoogleGuide={handleOpenGoogleGuide}
+            onOpenGoogleGuide={data.env.googleHomeApiEnabled ? handleOpenGoogleGuide : undefined}
           />
         )}
         {activeTab === 'rooms' && (
@@ -524,7 +524,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             data={data}
             onRefresh={() => fetchDashboard(range, roomId)}
             onOpenRoomDevices={handleOpenRoomDevices}
-            onOpenGoogleGuide={handleOpenGoogleGuide}
+            onOpenGoogleGuide={data.env.googleHomeApiEnabled ? handleOpenGoogleGuide : undefined}
           />
         )}
         {activeTab === 'tariffs' && (

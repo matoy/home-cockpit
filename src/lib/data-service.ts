@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { and, asc, desc, eq, gte, isNull, lte, notInArray, sql } from 'drizzle-orm';
 import { getDb, isDatabaseConfigured, type AppDatabase } from '@/db';
 import {
@@ -83,9 +84,10 @@ export function getEnvStatus(googleHomeConnected = false): EnvStatus {
     tuyaUserUidConfigured: Boolean(tuya.userUid),
     appPasswordConfigured: isAppPasswordConfigured(),
     scheduleSecretConfigured: Boolean(process.env.SCHEDULE_SECRET?.trim()),
+    googleHomeApiEnabled: google.apiEnabled,
     googleHomeConfigured: google.configured,
     googleHomeMode: google.defaultMode,
-    googleHomeConnected,
+    googleHomeConnected: google.apiEnabled && googleHomeConnected,
     googleSdmProjectConfigured: Boolean(google.sdmProjectId),
   };
 }
@@ -677,9 +679,9 @@ export async function getDashboardData(
 
   const ghMode: GoogleHomeMode =
     ghConn?.mode === 'mcp' || ghConn?.mode === 'sdm' ? ghConn.mode : googleCfg.defaultMode;
-  const ghConnected = Boolean(
-    ghConn && ghConn.status === 'connected' && (ghConn.accessToken || ghConn.refreshToken)
-  );
+  const ghConnected =
+    googleCfg.apiEnabled &&
+    Boolean(ghConn && ghConn.status === 'connected' && (ghConn.accessToken || ghConn.refreshToken));
   const tuyaConnected = tuyaCfg.configured || mappedDevices.some((d) => d.systems.includes('tuya'));
 
   const env: EnvStatus = {
@@ -1395,6 +1397,11 @@ export async function syncGoogleHomeDevices(): Promise<{
   }
 
   await seedDefaultDataIfEmpty(db);
+  if (!getGoogleHomeConfig().apiEnabled) {
+    throw new Error(
+      "L'intégration API Google Home (MCP/SDM) est désactivée (GOOGLE_HOME_MODE=off ou non défini)."
+    );
+  }
   const connRows = await db
     .select()
     .from(vendorConnections)
@@ -1817,7 +1824,7 @@ async function collectGoogleHomeReadingsInDb(
   googleDevices: Array<typeof devices.$inferSelect>,
   now: Date
 ): Promise<number> {
-  if (googleDevices.length === 0) return 0;
+  if (googleDevices.length === 0 || !getGoogleHomeConfig().apiEnabled) return 0;
   const connRows = await db
     .select()
     .from(vendorConnections)
@@ -1905,7 +1912,10 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
     await ensureSchemaInitialized(db);
     const now = new Date();
     const ghMonitored = (await db.select().from(devices)).filter(
-      (d) => d.isMonitored && d.primaryVendor === 'google_home'
+      (d) =>
+        d.isMonitored &&
+        !d.id.startsWith('manual_') &&
+        d.primaryVendor === 'google_home'
     );
     try {
       const ghInserted = await collectGoogleHomeReadingsInDb(db, ghMonitored, now);
@@ -2081,10 +2091,16 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
     }
 
     const tuyaMonitored = allDevices.filter(
-      (d) => d.isMonitored && (!d.primaryVendor || d.primaryVendor === 'tuya')
+      (d) =>
+        d.isMonitored &&
+        !d.id.startsWith('manual_') &&
+        (!d.primaryVendor || d.primaryVendor === 'tuya')
     );
     const googleMonitored = allDevices.filter(
-      (d) => d.isMonitored && d.primaryVendor === 'google_home'
+      (d) =>
+        d.isMonitored &&
+        !d.id.startsWith('manual_') &&
+        d.primaryVendor === 'google_home'
     );
 
     const statusMap = await fetchBatchStatuses(tuyaMonitored.map((d) => d.id));
@@ -2421,6 +2437,11 @@ async function syncRoomsFromGoogleHome(): Promise<RoomVendorSyncResult> {
   }
 
   await seedDefaultDataIfEmpty(db);
+  if (!getGoogleHomeConfig().apiEnabled) {
+    throw new Error(
+      "L'intégration API Google Home (MCP/SDM) est désactivée (GOOGLE_HOME_MODE=off ou non défini)."
+    );
+  }
   const connRows = await db
     .select()
     .from(vendorConnections)
@@ -2529,31 +2550,38 @@ export async function syncRoomsFromVendor(
   if (vendor === 'google_home') return syncRoomsFromGoogleHome();
 
   const db = getDb();
+  const googleApiEnabled = getGoogleHomeConfig().apiEnabled;
   const tasks: Array<{ label: string; run: () => Promise<RoomVendorSyncResult> }> = [];
 
   if (!db) {
     tasks.push({ label: 'Tuya', run: syncRoomsFromTuya });
-    tasks.push({ label: 'Google Home', run: syncRoomsFromGoogleHome });
+    if (googleApiEnabled) {
+      tasks.push({ label: 'Google Home', run: syncRoomsFromGoogleHome });
+    }
   } else {
     if (getTuyaConfig().configured) {
       tasks.push({ label: 'Tuya', run: syncRoomsFromTuya });
     }
-    const ghRows = await db
-      .select({
-        status: vendorConnections.status,
-        accessToken: vendorConnections.accessToken,
-        refreshToken: vendorConnections.refreshToken,
-      })
-      .from(vendorConnections)
-      .where(eq(vendorConnections.vendor, 'google_home'))
-      .limit(1);
-    const ghConn = ghRows[0];
-    if (ghConn && ghConn.status === 'connected' && (ghConn.accessToken || ghConn.refreshToken)) {
-      tasks.push({ label: 'Google Home', run: syncRoomsFromGoogleHome });
+    if (googleApiEnabled) {
+      const ghRows = await db
+        .select({
+          status: vendorConnections.status,
+          accessToken: vendorConnections.accessToken,
+          refreshToken: vendorConnections.refreshToken,
+        })
+        .from(vendorConnections)
+        .where(eq(vendorConnections.vendor, 'google_home'))
+        .limit(1);
+      const ghConn = ghRows[0];
+      if (ghConn && ghConn.status === 'connected' && (ghConn.accessToken || ghConn.refreshToken)) {
+        tasks.push({ label: 'Google Home', run: syncRoomsFromGoogleHome });
+      }
     }
     if (tasks.length === 0) {
       throw new Error(
-        'Aucun système configuré ou connecté pour synchroniser les pièces (configurez Tuya ou connectez Google Home).'
+        googleApiEnabled
+          ? 'Aucun système configuré ou connecté pour synchroniser les pièces (configurez Tuya ou connectez Google Home).'
+          : 'Tuya n’est pas encore configuré pour synchroniser les pièces.'
       );
     }
   }
@@ -2631,42 +2659,336 @@ function computeDeviceMetricsForDpConfig(
   };
 }
 
+function sanitizeManualMac(rawMac: string | null | undefined): string | null {
+  const trimmed = rawMac?.trim();
+  if (!trimmed) return null;
+  return formatMacAddress(trimmed) ?? trimmed;
+}
+
+export interface CreateManualDeviceInput {
+  name: string;
+  customName?: string | null;
+  productName?: string | null;
+  roomId?: number | null;
+  category?: DeviceCategory;
+  primaryVendor?: VendorId;
+  systems?: VendorId[];
+  ipAddress?: string | null;
+  macAddress?: string | null;
+  isOnline?: boolean;
+  isMonitored?: boolean;
+  excludeFromTotals?: boolean;
+}
+
+function syncManualLinksInDemo(params: {
+  deviceId: string;
+  systems: VendorId[];
+  primaryVendor: VendorId;
+  externalName: string;
+  nowIso: string;
+}): DeviceVendorLinkRecord[] {
+  const state = getDemoState();
+  state.vendorLinks = state.vendorLinks.filter(
+    (l) =>
+      l.deviceId !== params.deviceId ||
+      !l.externalId.startsWith('manual:') ||
+      params.systems.includes(l.vendor)
+  );
+
+  for (const link of state.vendorLinks) {
+    if (link.deviceId === params.deviceId) {
+      link.isPrimaryTelemetry = link.vendor === params.primaryVendor;
+      if (link.externalId.startsWith('manual:')) {
+        link.externalName = params.externalName;
+      }
+    }
+  }
+
+  for (const vendor of params.systems) {
+    const exists = state.vendorLinks.some(
+      (l) => l.deviceId === params.deviceId && l.vendor === vendor
+    );
+    if (!exists) {
+      state.vendorLinks.push({
+        id: state.nextLinkId++,
+        deviceId: params.deviceId,
+        vendor,
+        externalId: `manual:${vendor}:${params.deviceId}`,
+        externalName: params.externalName,
+        isPrimaryTelemetry: vendor === params.primaryVendor,
+        linkedAt: params.nowIso,
+      });
+    }
+  }
+
+  return state.vendorLinks.filter((l) => l.deviceId === params.deviceId);
+}
+
+async function syncManualLinksInDb(params: {
+  db: AppDatabase;
+  deviceId: string;
+  systems: VendorId[];
+  primaryVendor: VendorId;
+  externalName: string;
+  now: Date;
+}): Promise<DeviceVendorLinkRecord[]> {
+  const existingLinks = await params.db
+    .select()
+    .from(deviceVendorLinks)
+    .where(eq(deviceVendorLinks.deviceId, params.deviceId));
+
+  for (const link of existingLinks) {
+    const vendorId: VendorId = isValidVendorId(link.vendor) ? link.vendor : 'tuya';
+    if (link.externalId.startsWith('manual:') && !params.systems.includes(vendorId)) {
+      await params.db.delete(deviceVendorLinks).where(eq(deviceVendorLinks.id, link.id));
+      continue;
+    }
+    await params.db
+      .update(deviceVendorLinks)
+      .set({
+        isPrimaryTelemetry: vendorId === params.primaryVendor,
+        ...(link.externalId.startsWith('manual:') ? { externalName: params.externalName } : {}),
+      })
+      .where(eq(deviceVendorLinks.id, link.id));
+  }
+
+  for (const vendor of params.systems) {
+    const hasLink = existingLinks.some((l) => l.vendor === vendor);
+    if (!hasLink) {
+      await params.db
+        .insert(deviceVendorLinks)
+        .values({
+          deviceId: params.deviceId,
+          vendor,
+          externalId: `manual:${vendor}:${params.deviceId}`,
+          externalName: params.externalName,
+          isPrimaryTelemetry: vendor === params.primaryVendor,
+          linkedAt: params.now,
+        })
+        .onConflictDoNothing();
+    }
+  }
+
+  const finalLinks = await params.db
+    .select()
+    .from(deviceVendorLinks)
+    .where(eq(deviceVendorLinks.deviceId, params.deviceId));
+  return finalLinks.map(mapDbVendorLink);
+}
+
+export async function createManualDevice(
+  input: CreateManualDeviceInput
+): Promise<DeviceRecord> {
+  const name = input.name.trim();
+  if (!name) {
+    throw new Error("Le nom de l'appareil est requis.");
+  }
+
+  const primaryVendor: VendorId = isValidVendorId(input.primaryVendor)
+    ? input.primaryVendor
+    : 'google_home';
+  const systems = normalizeSystems(input.systems, primaryVendor);
+  const customName = input.customName?.trim() || null;
+  const productName = input.productName?.trim() || null;
+  const ipAddress = input.ipAddress?.trim() || null;
+  const macAddress = sanitizeManualMac(input.macAddress);
+  const category: DeviceCategory = input.category ?? 'other';
+  const roomId = input.roomId ?? null;
+  const isOnline = input.isOnline ?? true;
+  const isMonitored = input.isMonitored ?? true;
+  const excludeFromTotals = input.excludeFromTotals ?? false;
+  const id = `manual_${crypto.randomBytes(8).toString('hex')}`;
+  const now = new Date();
+  const externalName = customName || name;
+
+  const db = getDb();
+  if (!db) {
+    const state = getDemoState();
+    const record: DeviceRecord = {
+      id,
+      name,
+      customName,
+      primaryVendor,
+      systems,
+      roomId,
+      category,
+      tuyaCategory: 'manual',
+      productName,
+      ipAddress,
+      macAddress,
+      isOnline,
+      isMonitored,
+      excludeFromTotals,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: null,
+      lastSeenAt: null,
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    };
+    state.devices.push(record);
+    const links = syncManualLinksInDemo({
+      deviceId: id,
+      systems,
+      primaryVendor,
+      externalName,
+      nowIso: now.toISOString(),
+    });
+    return { ...record, vendorLinks: links };
+  }
+
+  await ensureSchemaInitialized(db);
+  const [inserted] = await db
+    .insert(devices)
+    .values({
+      id,
+      name,
+      customName,
+      primaryVendor,
+      systems,
+      roomId,
+      category,
+      tuyaCategory: 'manual',
+      productName,
+      ipAddress,
+      macAddress,
+      isOnline,
+      isMonitored,
+      excludeFromTotals,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: null,
+      lastSeenAt: null,
+    })
+    .returning();
+
+  const links = await syncManualLinksInDb({
+    db,
+    deviceId: id,
+    systems,
+    primaryVendor,
+    externalName,
+    now,
+  });
+  return mapDbDevice(inserted, links);
+}
+
 export async function updateDevice(
   id: string,
   input: Partial<{
+    name: string;
     customName: string | null;
+    productName: string | null;
+    ipAddress: string | null;
+    macAddress: string | null;
     roomId: number | null;
     category: DeviceCategory;
+    isOnline: boolean;
     isMonitored: boolean;
     excludeFromTotals: boolean;
     energyMode: EnergyMode;
     dpConfig: DpConfig;
+    primaryVendor: VendorId;
+    systems: VendorId[];
   }>
 ): Promise<DeviceRecord | null> {
   const db = getDb();
+  const now = new Date();
+  const sanitizedInput = {
+    ...input,
+    ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+    ...(input.customName !== undefined
+      ? { customName: input.customName ? input.customName.trim() : null }
+      : {}),
+    ...(input.productName !== undefined
+      ? { productName: input.productName ? input.productName.trim() : null }
+      : {}),
+    ...(input.ipAddress !== undefined
+      ? { ipAddress: input.ipAddress ? input.ipAddress.trim() : null }
+      : {}),
+    ...(input.macAddress !== undefined
+      ? { macAddress: sanitizeManualMac(input.macAddress) }
+      : {}),
+  };
+
   if (!db) {
     const state = getDemoState();
     const dev = state.devices.find((d) => d.id === id);
     if (!dev) return null;
-    Object.assign(dev, input);
-    if (input.dpConfig) {
-      dev.category = input.category ?? inferDeviceCategory(input.dpConfig, dev.tuyaCategory);
-      Object.assign(dev, computeDeviceMetricsForDpConfig(dev.lastRawStatus, input.dpConfig));
+
+    const currentPrimary: VendorId = isValidVendorId(dev.primaryVendor)
+      ? dev.primaryVendor
+      : 'tuya';
+    const nextPrimary: VendorId =
+      sanitizedInput.primaryVendor && isValidVendorId(sanitizedInput.primaryVendor)
+        ? sanitizedInput.primaryVendor
+        : currentPrimary;
+    const nextSystems =
+      sanitizedInput.systems !== undefined || sanitizedInput.primaryVendor !== undefined
+        ? normalizeSystems(sanitizedInput.systems ?? dev.systems, nextPrimary)
+        : dev.systems;
+
+    Object.assign(dev, sanitizedInput, {
+      primaryVendor: nextPrimary,
+      systems: nextSystems,
+    });
+
+    if (sanitizedInput.dpConfig) {
+      dev.category =
+        sanitizedInput.category ?? inferDeviceCategory(sanitizedInput.dpConfig, dev.tuyaCategory);
+      Object.assign(dev, computeDeviceMetricsForDpConfig(dev.lastRawStatus, sanitizedInput.dpConfig));
     }
-    return dev;
+
+    const links =
+      sanitizedInput.systems !== undefined ||
+      sanitizedInput.primaryVendor !== undefined ||
+      sanitizedInput.name !== undefined ||
+      sanitizedInput.customName !== undefined
+        ? syncManualLinksInDemo({
+            deviceId: id,
+            systems: nextSystems,
+            primaryVendor: nextPrimary,
+            externalName: dev.customName || dev.name,
+            nowIso: now.toISOString(),
+          })
+        : state.vendorLinks.filter((l) => l.deviceId === id);
+
+    return { ...dev, vendorLinks: links };
   }
 
   await ensureSchemaInitialized(db);
   const existing = await db.select().from(devices).where(eq(devices.id, id)).limit(1);
   if (existing.length === 0) return null;
 
-  const updates: Partial<typeof devices.$inferInsert> = { ...input };
-  if (input.dpConfig) {
+  const currentPrimary: VendorId = isValidVendorId(existing[0].primaryVendor)
+    ? existing[0].primaryVendor
+    : 'tuya';
+  const nextPrimary: VendorId =
+    sanitizedInput.primaryVendor && isValidVendorId(sanitizedInput.primaryVendor)
+      ? sanitizedInput.primaryVendor
+      : currentPrimary;
+  const hasSystemUpdate =
+    sanitizedInput.systems !== undefined || sanitizedInput.primaryVendor !== undefined;
+  const nextSystems = hasSystemUpdate
+    ? normalizeSystems(sanitizedInput.systems ?? existing[0].systems, nextPrimary)
+    : undefined;
+
+  const updates: Partial<typeof devices.$inferInsert> = {
+    ...sanitizedInput,
+    ...(hasSystemUpdate ? { primaryVendor: nextPrimary, systems: nextSystems } : {}),
+  };
+  if (sanitizedInput.dpConfig) {
     updates.category =
-      input.category ?? inferDeviceCategory(input.dpConfig, existing[0].tuyaCategory);
+      sanitizedInput.category ??
+      inferDeviceCategory(sanitizedInput.dpConfig, existing[0].tuyaCategory);
     Object.assign(
       updates,
-      computeDeviceMetricsForDpConfig(existing[0].lastRawStatus, input.dpConfig)
+      computeDeviceMetricsForDpConfig(existing[0].lastRawStatus, sanitizedInput.dpConfig)
     );
   }
 
@@ -2675,7 +2997,47 @@ export async function updateDevice(
     .set(updates)
     .where(eq(devices.id, id))
     .returning();
-  return updated ? mapDbDevice(updated) : null;
+  if (!updated) return null;
+
+  const externalName = updated.customName || updated.name;
+  const links = hasSystemUpdate
+    ? await syncManualLinksInDb({
+        db,
+        deviceId: id,
+        systems: nextSystems!,
+        primaryVendor: nextPrimary,
+        externalName,
+        now,
+      })
+    : (
+        await db.select().from(deviceVendorLinks).where(eq(deviceVendorLinks.deviceId, id))
+      ).map(mapDbVendorLink);
+
+  return mapDbDevice(updated, links);
+}
+
+export async function deleteManualDevice(id: string): Promise<boolean> {
+  if (!id.startsWith('manual_')) {
+    throw new Error('Seuls les appareils déclarés manuellement peuvent être supprimés.');
+  }
+
+  const db = getDb();
+  if (!db) {
+    const state = getDemoState();
+    const beforeLen = state.devices.length;
+    state.devices = state.devices.filter((d) => d.id !== id);
+    if (state.devices.length === beforeLen) return false;
+    state.vendorLinks = state.vendorLinks.filter((l) => l.deviceId !== id);
+    state.readings = state.readings.filter((r) => r.deviceId !== id);
+    return true;
+  }
+
+  await ensureSchemaInitialized(db);
+  const deleted = await db
+    .delete(devices)
+    .where(eq(devices.id, id))
+    .returning({ id: devices.id });
+  return deleted.length > 0;
 }
 
 async function syncTariffTimelineInDb(db: AppDatabase): Promise<TariffPeriodRecord[]> {

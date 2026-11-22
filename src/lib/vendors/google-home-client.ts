@@ -10,6 +10,7 @@ export const GOOGLE_MCP_SCOPE = 'https://www.googleapis.com/auth/home.platform.v
 export const GOOGLE_SDM_SCOPE = 'https://www.googleapis.com/auth/sdm.service';
 
 export interface GoogleHomeConfig {
+  apiEnabled: boolean;
   configured: boolean;
   clientId: string;
   clientSecret: string;
@@ -21,16 +22,12 @@ export function getGoogleHomeConfig(): GoogleHomeConfig {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim() ?? '';
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim() ?? '';
   const sdmProjectId = process.env.GOOGLE_SDM_PROJECT_ID?.trim() ?? '';
-  const rawMode = process.env.GOOGLE_HOME_MODE?.trim().toLowerCase();
-
-  const defaultMode: GoogleHomeMode =
-    rawMode === 'mcp' || rawMode === 'sdm'
-      ? rawMode
-      : sdmProjectId
-        ? 'sdm'
-        : 'mcp';
+  const rawMode = process.env.GOOGLE_HOME_MODE?.trim().toLowerCase() ?? '';
+  const apiEnabled = rawMode === 'mcp' || rawMode === 'sdm';
+  const defaultMode: GoogleHomeMode = rawMode === 'sdm' ? 'sdm' : 'mcp';
 
   return {
+    apiEnabled,
     configured: Boolean(clientId && clientSecret),
     clientId,
     clientSecret,
@@ -50,6 +47,11 @@ export function buildGoogleOAuthAuthorizeUrl(params: {
   state: string;
 }): string {
   const cfg = getGoogleHomeConfig();
+  if (!cfg.apiEnabled) {
+    throw new Error(
+      "L'intégration API Google Home (MCP/SDM) est désactivée (GOOGLE_HOME_MODE=off ou non défini)."
+    );
+  }
   if (!cfg.configured) {
     throw new Error(
       'GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET doivent être configurés dans les variables d’environnement.'
