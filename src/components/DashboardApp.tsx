@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Zap,
@@ -26,7 +26,7 @@ import { AutomationsTab } from './AutomationsTab';
 import { TariffsTab } from './TariffsTab';
 import { DevicesRoomsTab } from './DevicesRoomsTab';
 import { SetupGuideTab } from './SetupGuideTab';
-import type { DashboardPayload, TabId, TimeRange } from '@/types';
+import type { DashboardPayload, SystemFilter, TabId, TimeRange } from '@/types';
 
 interface DashboardAppProps {
   initialData: DashboardPayload;
@@ -64,21 +64,52 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
       : null
   );
   const [roomId, setRoomId] = useState<string>(initialData.selectedRoomId);
+  const [systemFilter, setSystemFilter] = useState<SystemFilter>(
+    initialData.selectedSystem ?? 'all'
+  );
   const [loading, setLoading] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    const ghStatus = params.get('gh');
+    const ghMode = params.get('gh_mode');
+    const ghError = params.get('gh_error');
+
+    if (tabParam === 'devices') {
+      setActiveTab('devices');
+    }
+    if (ghStatus === 'connected') {
+      setToast(
+        `Google Home connecté (${(ghMode || 'mcp').toUpperCase()}). Cliquez sur « Synchroniser » dans Appareils & Pièces.`
+      );
+      setTimeout(() => setToast(null), 6000);
+    } else if (ghError) {
+      setToast(`Erreur Google Home : ${ghError}`);
+      setTimeout(() => setToast(null), 7000);
+    }
+
+    if (tabParam || ghStatus || ghError) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   const fetchDashboard = useCallback(
     async (
       nextRange: TimeRange = range,
       nextRoomId: string = roomId,
-      customBounds: { from: string; to: string } | null = appliedCustom
+      customBounds: { from: string; to: string } | null = appliedCustom,
+      nextSystem: SystemFilter = systemFilter
     ) => {
       setLoading(true);
       try {
         const params = new URLSearchParams({
           range: nextRange,
           roomId: nextRoomId,
+          system: nextSystem,
         });
         if (nextRange === 'custom' && customBounds) {
           params.set('from', customBounds.from);
@@ -99,13 +130,13 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
         setLoading(false);
       }
     },
-    [range, roomId, appliedCustom, router]
+    [range, roomId, appliedCustom, systemFilter, router]
   );
 
   async function handleRangeChange(nextRange: Exclude<TimeRange, 'custom'>) {
     setRange(nextRange);
     setShowCustomPicker(false);
-    await fetchDashboard(nextRange, roomId, null);
+    await fetchDashboard(nextRange, roomId, null, systemFilter);
   }
 
   async function applyCustomBounds(fromLocal: string, toLocal: string) {
@@ -116,7 +147,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     setAppliedCustom(bounds);
     setRange('custom');
     setShowCustomPicker(false);
-    await fetchDashboard('custom', roomId, bounds);
+    await fetchDashboard('custom', roomId, bounds, systemFilter);
   }
 
   function applyQuickCustomPreset(preset: 'today' | 'yesterday' | 'thisMonth' | 'last7d') {
@@ -144,7 +175,12 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
 
   async function handleRoomChange(nextRoomId: string) {
     setRoomId(nextRoomId);
-    await fetchDashboard(range, nextRoomId);
+    await fetchDashboard(range, nextRoomId, appliedCustom, systemFilter);
+  }
+
+  async function handleSystemChange(nextSystem: SystemFilter) {
+    setSystemFilter(nextSystem);
+    await fetchDashboard(range, roomId, appliedCustom, nextSystem);
   }
 
   async function handleCollectNow() {
@@ -212,7 +248,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base font-bold tracking-tight text-white">
-                  Tuya Home Energy &amp; Climate
+                  Home Cockpit · Multi-Vendors
                 </h1>
                 <span
                   className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold border ${
@@ -265,6 +301,21 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
                 Personnalisé
               </button>
             </div>
+
+            {/* Filtre système */}
+            <select
+              value={systemFilter}
+              onChange={(e) => void handleSystemChange(e.target.value as SystemFilter)}
+              aria-label="Filtrer par système"
+              className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="all">Tous les systèmes ({data.devices.length})</option>
+              {data.vendors.map((v) => (
+                <option key={v.vendor} value={v.vendor}>
+                  {v.label} ({v.devicesCount})
+                </option>
+              ))}
+            </select>
 
             {/* Filtre pièce */}
             <select

@@ -8,6 +8,7 @@ import {
   serial,
   text,
   timestamp,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import type {
   AutomationAction,
@@ -16,6 +17,7 @@ import type {
   DpConfig,
   HcSlot,
   RawDpStatus,
+  VendorId,
 } from '@/types';
 
 export const rooms = pgTable('rooms', {
@@ -34,6 +36,8 @@ export const devices = pgTable('devices', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   customName: text('custom_name'),
+  primaryVendor: text('primary_vendor').notNull().default('tuya'),
+  systems: jsonb('systems').$type<VendorId[]>().notNull().default(['tuya']),
   roomId: integer('room_id').references(() => rooms.id, { onDelete: 'set null' }),
   category: text('category').notNull().default('power'),
   tuyaCategory: text('tuya_category'),
@@ -54,6 +58,39 @@ export const devices = pgTable('devices', {
   lastHumidityPct: real('last_humidity_pct'),
   lastBatteryPct: real('last_battery_pct'),
   lastContactOpen: boolean('last_contact_open'),
+});
+
+export const deviceVendorLinks = pgTable(
+  'device_vendor_links',
+  {
+    id: serial('id').primaryKey(),
+    deviceId: text('device_id')
+      .notNull()
+      .references(() => devices.id, { onDelete: 'cascade' }),
+    vendor: text('vendor').notNull(),
+    externalId: text('external_id').notNull(),
+    externalName: text('external_name'),
+    vendorMetadata: jsonb('vendor_metadata').$type<Record<string, unknown>>(),
+    isPrimaryTelemetry: boolean('is_primary_telemetry').default(false).notNull(),
+    linkedAt: timestamp('linked_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_vendor_links_unique').on(table.vendor, table.externalId),
+    index('idx_vendor_links_device').on(table.deviceId),
+  ]
+);
+
+export const vendorConnections = pgTable('vendor_connections', {
+  vendor: text('vendor').primaryKey(),
+  mode: text('mode').notNull().default('mcp'),
+  status: text('status').notNull().default('disconnected'),
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }),
+  config: jsonb('config').$type<Record<string, unknown>>().notNull().default({}),
+  lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const metricReadings = pgTable(
@@ -108,6 +145,7 @@ export const collectionLogs = pgTable('collection_logs', {
 export const automations = pgTable('automations', {
   id: text('id').primaryKey(),
   homeId: text('home_id'),
+  vendor: text('vendor').notNull().default('tuya'),
   name: text('name').notNull(),
   ruleType: text('rule_type').notNull().default('automation'),
   enabled: boolean('enabled').default(true).notNull(),

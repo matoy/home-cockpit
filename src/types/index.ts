@@ -1,5 +1,11 @@
 export type DeviceCategory = 'power' | 'climate' | 'contact' | 'hybrid' | 'other';
 
+export type VendorId = 'tuya' | 'google_home';
+
+export type SystemFilter = 'all' | VendorId;
+
+export type GoogleHomeMode = 'mcp' | 'sdm';
+
 export type EnergyMode = 'hybrid' | 'add_ele' | 'integration';
 
 export type EnergySource = 'add_ele' | 'integration';
@@ -17,6 +23,39 @@ export type TabId =
   | 'devices'
   | 'tariffs'
   | 'guide';
+
+export interface DeviceVendorLinkRecord {
+  id: number;
+  deviceId: string;
+  vendor: VendorId;
+  externalId: string;
+  externalName: string | null;
+  isPrimaryTelemetry: boolean;
+  linkedAt: string;
+}
+
+export interface VendorConnectionSummary {
+  vendor: VendorId;
+  label: string;
+  mode: 'cloud_key' | GoogleHomeMode;
+  configured: boolean;
+  connected: boolean;
+  devicesCount: number;
+  lastSyncedAt: string | null;
+  lastError: string | null;
+}
+
+export interface DuplicateCandidate {
+  sourceDeviceId: string;
+  sourceName: string;
+  sourceVendor: VendorId;
+  targetDeviceId: string;
+  targetName: string;
+  targetVendor: VendorId;
+  roomName: string | null;
+  confidence: 'high' | 'medium';
+  reason: string;
+}
 
 export interface DpMappingField {
   code: string;
@@ -60,6 +99,9 @@ export interface DeviceRecord {
   id: string;
   name: string;
   customName: string | null;
+  primaryVendor: VendorId;
+  systems: VendorId[];
+  vendorLinks?: DeviceVendorLinkRecord[];
   roomId: number | null;
   category: DeviceCategory;
   tuyaCategory: string | null;
@@ -181,6 +223,10 @@ export interface EnvStatus {
   tuyaUserUidConfigured: boolean;
   appPasswordConfigured: boolean;
   scheduleSecretConfigured: boolean;
+  googleHomeConfigured: boolean;
+  googleHomeMode: GoogleHomeMode;
+  googleHomeConnected: boolean;
+  googleSdmProjectConfigured: boolean;
 }
 
 export interface ContactSensorStat {
@@ -266,6 +312,7 @@ export interface AutomationAction {
 export interface AutomationRecord {
   id: string;
   homeId: string | null;
+  vendor?: VendorId;
   name: string;
   ruleType: AutomationRuleType;
   enabled: boolean;
@@ -358,6 +405,7 @@ export interface DashboardPayload {
   customFrom: string | null;
   customTo: string | null;
   selectedRoomId: string;
+  selectedSystem: SystemFilter;
   generatedAt: string;
   kpis: {
     currentPowerW: number;
@@ -382,6 +430,8 @@ export interface DashboardPayload {
   rooms: RoomRecord[];
   roomSummaries: RoomSummary[];
   devices: DeviceRecord[];
+  vendors: VendorConnectionSummary[];
+  duplicateCandidates: DuplicateCandidate[];
   tariffs: TariffPeriodRecord[];
   energyByRoom: EnergyBreakdownItem[];
   energyByDevice: EnergyBreakdownItem[];

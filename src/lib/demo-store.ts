@@ -3,14 +3,26 @@ import type {
   AutomationRecord,
   CollectionLogRecord,
   DeviceRecord,
+  DeviceVendorLinkRecord,
+  GoogleHomeMode,
   MetricReadingRecord,
   RoomRecord,
   TariffPeriodRecord,
+  VendorId,
 } from '@/types';
+
+export interface DemoVendorConnectionState {
+  mode: 'cloud_key' | GoogleHomeMode;
+  connected: boolean;
+  lastSyncedAt: string | null;
+  lastError: string | null;
+}
 
 interface DemoState {
   rooms: RoomRecord[];
   devices: DeviceRecord[];
+  vendorLinks: DeviceVendorLinkRecord[];
+  vendorConnections: Record<VendorId, DemoVendorConnectionState>;
   readings: MetricReadingRecord[];
   tariffs: TariffPeriodRecord[];
   automations: AutomationRecord[];
@@ -19,6 +31,7 @@ interface DemoState {
   nextReadingId: number;
   nextTariffId: number;
   nextLogId: number;
+  nextLinkId: number;
 }
 
 declare global {
@@ -94,7 +107,7 @@ function createInitialDemoState(): DemoState {
     },
   ];
 
-  const devices: DeviceRecord[] = [
+  const tuyaSeedDevices: Array<Omit<DeviceRecord, 'primaryVendor' | 'systems'>> = [
     {
       id: 'bf81a2c9salonplug01',
       name: 'Prise TV & Box Salon',
@@ -458,6 +471,105 @@ function createInitialDemoState(): DemoState {
     },
   ];
 
+  const LINKED_TO_GOOGLE_HOME_IDS = new Set(['bf81a2c9salonplug01', 'bf81a2c9bureaudesk1']);
+
+  const devices: DeviceRecord[] = [
+    ...tuyaSeedDevices.map((d) => ({
+      ...d,
+      primaryVendor: 'tuya' as const,
+      systems: LINKED_TO_GOOGLE_HOME_IDS.has(d.id)
+        ? (['tuya', 'google_home'] as VendorId[])
+        : (['tuya'] as VendorId[]),
+    })),
+    {
+      id: 'gh_nest_thermostat_salon',
+      name: 'Nest Thermostat Salon',
+      customName: 'Nest Thermostat Salon',
+      primaryVendor: 'google_home',
+      systems: ['google_home'],
+      roomId: 1,
+      category: 'climate',
+      tuyaCategory: 'gh_thermostat',
+      productName: 'Google Nest Thermostat',
+      ipAddress: null,
+      macAddress: null,
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {
+        temp: { code: 'ambientTemperatureCelsius', scale: 1 },
+        humidity: { code: 'ambientHumidityPercent', scale: 1 },
+      },
+      lastRawStatus: [
+        { code: 'ambientTemperatureCelsius', value: 20.8 },
+        { code: 'ambientHumidityPercent', value: 48 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: 20.8,
+      lastHumidityPct: 48,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
+    {
+      id: 'gh_nest_hub_cuisine',
+      name: 'Google Nest Hub Cuisine',
+      customName: null,
+      primaryVendor: 'google_home',
+      systems: ['google_home'],
+      roomId: 3,
+      category: 'other',
+      tuyaCategory: 'gh_display',
+      productName: 'Google Nest Hub (2nd Gen)',
+      ipAddress: null,
+      macAddress: null,
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [{ code: 'Connectivity', value: 'ONLINE' }],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
+    {
+      id: 'gh_dup_radiateur_chambre',
+      name: 'Radiateur Chambre',
+      customName: null,
+      primaryVendor: 'google_home',
+      systems: ['google_home'],
+      roomId: 4,
+      category: 'other',
+      tuyaCategory: 'gh_plug',
+      productName: 'Smart Life via Google Home',
+      ipAddress: null,
+      macAddress: null,
+      isOnline: true,
+      isMonitored: false,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [{ code: 'OnOff', value: true }],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
+  ];
+
   // Deux périodes tarifaires (2025 -> 2026) pour illustrer la gestion multi-périodes
   const currentYear = alignedNow.getUTCFullYear();
   const prevYear = currentYear - 1;
@@ -803,7 +915,7 @@ function createInitialDemoState(): DemoState {
   ];
 
   const syncedIso = alignedNow.toISOString();
-  const demoAutomations: AutomationRecord[] = [
+  const demoAutomationSeeds: Array<Omit<AutomationRecord, 'vendor'>> = [
     {
       id: 'rule_window_cut_heat',
       homeId: 'demo-home-1',
@@ -1013,9 +1125,57 @@ function createInitialDemoState(): DemoState {
     },
   ];
 
+  const demoAutomations: AutomationRecord[] = demoAutomationSeeds.map((rule) => ({
+    ...rule,
+    vendor: 'tuya',
+  }));
+
+  let nextLinkId = 1;
+  const vendorLinks: DeviceVendorLinkRecord[] = [];
+  for (const d of devices) {
+    vendorLinks.push({
+      id: nextLinkId++,
+      deviceId: d.id,
+      vendor: d.primaryVendor,
+      externalId: d.primaryVendor === 'google_home' ? `enterprises/demo/devices/${d.id}` : d.id,
+      externalName: d.name,
+      isPrimaryTelemetry: true,
+      linkedAt: syncedIso,
+    });
+    if (d.primaryVendor === 'tuya' && d.systems.includes('google_home')) {
+      vendorLinks.push({
+        id: nextLinkId++,
+        deviceId: d.id,
+        vendor: 'google_home',
+        externalId: `enterprises/demo/devices/gh_${d.id}`,
+        externalName: d.customName || d.name,
+        isPrimaryTelemetry: false,
+        linkedAt: syncedIso,
+      });
+    }
+    d.vendorLinks = vendorLinks.filter((l) => l.deviceId === d.id);
+  }
+
+  const vendorConnections: Record<VendorId, DemoVendorConnectionState> = {
+    tuya: {
+      mode: 'cloud_key',
+      connected: true,
+      lastSyncedAt: syncedIso,
+      lastError: null,
+    },
+    google_home: {
+      mode: 'mcp',
+      connected: true,
+      lastSyncedAt: syncedIso,
+      lastError: null,
+    },
+  };
+
   return {
     rooms,
     devices,
+    vendorLinks,
+    vendorConnections,
     readings,
     tariffs,
     automations: demoAutomations,
@@ -1024,6 +1184,7 @@ function createInitialDemoState(): DemoState {
     nextReadingId,
     nextTariffId: tariffs.length + 1,
     nextLogId: logs.length + 1,
+    nextLinkId,
   };
 }
 

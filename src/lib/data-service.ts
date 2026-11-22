@@ -4,15 +4,26 @@ import {
   automations,
   collectionLogs,
   devices,
+  deviceVendorLinks,
   metricReadings,
   rooms,
   tariffPeriods,
+  vendorConnections,
 } from '@/db/schema';
 import { buildDashboardPayload, resolveTimeWindow } from './aggregator';
 import { isAppPasswordConfigured } from './auth';
 import { getDemoState, simulateDemoCollection } from './demo-store';
 import { inferDeviceCategory, sanitizeDeviceDpConfig } from './device-utils';
 import { computeHybridEnergyKwh, normalizeTariffTimeline } from './tariff-engine';
+import { decryptSecret, encryptSecret } from './vendors/crypto-store';
+import { mergeDeviceSystems } from './vendors/deduplication';
+import {
+  fetchGoogleHomeInventory,
+  getGoogleHomeConfig,
+  makeGoogleDeviceId,
+  refreshGoogleAccessToken,
+} from './vendors/google-home-client';
+import { isValidVendorId, normalizeSystems, VENDOR_IDS, VENDOR_REGISTRY } from './vendors/registry';
 import {
   autoDetectDpConfig,
   extractMetricsFromStatus,
@@ -35,17 +46,22 @@ import type {
   DashboardPayload,
   DeviceCategory,
   DeviceRecord,
+  DeviceVendorLinkRecord,
   DpConfig,
   EnergyMode,
   EnergySource,
   EnvStatus,
+  GoogleHomeMode,
   HcSlot,
   MetricReadingRecord,
   RawDpStatus,
   RoomRecord,
+  SystemFilter,
   TariffMode,
   TariffPeriodRecord,
   TimeRange,
+  VendorConnectionSummary,
+  VendorId,
 } from '@/types';
 
 const RANGE_HOURS: Record<Exclude<TimeRange, 'custom'>, number> = {
@@ -55,8 +71,9 @@ const RANGE_HOURS: Record<Exclude<TimeRange, 'custom'>, number> = {
   '365d': 24 * 365,
 };
 
-export function getEnvStatus(): EnvStatus {
+export function getEnvStatus(googleHomeConnected = false): EnvStatus {
   const tuya = getTuyaConfig();
+  const google = getGoogleHomeConfig();
   const databaseConfigured = isDatabaseConfigured();
   return {
     mode: databaseConfigured ? 'live' : 'demo',
@@ -66,6 +83,10 @@ export function getEnvStatus(): EnvStatus {
     tuyaUserUidConfigured: Boolean(tuya.userUid),
     appPasswordConfigured: isAppPasswordConfigured(),
     scheduleSecretConfigured: Boolean(process.env.SCHEDULE_SECRET?.trim()),
+    googleHomeConfigured: google.configured,
+    googleHomeMode: google.defaultMode,
+    googleHomeConnected,
+    googleSdmProjectConfigured: Boolean(google.sdmProjectId),
   };
 }
 
@@ -83,11 +104,30 @@ function mapDbRoom(row: typeof rooms.$inferSelect): RoomRecord {
   };
 }
 
-function mapDbDevice(row: typeof devices.$inferSelect): DeviceRecord {
+function mapDbVendorLink(row: typeof deviceVendorLinks.$inferSelect): DeviceVendorLinkRecord {
+  return {
+    id: row.id,
+    deviceId: row.deviceId,
+    vendor: isValidVendorId(row.vendor) ? row.vendor : 'tuya',
+    externalId: row.externalId,
+    externalName: row.externalName,
+    isPrimaryTelemetry: row.isPrimaryTelemetry,
+    linkedAt: row.linkedAt.toISOString(),
+  };
+}
+
+function mapDbDevice(
+  row: typeof devices.$inferSelect,
+  vendorLinks: DeviceVendorLinkRecord[] = []
+): DeviceRecord {
+  const primaryVendor: VendorId = isValidVendorId(row.primaryVendor) ? row.primaryVendor : 'tuya';
   return {
     id: row.id,
     name: row.name,
     customName: row.customName,
+    primaryVendor,
+    systems: normalizeSystems(row.systems, primaryVendor),
+    vendorLinks,
     roomId: row.roomId,
     category: (row.category as DeviceCategory) || 'power',
     tuyaCategory: row.tuyaCategory,
@@ -158,6 +198,7 @@ function mapDbLog(row: typeof collectionLogs.$inferSelect): CollectionLogRecord 
 
 function mapDbAutomation(row: typeof automations.$inferSelect): AutomationRecord {
   const ruleType: AutomationRuleType = row.ruleType === 'scene' ? 'scene' : 'automation';
+  const vendor: VendorId = isValidVendorId(row.vendor) ? row.vendor : 'tuya';
   const syncedAtIso = row.syncedAt.toISOString();
 
   if (row.rawPayload && typeof row.rawPayload === 'object' && !Array.isArray(row.rawPayload)) {
@@ -172,6 +213,7 @@ function mapDbAutomation(row: typeof automations.$inferSelect): AutomationRecord
         ...normalized,
         id: row.id,
         homeId: row.homeId,
+        vendor,
         name: normalized.name || row.name,
         conditions: normalized.conditions.length > 0 ? normalized.conditions : (row.conditions ?? []),
         actions: normalized.actions.length > 0 ? normalized.actions : (row.actions ?? []),
@@ -184,6 +226,7 @@ function mapDbAutomation(row: typeof automations.$inferSelect): AutomationRecord
   return {
     id: row.id,
     homeId: row.homeId,
+    vendor,
     name: row.name,
     ruleType,
     enabled: row.enabled,
@@ -322,6 +365,54 @@ async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
           "synced_at" timestamp with time zone DEFAULT now() NOT NULL
         )
       `);
+      await db.execute(sql`
+        ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "primary_vendor" text DEFAULT 'tuya' NOT NULL
+      `);
+      await db.execute(sql`
+        ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "systems" jsonb DEFAULT '["tuya"]'::jsonb NOT NULL
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS "device_vendor_links" (
+          "id" serial PRIMARY KEY NOT NULL,
+          "device_id" text NOT NULL REFERENCES "devices"("id") ON DELETE CASCADE,
+          "vendor" text NOT NULL,
+          "external_id" text NOT NULL,
+          "external_name" text,
+          "vendor_metadata" jsonb,
+          "is_primary_telemetry" boolean DEFAULT false NOT NULL,
+          "linked_at" timestamp with time zone DEFAULT now() NOT NULL
+        )
+      `);
+      await db.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS "idx_vendor_links_unique" ON "device_vendor_links" ("vendor", "external_id")
+      `);
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS "idx_vendor_links_device" ON "device_vendor_links" ("device_id")
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS "vendor_connections" (
+          "vendor" text PRIMARY KEY NOT NULL,
+          "mode" text DEFAULT 'mcp' NOT NULL,
+          "status" text DEFAULT 'disconnected' NOT NULL,
+          "access_token" text,
+          "refresh_token" text,
+          "token_expires_at" timestamp with time zone,
+          "config" jsonb DEFAULT '{}'::jsonb NOT NULL,
+          "last_synced_at" timestamp with time zone,
+          "last_error" text,
+          "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+        )
+      `);
+      await db.execute(sql`
+        ALTER TABLE "automations" ADD COLUMN IF NOT EXISTS "vendor" text DEFAULT 'tuya' NOT NULL
+      `);
+      await db.execute(sql`
+        INSERT INTO "device_vendor_links" ("device_id", "vendor", "external_id", "external_name", "is_primary_telemetry")
+        SELECT d."id", d."primary_vendor", d."id", d."name", true
+        FROM "devices" d
+        WHERE d."primary_vendor" = 'tuya'
+        ON CONFLICT ("vendor", "external_id") DO NOTHING
+      `);
     })().catch((err) => {
       schemaInitPromise = null;
       throw err;
@@ -443,25 +534,93 @@ async function seedDefaultDataIfEmpty(db: AppDatabase): Promise<void> {
   }
 }
 
+function buildVendorConnectionSummaries(params: {
+  devices: DeviceRecord[];
+  tuyaConnected: boolean;
+  tuyaLastSyncedAt: string | null;
+  tuyaLastError: string | null;
+  ghConnected: boolean;
+  ghMode: GoogleHomeMode;
+  ghLastSyncedAt: string | null;
+  ghLastError: string | null;
+}): VendorConnectionSummary[] {
+  const tuyaCfg = getTuyaConfig();
+  const googleCfg = getGoogleHomeConfig();
+
+  const countFor = (vendor: VendorId) =>
+    params.devices.filter((d) => normalizeSystems(d.systems, d.primaryVendor).includes(vendor)).length;
+
+  return [
+    {
+      vendor: 'tuya',
+      label: VENDOR_REGISTRY.tuya.label,
+      mode: 'cloud_key',
+      configured: tuyaCfg.configured,
+      connected: params.tuyaConnected,
+      devicesCount: countFor('tuya'),
+      lastSyncedAt: params.tuyaLastSyncedAt,
+      lastError: params.tuyaLastError,
+    },
+    {
+      vendor: 'google_home',
+      label: VENDOR_REGISTRY.google_home.label,
+      mode: params.ghMode,
+      configured: googleCfg.configured,
+      connected: params.ghConnected,
+      devicesCount: countFor('google_home'),
+      lastSyncedAt: params.ghLastSyncedAt,
+      lastError: params.ghLastError,
+    },
+  ];
+}
+
 export async function getDashboardData(
   range: TimeRange = '24h',
   selectedRoomId = 'all',
   customFrom: string | null = null,
-  customTo: string | null = null
+  customTo: string | null = null,
+  selectedSystem: SystemFilter = 'all'
 ): Promise<DashboardPayload> {
-  const env = getEnvStatus();
   const db = getDb();
 
   if (!db) {
     const state = getDemoState();
+    const ghState = state.vendorConnections.google_home;
+    const tuyaState = state.vendorConnections.tuya;
+    const env = {
+      ...getEnvStatus(ghState.connected),
+      googleHomeMode:
+        ghState.mode === 'mcp' || ghState.mode === 'sdm'
+          ? ghState.mode
+          : getGoogleHomeConfig().defaultMode,
+    };
+    const devicesWithLinks: DeviceRecord[] = state.devices.map((d) => ({
+      ...d,
+      primaryVendor: d.primaryVendor ?? 'tuya',
+      systems: normalizeSystems(d.systems, d.primaryVendor ?? 'tuya'),
+      vendorLinks: state.vendorLinks.filter((l) => l.deviceId === d.id),
+    }));
+    const vendors = buildVendorConnectionSummaries({
+      devices: devicesWithLinks,
+      tuyaConnected: tuyaState.connected,
+      tuyaLastSyncedAt: tuyaState.lastSyncedAt,
+      tuyaLastError: tuyaState.lastError,
+      ghConnected: ghState.connected,
+      ghMode: env.googleHomeMode,
+      ghLastSyncedAt: ghState.lastSyncedAt,
+      ghLastError: ghState.lastError,
+    });
+
     return buildDashboardPayload({
       env,
       range,
       customFrom,
       customTo,
       selectedRoomId,
+      selectedSystem,
       rooms: state.rooms,
-      devices: state.devices,
+      devices: devicesWithLinks,
+      vendors,
       readings: state.readings,
       tariffs: state.tariffs,
       automations: state.automations,
@@ -476,25 +635,68 @@ export async function getDashboardData(
   const startDate = new Date(startMs);
   const endDate = new Date(endMs);
 
-  const [roomRows, deviceRows, readingRows, tariffRows, automationRows, logRows] = await Promise.all([
-    db.select().from(rooms).orderBy(asc(rooms.id)),
-    db.select().from(devices).orderBy(asc(devices.name)),
-    db
-      .select()
-      .from(metricReadings)
-      .where(
-        range === 'custom'
-          ? and(
-            gte(metricReadings.recordedAt, startDate),
-            lte(metricReadings.recordedAt, endDate)
-          )
-          : gte(metricReadings.recordedAt, startDate)
-      )
-      .orderBy(asc(metricReadings.recordedAt)),
-    db.select().from(tariffPeriods).orderBy(asc(tariffPeriods.startDate)),
-    db.select().from(automations).orderBy(asc(automations.name)),
-    db.select().from(collectionLogs).orderBy(desc(collectionLogs.executedAt)).limit(20),
-  ]);
+  const [roomRows, deviceRows, linkRows, connRows, readingRows, tariffRows, automationRows, logRows] =
+    await Promise.all([
+      db.select().from(rooms).orderBy(asc(rooms.id)),
+      db.select().from(devices).orderBy(asc(devices.name)),
+      db.select().from(deviceVendorLinks).orderBy(asc(deviceVendorLinks.id)),
+      db.select().from(vendorConnections),
+      db
+        .select()
+        .from(metricReadings)
+        .where(
+          range === 'custom'
+            ? and(
+              gte(metricReadings.recordedAt, startDate),
+              lte(metricReadings.recordedAt, endDate)
+            )
+            : gte(metricReadings.recordedAt, startDate)
+        )
+        .orderBy(asc(metricReadings.recordedAt)),
+      db.select().from(tariffPeriods).orderBy(asc(tariffPeriods.startDate)),
+      db.select().from(automations).orderBy(asc(automations.name)),
+      db.select().from(collectionLogs).orderBy(desc(collectionLogs.executedAt)).limit(20),
+    ]);
+
+  const linksByDeviceId = new Map<string, DeviceVendorLinkRecord[]>();
+  for (const row of linkRows) {
+    const mapped = mapDbVendorLink(row);
+    const list = linksByDeviceId.get(mapped.deviceId) ?? [];
+    list.push(mapped);
+    linksByDeviceId.set(mapped.deviceId, list);
+  }
+
+  const mappedDevices = deviceRows.map((row) =>
+    mapDbDevice(row, linksByDeviceId.get(row.id) ?? [])
+  );
+
+  const tuyaConn = connRows.find((c) => c.vendor === 'tuya');
+  const ghConn = connRows.find((c) => c.vendor === 'google_home');
+  const googleCfg = getGoogleHomeConfig();
+  const tuyaCfg = getTuyaConfig();
+
+  const ghMode: GoogleHomeMode =
+    ghConn?.mode === 'mcp' || ghConn?.mode === 'sdm' ? ghConn.mode : googleCfg.defaultMode;
+  const ghConnected = Boolean(
+    ghConn && ghConn.status === 'connected' && (ghConn.accessToken || ghConn.refreshToken)
+  );
+  const tuyaConnected = tuyaCfg.configured || mappedDevices.some((d) => d.systems.includes('tuya'));
+
+  const env: EnvStatus = {
+    ...getEnvStatus(ghConnected),
+    googleHomeMode: ghMode,
+  };
+
+  const vendors = buildVendorConnectionSummaries({
+    devices: mappedDevices,
+    tuyaConnected,
+    tuyaLastSyncedAt: tuyaConn?.lastSyncedAt ? tuyaConn.lastSyncedAt.toISOString() : null,
+    tuyaLastError: tuyaConn?.lastError ?? null,
+    ghConnected,
+    ghMode,
+    ghLastSyncedAt: ghConn?.lastSyncedAt ? ghConn.lastSyncedAt.toISOString() : null,
+    ghLastError: ghConn?.lastError ?? null,
+  });
 
   return buildDashboardPayload({
     env,
@@ -502,14 +704,96 @@ export async function getDashboardData(
     customFrom,
     customTo,
     selectedRoomId,
+    selectedSystem,
     rooms: roomRows.map(mapDbRoom),
-    devices: deviceRows.map(mapDbDevice),
+    devices: mappedDevices,
+    vendors,
     readings: readingRows.map(mapDbReading),
     tariffs: normalizeTariffTimeline(tariffRows.map(mapDbTariff)),
     automations: automationRows.map(mapDbAutomation),
     logs: logRows.map(mapDbLog),
     now,
   });
+}
+
+async function ensureMissingRoomsInDb(
+  db: AppDatabase,
+  roomNames: string[]
+): Promise<{
+  existingRoomsRows: Array<typeof rooms.$inferSelect>;
+  roomNameToId: Map<string, number>;
+  processedCount: number;
+}> {
+  const existingRoomsRows = await db.select().from(rooms).orderBy(asc(rooms.id));
+  const roomNameToId = new Map<string, number>();
+  for (const r of existingRoomsRows) {
+    roomNameToId.set(r.name.trim().toLowerCase(), r.id);
+  }
+
+  let processedCount = 0;
+  let styleIndex = existingRoomsRows.length;
+  for (const rawRoomName of roomNames) {
+    const trimmed = rawRoomName.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (!roomNameToId.has(key)) {
+      const style = inferRoomStyle(trimmed, styleIndex++);
+      const [insertedRoom] = await db
+        .insert(rooms)
+        .values({
+          name: trimmed,
+          icon: style.icon,
+          color: style.color,
+          targetTempMin: style.targetTempMin,
+          targetTempMax: style.targetTempMax,
+          targetHumidityMin: style.targetHumidityMin,
+          targetHumidityMax: style.targetHumidityMax,
+        })
+        .returning();
+      roomNameToId.set(key, insertedRoom.id);
+    }
+    processedCount++;
+  }
+
+  return { existingRoomsRows, roomNameToId, processedCount };
+}
+
+function ensureMissingRoomsInDemo(roomNames: string[]): {
+  roomNameToId: Map<string, number>;
+  processedCount: number;
+} {
+  const state = getDemoState();
+  const nowIso = new Date().toISOString();
+  const roomNameToId = new Map<string, number>();
+  for (const r of state.rooms) {
+    roomNameToId.set(r.name.trim().toLowerCase(), r.id);
+  }
+
+  let processedCount = 0;
+  for (const rawRoomName of roomNames) {
+    const trimmed = rawRoomName.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (!roomNameToId.has(key)) {
+      const style = inferRoomStyle(trimmed, state.rooms.length);
+      const created: RoomRecord = {
+        id: state.nextRoomId++,
+        name: trimmed,
+        icon: style.icon,
+        color: style.color,
+        targetTempMin: style.targetTempMin,
+        targetTempMax: style.targetTempMax,
+        targetHumidityMin: style.targetHumidityMin,
+        targetHumidityMax: style.targetHumidityMax,
+        createdAt: nowIso,
+      };
+      state.rooms.push(created);
+      roomNameToId.set(key, created.id);
+    }
+    processedCount++;
+  }
+
+  return { roomNameToId, processedCount };
 }
 
 export async function syncTuyaDevices(): Promise<{
@@ -524,11 +808,13 @@ export async function syncTuyaDevices(): Promise<{
   if (!tuya.configured) {
     if (!db) {
       const state = getDemoState();
+      state.vendorConnections.tuya.lastSyncedAt = new Date().toISOString();
+      const tuyaCount = state.devices.filter((d) => d.systems.includes('tuya')).length;
       return {
-        syncedCount: state.devices.length,
+        syncedCount: tuyaCount,
         newCount: 0,
         mode: 'demo',
-        message: 'Mode démo actif : 8 appareils simulés déjà synchronisés.',
+        message: `Mode démo actif : ${tuyaCount} appareils Tuya simulés déjà synchronisés.`,
       };
     }
     throw new Error(
@@ -547,32 +833,9 @@ export async function syncTuyaDevices(): Promise<{
 
   if (!db) {
     const state = getDemoState();
-    const roomNameToId = new Map<string, number>();
-    for (const r of state.rooms) {
-      roomNameToId.set(r.name.trim().toLowerCase(), r.id);
-    }
-
-    let syncedRoomsCount = 0;
-    for (const tuyaRoomName of roomMapping.roomNames) {
-      const key = tuyaRoomName.trim().toLowerCase();
-      if (!roomNameToId.has(key)) {
-        const style = inferRoomStyle(tuyaRoomName, state.rooms.length);
-        const created: RoomRecord = {
-          id: state.nextRoomId++,
-          name: tuyaRoomName.trim(),
-          icon: style.icon,
-          color: style.color,
-          targetTempMin: style.targetTempMin,
-          targetTempMax: style.targetTempMax,
-          targetHumidityMin: style.targetHumidityMin,
-          targetHumidityMax: style.targetHumidityMax,
-          createdAt: now.toISOString(),
-        };
-        state.rooms.push(created);
-        roomNameToId.set(key, created.id);
-      }
-      syncedRoomsCount++;
-    }
+    const { roomNameToId, processedCount: syncedRoomsCount } = ensureMissingRoomsInDemo(
+      roomMapping.roomNames
+    );
 
     let newCount = 0;
     for (const raw of rawDevices) {
@@ -587,6 +850,8 @@ export async function syncTuyaDevices(): Promise<{
         factoryInfoMap.get(raw.id)?.mac ?? formatMacAddress(raw.mac) ?? existing?.macAddress ?? null;
       if (existing) {
         existing.name = raw.name;
+        existing.primaryVendor = existing.primaryVendor ?? 'tuya';
+        existing.systems = normalizeSystems(existing.systems, existing.primaryVendor);
         if (mappedRoomId !== null) existing.roomId = mappedRoomId;
         existing.isOnline = raw.online ?? true;
         existing.tuyaCategory = raw.category;
@@ -626,6 +891,8 @@ export async function syncTuyaDevices(): Promise<{
           id: raw.id,
           name: raw.name,
           customName: null,
+          primaryVendor: 'tuya',
+          systems: ['tuya'],
           roomId: mappedRoomId,
           category,
           tuyaCategory: raw.category,
@@ -647,9 +914,21 @@ export async function syncTuyaDevices(): Promise<{
           lastBatteryPct: metrics.batteryPct,
           lastContactOpen: metrics.contactOpen,
         });
+        state.vendorLinks.push({
+          id: state.nextLinkId++,
+          deviceId: raw.id,
+          vendor: 'tuya',
+          externalId: raw.id,
+          externalName: raw.name,
+          isPrimaryTelemetry: true,
+          linkedAt: now.toISOString(),
+        });
         newCount++;
       }
     }
+    state.vendorConnections.tuya.connected = true;
+    state.vendorConnections.tuya.lastSyncedAt = now.toISOString();
+    state.vendorConnections.tuya.lastError = null;
     const baseMsg =
       syncedRoomsCount > 0
         ? `${rawDevices.length} appareils et ${syncedRoomsCount} pièces synchronisés depuis Tuya Cloud (${newCount} nouveaux).`
@@ -665,34 +944,8 @@ export async function syncTuyaDevices(): Promise<{
   await seedDefaultDataIfEmpty(db);
 
   // Synchronisation automatique des pièces depuis Tuya Smart Home
-  const existingRoomsRows = await db.select().from(rooms).orderBy(asc(rooms.id));
-  const roomNameToId = new Map<string, number>();
-  for (const r of existingRoomsRows) {
-    roomNameToId.set(r.name.trim().toLowerCase(), r.id);
-  }
-
-  let syncedRoomsCount = 0;
-  let styleIndex = existingRoomsRows.length;
-  for (const tuyaRoomName of roomMapping.roomNames) {
-    const key = tuyaRoomName.trim().toLowerCase();
-    if (!roomNameToId.has(key)) {
-      const style = inferRoomStyle(tuyaRoomName, styleIndex++);
-      const [insertedRoom] = await db
-        .insert(rooms)
-        .values({
-          name: tuyaRoomName.trim(),
-          icon: style.icon,
-          color: style.color,
-          targetTempMin: style.targetTempMin,
-          targetTempMax: style.targetTempMax,
-          targetHumidityMin: style.targetHumidityMin,
-          targetHumidityMax: style.targetHumidityMax,
-        })
-        .returning();
-      roomNameToId.set(key, insertedRoom.id);
-    }
-    syncedRoomsCount++;
-  }
+  const { existingRoomsRows, roomNameToId, processedCount: syncedRoomsCount } =
+    await ensureMissingRoomsInDb(db, roomMapping.roomNames);
 
   const existingRows = await db.select().from(devices);
   const existingMap = new Map(existingRows.map((d) => [d.id, d]));
@@ -738,11 +991,16 @@ export async function syncTuyaDevices(): Promise<{
       }
 
       const metrics = extractMetricsFromStatus(rawStatus, dpConfig);
+      const primaryVendor: VendorId = isValidVendorId(existing.primaryVendor)
+        ? existing.primaryVendor
+        : 'tuya';
+      const nextSystems = normalizeSystems(existing.systems, primaryVendor);
 
       await db
         .update(devices)
         .set({
           name: raw.name,
+          systems: nextSystems,
           roomId: targetRoomId,
           category: nextCategory,
           tuyaCategory: raw.category,
@@ -763,6 +1021,21 @@ export async function syncTuyaDevices(): Promise<{
         })
         .where(eq(devices.id, raw.id));
 
+      await db
+        .insert(deviceVendorLinks)
+        .values({
+          deviceId: raw.id,
+          vendor: 'tuya',
+          externalId: raw.id,
+          externalName: raw.name,
+          isPrimaryTelemetry: primaryVendor === 'tuya',
+          linkedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [deviceVendorLinks.vendor, deviceVendorLinks.externalId],
+          set: { externalName: raw.name },
+        });
+
       if (targetRoomId !== null && targetRoomId !== existing.roomId) {
         await db
           .update(metricReadings)
@@ -778,6 +1051,8 @@ export async function syncTuyaDevices(): Promise<{
         id: raw.id,
         name: raw.name,
         customName: null,
+        primaryVendor: 'tuya',
+        systems: ['tuya'],
         roomId: tuyaRoomId,
         category,
         tuyaCategory: raw.category,
@@ -799,9 +1074,42 @@ export async function syncTuyaDevices(): Promise<{
         lastBatteryPct: metrics.batteryPct,
         lastContactOpen: metrics.contactOpen,
       });
+
+      await db
+        .insert(deviceVendorLinks)
+        .values({
+          deviceId: raw.id,
+          vendor: 'tuya',
+          externalId: raw.id,
+          externalName: raw.name,
+          isPrimaryTelemetry: true,
+          linkedAt: now,
+        })
+        .onConflictDoNothing();
+
       newCount++;
     }
   }
+
+  await db
+    .insert(vendorConnections)
+    .values({
+      vendor: 'tuya',
+      mode: 'cloud_key',
+      status: 'connected',
+      lastSyncedAt: now,
+      lastError: null,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: vendorConnections.vendor,
+      set: {
+        status: 'connected',
+        lastSyncedAt: now,
+        lastError: null,
+        updatedAt: now,
+      },
+    });
 
   // Nettoie d'éventuelles pièces par défaut vides qui n'existent pas dans Tuya
   if (roomMapping.roomNames.length > 0) {
@@ -928,6 +1236,648 @@ export async function syncTuyaAutomations(rawDevicesArg?: TuyaRawDevice[]): Prom
   };
 }
 
+async function ensureValidGoogleAccessToken(
+  db: AppDatabase,
+  conn: typeof vendorConnections.$inferSelect
+): Promise<string> {
+  const plainAccess = decryptSecret(conn.accessToken);
+  const plainRefresh = decryptSecret(conn.refreshToken);
+
+  if (
+    plainAccess &&
+    (!conn.tokenExpiresAt || conn.tokenExpiresAt.getTime() > Date.now() + 60_000)
+  ) {
+    return plainAccess;
+  }
+
+  if (!plainRefresh) {
+    if (plainAccess) return plainAccess;
+    throw new Error('Jeton Google Home expiré ou absent. Reconnectez Google Home.');
+  }
+
+  const refreshed = await refreshGoogleAccessToken(plainRefresh);
+  const expiresAt = new Date(Date.now() + refreshed.expiresInSec * 1000);
+
+  await db
+    .update(vendorConnections)
+    .set({
+      accessToken: encryptSecret(refreshed.accessToken),
+      refreshToken: refreshed.refreshToken ? encryptSecret(refreshed.refreshToken) : conn.refreshToken,
+      tokenExpiresAt: expiresAt,
+      lastError: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(vendorConnections.vendor, 'google_home'));
+
+  return refreshed.accessToken;
+}
+
+export async function saveGoogleHomeConnection(params: {
+  mode: GoogleHomeMode;
+  accessToken: string;
+  refreshToken: string | null;
+  expiresInSec: number;
+  config: Record<string, unknown>;
+}): Promise<void> {
+  const now = new Date();
+  const db = getDb();
+
+  if (!db) {
+    const state = getDemoState();
+    state.vendorConnections.google_home = {
+      mode: params.mode,
+      connected: true,
+      lastSyncedAt: now.toISOString(),
+      lastError: null,
+    };
+    return;
+  }
+
+  await ensureSchemaInitialized(db);
+  const existingRows = await db
+    .select()
+    .from(vendorConnections)
+    .where(eq(vendorConnections.vendor, 'google_home'))
+    .limit(1);
+
+  const encryptedAccess = encryptSecret(params.accessToken);
+  const encryptedRefresh = params.refreshToken
+    ? encryptSecret(params.refreshToken)
+    : existingRows[0]?.refreshToken ?? null;
+  const expiresAt = new Date(Date.now() + params.expiresInSec * 1000);
+
+  await db
+    .insert(vendorConnections)
+    .values({
+      vendor: 'google_home',
+      mode: params.mode,
+      status: 'connected',
+      accessToken: encryptedAccess,
+      refreshToken: encryptedRefresh,
+      tokenExpiresAt: expiresAt,
+      config: params.config,
+      lastError: null,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: vendorConnections.vendor,
+      set: {
+        mode: params.mode,
+        status: 'connected',
+        accessToken: encryptedAccess,
+        refreshToken: encryptedRefresh,
+        tokenExpiresAt: expiresAt,
+        config: params.config,
+        lastError: null,
+        updatedAt: now,
+      },
+    });
+}
+
+export async function disconnectGoogleHome(): Promise<void> {
+  const db = getDb();
+  if (!db) {
+    const state = getDemoState();
+    state.vendorConnections.google_home.connected = false;
+    state.vendorConnections.google_home.lastError = null;
+    return;
+  }
+
+  await ensureSchemaInitialized(db);
+  await db
+    .update(vendorConnections)
+    .set({
+      status: 'disconnected',
+      accessToken: null,
+      refreshToken: null,
+      tokenExpiresAt: null,
+      lastError: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(vendorConnections.vendor, 'google_home'));
+}
+
+export async function syncGoogleHomeDevices(): Promise<{
+  syncedCount: number;
+  newCount: number;
+  mode: 'live' | 'demo';
+  message: string;
+}> {
+  const db = getDb();
+  const now = new Date();
+
+  if (!db) {
+    const state = getDemoState();
+    state.vendorConnections.google_home.connected = true;
+    state.vendorConnections.google_home.lastSyncedAt = now.toISOString();
+    state.vendorConnections.google_home.lastError = null;
+    const ghCount = state.devices.filter((d) => d.systems.includes('google_home')).length;
+    return {
+      syncedCount: ghCount,
+      newCount: 0,
+      mode: 'demo',
+      message: `Mode démo actif : ${ghCount} appareil(x) Google Home synchronisé(s) (hors doublons).`,
+    };
+  }
+
+  await seedDefaultDataIfEmpty(db);
+  const connRows = await db
+    .select()
+    .from(vendorConnections)
+    .where(eq(vendorConnections.vendor, 'google_home'))
+    .limit(1);
+
+  const conn = connRows[0];
+  if (!conn || conn.status !== 'connected' || (!conn.accessToken && !conn.refreshToken)) {
+    throw new Error(
+      'Google Home n’est pas connecté. Cliquez d’abord sur « Connecter Google Home ».'
+    );
+  }
+
+  const mode: GoogleHomeMode =
+    conn.mode === 'sdm' || conn.mode === 'mcp' ? conn.mode : getGoogleHomeConfig().defaultMode;
+
+  let inventory;
+  try {
+    const accessToken = await ensureValidGoogleAccessToken(db, conn);
+    inventory = await fetchGoogleHomeInventory({
+      accessToken,
+      mode,
+      projectId: getGoogleHomeConfig().sdmProjectId,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur synchronisation Google Home';
+    await db
+      .update(vendorConnections)
+      .set({ lastError: msg, updatedAt: now })
+      .where(eq(vendorConnections.vendor, 'google_home'));
+    throw err;
+  }
+
+  const { roomNameToId } = await ensureMissingRoomsInDb(db, inventory.roomNames);
+
+  const [existingDeviceRows, ghLinkRows] = await Promise.all([
+    db.select().from(devices),
+    db.select().from(deviceVendorLinks).where(eq(deviceVendorLinks.vendor, 'google_home')),
+  ]);
+
+  const deviceById = new Map(existingDeviceRows.map((d) => [d.id, d]));
+  const linkByExternalId = new Map(ghLinkRows.map((l) => [l.externalId, l]));
+
+  let newCount = 0;
+
+  for (const gh of inventory.devices) {
+    const mappedRoomId = gh.roomName
+      ? (roomNameToId.get(gh.roomName.trim().toLowerCase()) ?? null)
+      : null;
+    const existingLink = linkByExternalId.get(gh.externalId);
+    const linkedDevice = existingLink ? deviceById.get(existingLink.deviceId) : undefined;
+
+    if (linkedDevice) {
+      const primaryVendor: VendorId = isValidVendorId(linkedDevice.primaryVendor)
+        ? linkedDevice.primaryVendor
+        : 'tuya';
+      const nextSystems = mergeDeviceSystems(
+        normalizeSystems(linkedDevice.systems, primaryVendor),
+        'google_home',
+        primaryVendor
+      );
+
+      if (primaryVendor === 'tuya') {
+        // Priorité télémétrique Tuya : on conserve les mesures W / kWh / DP / IP / MAC de Tuya
+        await db
+          .update(devices)
+          .set({
+            systems: nextSystems,
+            roomId: linkedDevice.roomId ?? mappedRoomId,
+          })
+          .where(eq(devices.id, linkedDevice.id));
+      } else {
+        await db
+          .update(devices)
+          .set({
+            name: gh.name,
+            systems: nextSystems,
+            roomId: mappedRoomId ?? linkedDevice.roomId,
+            category: gh.category,
+            productName:
+              [gh.manufacturer, gh.model].filter(Boolean).join(' · ') || linkedDevice.productName,
+            isOnline: gh.isOnline,
+            lastRawStatus: gh.rawTraits,
+            lastSeenAt: now,
+            lastPowerW: gh.powerW ?? linkedDevice.lastPowerW,
+            lastTempC: gh.tempC ?? linkedDevice.lastTempC,
+            lastHumidityPct: gh.humidityPct ?? linkedDevice.lastHumidityPct,
+            lastBatteryPct: gh.batteryPct ?? linkedDevice.lastBatteryPct,
+            lastContactOpen:
+              gh.contactOpen !== null ? gh.contactOpen : linkedDevice.lastContactOpen,
+          })
+          .where(eq(devices.id, linkedDevice.id));
+      }
+
+      await db
+        .update(deviceVendorLinks)
+        .set({
+          externalName: gh.name,
+          vendorMetadata: {
+            manufacturer: gh.manufacturer,
+            model: gh.model,
+            deviceType: gh.deviceType,
+          },
+        })
+        .where(eq(deviceVendorLinks.id, existingLink!.id));
+    } else {
+      let candidateId = makeGoogleDeviceId(gh.externalId);
+      if (deviceById.has(candidateId)) {
+        candidateId = `${candidateId}_${now.getTime().toString(36).slice(-4)}`;
+      }
+      const isClimateOrContact = gh.category === 'climate' || gh.category === 'contact' || gh.category === 'hybrid' || gh.category === 'power';
+
+      const [inserted] = await db
+        .insert(devices)
+        .values({
+          id: candidateId,
+          name: gh.name,
+          customName: null,
+          primaryVendor: 'google_home',
+          systems: ['google_home'],
+          roomId: mappedRoomId,
+          category: gh.category,
+          tuyaCategory: gh.deviceType ?? 'google_home',
+          productName: [gh.manufacturer, gh.model].filter(Boolean).join(' · ') || 'Google Home',
+          ipAddress: null,
+          macAddress: null,
+          isOnline: gh.isOnline,
+          isMonitored: isClimateOrContact,
+          excludeFromTotals: false,
+          energyMode: 'hybrid',
+          dpConfig: {},
+          lastRawStatus: gh.rawTraits,
+          lastSeenAt: now,
+          lastPowerW: gh.powerW,
+          lastVoltageV: null,
+          lastAddEleKwh: null,
+          lastTempC: gh.tempC,
+          lastHumidityPct: gh.humidityPct,
+          lastBatteryPct: gh.batteryPct,
+          lastContactOpen: gh.contactOpen,
+        })
+        .returning();
+
+      await db
+        .insert(deviceVendorLinks)
+        .values({
+          deviceId: candidateId,
+          vendor: 'google_home',
+          externalId: gh.externalId,
+          externalName: gh.name,
+          vendorMetadata: {
+            manufacturer: gh.manufacturer,
+            model: gh.model,
+            deviceType: gh.deviceType,
+          },
+          isPrimaryTelemetry: true,
+          linkedAt: now,
+        })
+        .onConflictDoNothing();
+
+      deviceById.set(candidateId, inserted);
+      newCount++;
+    }
+  }
+
+  await db
+    .update(vendorConnections)
+    .set({
+      status: 'connected',
+      lastSyncedAt: now,
+      lastError: null,
+      updatedAt: now,
+    })
+    .where(eq(vendorConnections.vendor, 'google_home'));
+
+  return {
+    syncedCount: inventory.devices.length,
+    newCount,
+    mode: 'live',
+    message: `${inventory.devices.length} appareil(x) et ${inventory.roomNames.length} pièce(s) synchronisés depuis Google Home (${mode.toUpperCase()}, ${newCount} nouveau(x)).`,
+  };
+}
+
+export async function toggleDeviceSystemTag(params: {
+  deviceId: string;
+  vendor: VendorId;
+  enabled: boolean;
+}): Promise<DeviceRecord | null> {
+  const db = getDb();
+  const now = new Date();
+
+  if (!db) {
+    const state = getDemoState();
+    const dev = state.devices.find((d) => d.id === params.deviceId);
+    if (!dev) return null;
+
+    if (!params.enabled && dev.primaryVendor === params.vendor) {
+      throw new Error('Impossible de retirer le système principal de cet appareil.');
+    }
+
+    if (params.enabled) {
+      dev.systems = mergeDeviceSystems(dev.systems, params.vendor, dev.primaryVendor);
+      const hasLink = state.vendorLinks.some(
+        (l) => l.deviceId === dev.id && l.vendor === params.vendor
+      );
+      if (!hasLink) {
+        state.vendorLinks.push({
+          id: state.nextLinkId++,
+          deviceId: dev.id,
+          vendor: params.vendor,
+          externalId: `manual:${params.vendor}:${dev.id}`,
+          externalName: dev.customName || dev.name,
+          isPrimaryTelemetry: false,
+          linkedAt: now.toISOString(),
+        });
+      }
+    } else {
+      dev.systems = normalizeSystems(
+        dev.systems.filter((s) => s !== params.vendor),
+        dev.primaryVendor
+      );
+      state.vendorLinks = state.vendorLinks.filter(
+        (l) => !(l.deviceId === dev.id && l.vendor === params.vendor)
+      );
+    }
+
+    return {
+      ...dev,
+      vendorLinks: state.vendorLinks.filter((l) => l.deviceId === dev.id),
+    };
+  }
+
+  await ensureSchemaInitialized(db);
+  const existingRows = await db.select().from(devices).where(eq(devices.id, params.deviceId)).limit(1);
+  const row = existingRows[0];
+  if (!row) return null;
+
+  const primaryVendor: VendorId = isValidVendorId(row.primaryVendor) ? row.primaryVendor : 'tuya';
+  if (!params.enabled && primaryVendor === params.vendor) {
+    throw new Error('Impossible de retirer le système principal de cet appareil.');
+  }
+
+  const currentSystems = normalizeSystems(row.systems, primaryVendor);
+  let nextSystems: VendorId[];
+
+  if (params.enabled) {
+    nextSystems = mergeDeviceSystems(currentSystems, params.vendor, primaryVendor);
+    const existingVendorLinks = await db
+      .select()
+      .from(deviceVendorLinks)
+      .where(and(eq(deviceVendorLinks.deviceId, row.id), eq(deviceVendorLinks.vendor, params.vendor)));
+    if (existingVendorLinks.length === 0) {
+      await db
+        .insert(deviceVendorLinks)
+        .values({
+          deviceId: row.id,
+          vendor: params.vendor,
+          externalId: `manual:${params.vendor}:${row.id}`,
+          externalName: row.customName || row.name,
+          isPrimaryTelemetry: false,
+          linkedAt: now,
+        })
+        .onConflictDoNothing();
+    }
+  } else {
+    nextSystems = normalizeSystems(
+      currentSystems.filter((s) => s !== params.vendor),
+      primaryVendor
+    );
+    await db
+      .delete(deviceVendorLinks)
+      .where(and(eq(deviceVendorLinks.deviceId, row.id), eq(deviceVendorLinks.vendor, params.vendor)));
+  }
+
+  const [updated] = await db
+    .update(devices)
+    .set({ systems: nextSystems })
+    .where(eq(devices.id, row.id))
+    .returning();
+
+  const updatedLinks = await db
+    .select()
+    .from(deviceVendorLinks)
+    .where(eq(deviceVendorLinks.deviceId, row.id));
+  return mapDbDevice(updated, updatedLinks.map(mapDbVendorLink));
+}
+
+export async function mergeDevices(params: {
+  targetDeviceId: string;
+  sourceDeviceId: string;
+}): Promise<DeviceRecord | null> {
+  if (params.targetDeviceId === params.sourceDeviceId) {
+    throw new Error('Impossible de fusionner un appareil avec lui-même.');
+  }
+
+  const db = getDb();
+  const now = new Date();
+
+  if (!db) {
+    const state = getDemoState();
+    const target = state.devices.find((d) => d.id === params.targetDeviceId);
+    const source = state.devices.find((d) => d.id === params.sourceDeviceId);
+    if (!target || !source) return null;
+
+    const mergedSystems = normalizeSystems(
+      [...target.systems, ...source.systems, source.primaryVendor],
+      target.primaryVendor
+    );
+    target.systems = mergedSystems;
+    if (target.roomId === null && source.roomId !== null) {
+      target.roomId = source.roomId;
+    }
+
+    const sourceLinks = state.vendorLinks.filter((l) => l.deviceId === source.id);
+    if (sourceLinks.length === 0) {
+      state.vendorLinks.push({
+        id: state.nextLinkId++,
+        deviceId: target.id,
+        vendor: source.primaryVendor,
+        externalId: source.id,
+        externalName: source.name,
+        isPrimaryTelemetry: false,
+        linkedAt: now.toISOString(),
+      });
+    } else {
+      for (const l of sourceLinks) {
+        l.deviceId = target.id;
+        l.isPrimaryTelemetry = false;
+      }
+    }
+
+    state.devices = state.devices.filter((d) => d.id !== source.id);
+    return {
+      ...target,
+      vendorLinks: state.vendorLinks.filter((l) => l.deviceId === target.id),
+    };
+  }
+
+  await ensureSchemaInitialized(db);
+  const [targetRows, sourceRows] = await Promise.all([
+    db.select().from(devices).where(eq(devices.id, params.targetDeviceId)).limit(1),
+    db.select().from(devices).where(eq(devices.id, params.sourceDeviceId)).limit(1),
+  ]);
+
+  const target = targetRows[0];
+  const source = sourceRows[0];
+  if (!target || !source) return null;
+
+  const targetPrimary: VendorId = isValidVendorId(target.primaryVendor)
+    ? target.primaryVendor
+    : 'tuya';
+  const sourcePrimary: VendorId = isValidVendorId(source.primaryVendor)
+    ? source.primaryVendor
+    : 'google_home';
+
+  const mergedSystems = normalizeSystems(
+    [
+      ...normalizeSystems(target.systems, targetPrimary),
+      ...normalizeSystems(source.systems, sourcePrimary),
+    ],
+    targetPrimary
+  );
+
+  const sourceLinks = await db
+    .select()
+    .from(deviceVendorLinks)
+    .where(eq(deviceVendorLinks.deviceId, source.id));
+
+  if (sourceLinks.length === 0) {
+    await db
+      .insert(deviceVendorLinks)
+      .values({
+        deviceId: target.id,
+        vendor: sourcePrimary,
+        externalId: source.id,
+        externalName: source.name,
+        isPrimaryTelemetry: false,
+        linkedAt: now,
+      })
+      .onConflictDoNothing();
+  } else {
+    await db
+      .update(deviceVendorLinks)
+      .set({ deviceId: target.id, isPrimaryTelemetry: false })
+      .where(eq(deviceVendorLinks.deviceId, source.id));
+  }
+
+  const [updatedTarget] = await db
+    .update(devices)
+    .set({
+      systems: mergedSystems,
+      roomId: target.roomId ?? source.roomId,
+    })
+    .where(eq(devices.id, target.id))
+    .returning();
+
+  await db.delete(devices).where(eq(devices.id, source.id));
+
+  const targetLinks = await db
+    .select()
+    .from(deviceVendorLinks)
+    .where(eq(deviceVendorLinks.deviceId, target.id));
+  return mapDbDevice(updatedTarget, targetLinks.map(mapDbVendorLink));
+}
+
+export async function unlinkDeviceVendor(params: {
+  deviceId: string;
+  vendor: VendorId;
+}): Promise<DeviceRecord | null> {
+  return toggleDeviceSystemTag({
+    deviceId: params.deviceId,
+    vendor: params.vendor,
+    enabled: false,
+  });
+}
+
+async function collectGoogleHomeReadingsInDb(
+  db: AppDatabase,
+  googleDevices: Array<typeof devices.$inferSelect>,
+  now: Date
+): Promise<number> {
+  if (googleDevices.length === 0) return 0;
+  const connRows = await db
+    .select()
+    .from(vendorConnections)
+    .where(eq(vendorConnections.vendor, 'google_home'))
+    .limit(1);
+  const conn = connRows[0];
+  if (!conn || conn.status !== 'connected' || (!conn.accessToken && !conn.refreshToken)) {
+    return 0;
+  }
+
+  const mode: GoogleHomeMode =
+    conn.mode === 'sdm' || conn.mode === 'mcp' ? conn.mode : getGoogleHomeConfig().defaultMode;
+  const accessToken = await ensureValidGoogleAccessToken(db, conn);
+  const inventory = await fetchGoogleHomeInventory({
+    accessToken,
+    mode,
+    projectId: getGoogleHomeConfig().sdmProjectId,
+  });
+
+  const ghLinks = await db
+    .select()
+    .from(deviceVendorLinks)
+    .where(eq(deviceVendorLinks.vendor, 'google_home'));
+  const deviceIdByExternalId = new Map(ghLinks.map((l) => [l.externalId, l.deviceId]));
+  const deviceById = new Map(googleDevices.map((d) => [d.id, d]));
+
+  const readingsToInsert: Array<typeof metricReadings.$inferInsert> = [];
+
+  for (const gh of inventory.devices) {
+    const devId = deviceIdByExternalId.get(gh.externalId) ?? makeGoogleDeviceId(gh.externalId);
+    const dev = deviceById.get(devId);
+    if (!dev || !dev.isMonitored) continue;
+
+    const hasMetric =
+      gh.tempC !== null ||
+      gh.humidityPct !== null ||
+      gh.contactOpen !== null ||
+      gh.powerW !== null;
+
+    await db
+      .update(devices)
+      .set({
+        isOnline: gh.isOnline,
+        lastRawStatus: gh.rawTraits,
+        lastSeenAt: now,
+        ...(gh.tempC !== null ? { lastTempC: gh.tempC } : {}),
+        ...(gh.humidityPct !== null ? { lastHumidityPct: gh.humidityPct } : {}),
+        ...(gh.batteryPct !== null ? { lastBatteryPct: gh.batteryPct } : {}),
+        ...(gh.contactOpen !== null ? { lastContactOpen: gh.contactOpen } : {}),
+        ...(gh.powerW !== null ? { lastPowerW: gh.powerW } : {}),
+      })
+      .where(eq(devices.id, dev.id));
+
+    if (hasMetric) {
+      readingsToInsert.push({
+        deviceId: dev.id,
+        roomId: dev.roomId,
+        recordedAt: now,
+        powerW: gh.powerW,
+        voltageV: null,
+        energyKwh: null,
+        energySource: null,
+        tempC: gh.tempC,
+        humidityPct: gh.humidityPct,
+        contactOpen: gh.contactOpen,
+      });
+    }
+  }
+
+  if (readingsToInsert.length > 0) {
+    await db.insert(metricReadings).values(readingsToInsert);
+  }
+  return readingsToInsert.length;
+}
+
 export async function runCollection(trigger: 'schedule' | 'manual'): Promise<CollectionLogRecord> {
   const db = getDb();
   const tuya = getTuyaConfig();
@@ -938,7 +1888,43 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       return simulateDemoCollection(trigger);
     }
     await ensureSchemaInitialized(db);
-    const errMsg = 'TUYA_ACCESS_ID / TUYA_ACCESS_SECRET non configurés.';
+    const now = new Date();
+    const ghMonitored = (await db.select().from(devices)).filter(
+      (d) => d.isMonitored && d.primaryVendor === 'google_home'
+    );
+    try {
+      const ghInserted = await collectGoogleHomeReadingsInDb(db, ghMonitored, now);
+      if (ghInserted > 0 || ghMonitored.length > 0) {
+        const [logRow] = await db
+          .insert(collectionLogs)
+          .values({
+            trigger,
+            devicesCount: ghMonitored.length,
+            readingsInserted: ghInserted,
+            status: 'success',
+            errorMessage: null,
+            durationMs: Date.now() - startedMs,
+          })
+          .returning();
+        return mapDbLog(logRow);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erreur collecte Google Home';
+      const [logRow] = await db
+        .insert(collectionLogs)
+        .values({
+          trigger,
+          devicesCount: 0,
+          readingsInserted: 0,
+          status: 'error',
+          errorMessage: msg,
+          durationMs: Date.now() - startedMs,
+        })
+        .returning();
+      return mapDbLog(logRow);
+    }
+
+    const errMsg = 'Aucun fournisseur configuré (TUYA_ACCESS_ID / Google Home non connectés).';
     const [inserted] = await db
       .insert(collectionLogs)
       .values({
@@ -978,6 +1964,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           id: raw.id,
           name: raw.name,
           customName: null,
+          primaryVendor: 'tuya',
+          systems: ['tuya'],
           roomId: null,
           category: detected.category,
           tuyaCategory: raw.category,
@@ -1000,6 +1988,15 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           lastContactOpen: null,
         };
         state.devices.push(dev);
+        state.vendorLinks.push({
+          id: state.nextLinkId++,
+          deviceId: raw.id,
+          vendor: 'tuya',
+          externalId: raw.id,
+          externalName: raw.name,
+          isPrimaryTelemetry: true,
+          linkedAt: now.toISOString(),
+        });
       }
 
       if (!dev.isMonitored) continue;
@@ -1059,7 +2056,7 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
     return log;
   }
 
-  // Mode complet : Neon Postgres + Tuya Cloud
+  // Mode complet : Neon Postgres + Multi-Vendors (Tuya Cloud + Google Home)
   try {
     await seedDefaultDataIfEmpty(db);
     let allDevices = await db.select().from(devices);
@@ -1068,13 +2065,19 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       allDevices = await db.select().from(devices);
     }
 
-    const monitored = allDevices.filter((d) => d.isMonitored);
-    const statusMap = await fetchBatchStatuses(monitored.map((d) => d.id));
+    const tuyaMonitored = allDevices.filter(
+      (d) => d.isMonitored && (!d.primaryVendor || d.primaryVendor === 'tuya')
+    );
+    const googleMonitored = allDevices.filter(
+      (d) => d.isMonitored && d.primaryVendor === 'google_home'
+    );
+
+    const statusMap = await fetchBatchStatuses(tuyaMonitored.map((d) => d.id));
     const now = new Date();
 
     const readingsToInsert: Array<typeof metricReadings.$inferInsert> = [];
 
-    for (const dev of monitored) {
+    for (const dev of tuyaMonitored) {
       const rawStatus: RawDpStatus[] = statusMap.get(dev.id) ?? [];
       if (rawStatus.length === 0) continue;
 
@@ -1135,12 +2138,16 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       await db.insert(metricReadings).values(readingsToInsert);
     }
 
+    const ghInserted = await collectGoogleHomeReadingsInDb(db, googleMonitored, now).catch(
+      () => 0
+    );
+
     const [logRow] = await db
       .insert(collectionLogs)
       .values({
         trigger,
-        devicesCount: monitored.length,
-        readingsInserted: readingsToInsert.length,
+        devicesCount: tuyaMonitored.length + googleMonitored.length,
+        readingsInserted: readingsToInsert.length + ghInserted,
         status: 'success',
         errorMessage: null,
         durationMs: Date.now() - startedMs,

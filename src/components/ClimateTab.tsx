@@ -84,6 +84,9 @@ export function ClimateTab({ data }: ClimateTabProps) {
   const climateHealth = useMemo(() => {
     const sensors = data.devices.filter((d) => {
       if (!isActiveClimateSensor(d)) return false;
+      if (data.selectedSystem !== 'all' && !d.systems.includes(data.selectedSystem)) {
+        return false;
+      }
       if (data.selectedRoomId !== 'all' && String(d.roomId) !== data.selectedRoomId) {
         return false;
       }

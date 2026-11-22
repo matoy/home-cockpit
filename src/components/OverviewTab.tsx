@@ -13,6 +13,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { hasValidHumidityMeasurement, hasValidTempMeasurement } from '@/lib/device-utils';
+import { VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import type { ComfortStatus, DashboardPayload, TabId } from '@/types';
 
 interface OverviewTabProps {
@@ -262,7 +263,7 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                       {rs.devices.map((dev) => (
                         <div
                           key={dev.id}
-                          className="flex items-center justify-between text-xs rounded-lg bg-slate-950/40 px-2.5 py-1.5"
+                          className="flex items-center justify-between gap-2 text-xs rounded-lg bg-slate-950/40 px-2.5 py-1.5"
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             {dev.isOnline ? (
@@ -273,6 +274,19 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                             <span className="truncate text-slate-300">
                               {dev.customName || dev.name}
                             </span>
+                            {(dev.systems.length > 1 || dev.primaryVendor !== 'tuya') &&
+                              dev.systems.map((sys) => {
+                                const meta = VENDOR_REGISTRY[sys];
+                                return (
+                                  <span
+                                    key={sys}
+                                    title={meta.label}
+                                    className={`shrink-0 rounded border px-1 py-0.2 text-[9px] font-semibold uppercase ${meta.badgeClass}`}
+                                  >
+                                    {meta.shortLabel}
+                                  </span>
+                                );
+                              })}
                           </div>
                           <div className="flex items-center gap-2 shrink-0 text-slate-400 font-mono text-[11px]">
                             {dev.lastPowerW !== null && (

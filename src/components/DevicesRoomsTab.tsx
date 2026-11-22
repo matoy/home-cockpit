@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
   RefreshCw,
   Plus,
@@ -15,8 +15,23 @@ import {
   Wifi,
   WifiOff,
   Clock,
+  Layers,
+  Link2,
+  GitMerge,
+  Unlink,
+  ExternalLink,
 } from 'lucide-react';
-import type { DashboardPayload, DeviceRecord, DpConfig, EnergyMode, RoomRecord } from '@/types';
+import { VENDOR_IDS, VENDOR_REGISTRY } from '@/lib/vendors/registry';
+import type {
+  DashboardPayload,
+  DeviceRecord,
+  DpConfig,
+  EnergyMode,
+  GoogleHomeMode,
+  RoomRecord,
+  SystemFilter,
+  VendorId,
+} from '@/types';
 
 interface DevicesRoomsTabProps {
   data: DashboardPayload;
@@ -33,8 +48,15 @@ const SCALE_OPTIONS = [
 ];
 
 export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
-  const [syncing, setSyncing] = useState(false);
+  const [syncingTuya, setSyncingTuya] = useState(false);
+  const [syncingGoogle, setSyncingGoogle] = useState(false);
+  const [disconnectingGoogle, setDisconnectingGoogle] = useState(false);
+  const [selectedGoogleMode, setSelectedGoogleMode] = useState<GoogleHomeMode>(
+    data.env.googleHomeMode ?? 'mcp'
+  );
   const [syncMessage, setSyncMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [dismissedDuplicates, setDismissedDuplicates] = useState<string[]>([]);
+  const [mergingId, setMergingId] = useState<string | null>(null);
 
   // Création / édition de pièce
   const [editingRoomId, setEditingRoomId] = useState<number | null>(null);
@@ -52,14 +74,67 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
   const [dpDraft, setDpDraft] = useState<DpConfig>({});
   const [savingDp, setSavingDp] = useState(false);
 
-  // Filtre des appareils par pièce ('all' | 'unassigned' | '<roomId>')
+  // Modale Systèmes & Fusion
+  const [manageSystemsDeviceId, setManageSystemsDeviceId] = useState<string | null>(null);
+  const [mergeSourceId, setMergeSourceId] = useState<string>('');
+  const [savingLink, setSavingLink] = useState(false);
+  const [linkFeedback, setLinkFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Filtre des appareils par système & pièce
+  const [systemFilter, setSystemFilter] = useState<SystemFilter | 'multi'>(
+    data.selectedSystem ?? 'all'
+  );
   const [roomFilter, setRoomFilter] = useState<string>('all');
 
-  const { unassignedCount, roomDeviceCounts, filteredDevices } = useMemo(() => {
+  useEffect(() => {
+    setSystemFilter(data.selectedSystem ?? 'all');
+  }, [data.selectedSystem]);
+
+  const manageSystemsDevice = useMemo(
+    () =>
+      manageSystemsDeviceId
+        ? data.devices.find((d) => d.id === manageSystemsDeviceId) ?? null
+        : null,
+    [data.devices, manageSystemsDeviceId]
+  );
+
+  const mergeableCandidatesForModal = useMemo(() => {
+    if (!manageSystemsDevice) return [];
+    return data.devices.filter((other) => {
+      if (other.id === manageSystemsDevice.id) return false;
+      return other.primaryVendor !== manageSystemsDevice.primaryVendor;
+    });
+  }, [data.devices, manageSystemsDevice]);
+
+  const visibleDuplicateCandidates = useMemo(
+    () => data.duplicateCandidates.filter((c) => !dismissedDuplicates.includes(c.sourceDeviceId)),
+    [data.duplicateCandidates, dismissedDuplicates]
+  );
+
+  const { systemCounts, unassignedCount, roomDeviceCounts, filteredDevices } = useMemo(() => {
+    const sysCounts = {
+      all: data.devices.length,
+      tuya: 0,
+      google_home: 0,
+      multi: 0,
+    };
+
+    const matchesSystem = (dev: DeviceRecord): boolean => {
+      if (systemFilter === 'all') return true;
+      if (systemFilter === 'multi') return dev.systems.length > 1;
+      return dev.systems.includes(systemFilter);
+    };
+
     const counts = new Map<number, number>();
     let unassigned = 0;
 
     for (const dev of data.devices) {
+      if (dev.systems.includes('tuya')) sysCounts.tuya += 1;
+      if (dev.systems.includes('google_home')) sysCounts.google_home += 1;
+      if (dev.systems.length > 1) sysCounts.multi += 1;
+
+      if (!matchesSystem(dev)) continue;
+
       if (dev.roomId === null) {
         unassigned += 1;
       } else {
@@ -68,26 +143,28 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
     }
 
     const filtered = data.devices.filter((dev) => {
+      if (!matchesSystem(dev)) return false;
       if (roomFilter === 'all') return true;
       if (roomFilter === 'unassigned') return dev.roomId === null;
       return String(dev.roomId) === roomFilter;
     });
 
     return {
+      systemCounts: sysCounts,
       unassignedCount: unassigned,
       roomDeviceCounts: counts,
       filteredDevices: filtered,
     };
-  }, [data.devices, roomFilter]);
+  }, [data.devices, roomFilter, systemFilter]);
 
   async function handleSyncTuya() {
-    setSyncing(true);
+    setSyncingTuya(true);
     setSyncMessage(null);
     try {
       const res = await fetch('/api/tuya/sync', { method: 'POST' });
       const json = (await res.json()) as { message?: string; error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec de synchronisation');
-      setSyncMessage({ ok: true, text: json.message || 'Synchronisation terminée.' });
+      if (!res.ok) throw new Error(json.error || 'Échec de synchronisation Tuya');
+      setSyncMessage({ ok: true, text: json.message || 'Synchronisation Tuya terminée.' });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
@@ -95,8 +172,133 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
         text: err instanceof Error ? err.message : 'Erreur Tuya',
       });
     } finally {
-      setSyncing(false);
+      setSyncingTuya(false);
     }
+  }
+
+  async function handleSyncGoogleHome() {
+    setSyncingGoogle(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/vendors/google-home/sync', { method: 'POST' });
+      const json = (await res.json()) as { message?: string; error?: string };
+      if (!res.ok) throw new Error(json.error || 'Échec de synchronisation Google Home');
+      setSyncMessage({
+        ok: true,
+        text: json.message || 'Synchronisation Google Home terminée.',
+      });
+      await onRefresh();
+    } catch (err) {
+      setSyncMessage({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Erreur Google Home',
+      });
+    } finally {
+      setSyncingGoogle(false);
+    }
+  }
+
+  async function handleDisconnectGoogleHome() {
+    setDisconnectingGoogle(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/vendors/google-home/disconnect', { method: 'POST' });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error || 'Échec de déconnexion Google Home');
+      setSyncMessage({ ok: true, text: 'Google Home déconnecté.' });
+      await onRefresh();
+    } catch (err) {
+      setSyncMessage({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Erreur déconnexion',
+      });
+    } finally {
+      setDisconnectingGoogle(false);
+    }
+  }
+
+  async function handleMergeDevices(targetDeviceId: string, sourceDeviceId: string) {
+    setMergingId(sourceDeviceId);
+    setSavingLink(true);
+    setLinkFeedback(null);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/devices/links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'merge', targetDeviceId, sourceDeviceId }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error || 'Échec de fusion des appareils');
+      setMergeSourceId('');
+      setLinkFeedback({
+        ok: true,
+        text: 'Doublon fusionné et liaison mémorisée pour les futures synchronisations.',
+      });
+      setSyncMessage({
+        ok: true,
+        text: 'Appareils fusionnés sans doublon. La liaison Google Home ↔ Tuya est mémorisée.',
+      });
+      await onRefresh();
+    } catch (err) {
+      const text = err instanceof Error ? err.message : 'Erreur fusion';
+      setLinkFeedback({ ok: false, text });
+      setSyncMessage({ ok: false, text });
+    } finally {
+      setMergingId(null);
+      setSavingLink(false);
+    }
+  }
+
+  async function handleToggleSystemTag(deviceId: string, vendor: VendorId, enabled: boolean) {
+    setSavingLink(true);
+    setLinkFeedback(null);
+    try {
+      const res = await fetch('/api/devices/links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle_system', deviceId, vendor, enabled }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error || 'Échec mise à jour des systèmes');
+      setLinkFeedback({ ok: true, text: 'Systèmes mis à jour.' });
+      await onRefresh();
+    } catch (err) {
+      setLinkFeedback({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Erreur mise à jour',
+      });
+    } finally {
+      setSavingLink(false);
+    }
+  }
+
+  async function handleUnlinkVendor(deviceId: string, vendor: VendorId) {
+    setSavingLink(true);
+    setLinkFeedback(null);
+    try {
+      const res = await fetch(
+        `/api/devices/links?deviceId=${encodeURIComponent(deviceId)}&vendor=${encodeURIComponent(vendor)}`,
+        { method: 'DELETE' }
+      );
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error || 'Échec dissociation');
+      setLinkFeedback({ ok: true, text: 'Liaison système supprimée.' });
+      await onRefresh();
+    } catch (err) {
+      setLinkFeedback({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Erreur dissociation',
+      });
+    } finally {
+      setSavingLink(false);
+    }
+  }
+
+  function openManageSystems(dev: DeviceRecord) {
+    setManageSystemsDeviceId(dev.id);
+    setMergeSourceId('');
+    setLinkFeedback(null);
   }
 
   function resetRoomForm() {
@@ -250,26 +452,163 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
     }
   }
 
+  const tuyaVendor = data.vendors.find((v) => v.vendor === 'tuya');
+  const ghVendor = data.vendors.find((v) => v.vendor === 'google_home');
+  const isGhConnected = Boolean(ghVendor?.connected);
+
   return (
     <div className="space-y-6">
-      {/* Synchronisation Tuya */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-base font-semibold text-white">Appareils Tuya &amp; Pièces</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Importez automatiquement vos appareils, vos pièces et leurs affectations depuis
-            Smart Life / Tuya Cloud, ou calibrez les Data Points si nécessaire.
-          </p>
+      {/* Synchronisation Multi-Vendors */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Tuya Cloud */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.tuya.badgeClass}`}
+                >
+                  {VENDOR_REGISTRY.tuya.label}
+                </span>
+                <span className="text-xs text-slate-400">
+                  {tuyaVendor?.devicesCount ?? systemCounts.tuya} appareil(s)
+                </span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                    data.env.tuyaConfigured || data.env.mode === 'demo'
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  {data.env.mode === 'demo'
+                    ? 'Mode Démo'
+                    : data.env.tuyaConfigured
+                      ? `Connecté (${data.env.tuyaRegion.toUpperCase()})`
+                      : 'Non configuré'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-2">
+                {VENDOR_REGISTRY.tuya.description}. Mesures prioritaires : W, kWh, tension, piles, IP/MAC.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <span className="text-[11px] text-slate-500">
+              {tuyaVendor?.lastSyncedAt
+                ? `Synchro : ${new Date(tuyaVendor.lastSyncedAt).toLocaleString('fr-FR')}`
+                : 'Aucune synchronisation manuelle récente'}
+            </span>
+            <button
+              type="button"
+              onClick={handleSyncTuya}
+              disabled={syncingTuya}
+              className="flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncingTuya ? 'animate-spin' : ''}`} />
+              {syncingTuya ? 'Synchronisation...' : 'Synchroniser Tuya'}
+            </button>
+          </div>
         </div>
 
-        <button
-          onClick={handleSyncTuya}
-          disabled={syncing}
-          className="flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 text-xs font-medium text-white transition"
-        >
-          <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
-          {syncing ? 'Synchronisation...' : 'Synchroniser depuis Tuya Cloud'}
-        </button>
+        {/* Google Home */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="w-full">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.google_home.badgeClass}`}
+                  >
+                    {VENDOR_REGISTRY.google_home.label}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {ghVendor?.devicesCount ?? systemCounts.google_home} appareil(s)
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      isGhConnected
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {data.env.mode === 'demo'
+                      ? 'Mode Démo'
+                      : isGhConnected
+                        ? `Connecté (${(ghVendor?.mode ?? selectedGoogleMode).toString().toUpperCase()})`
+                        : data.env.googleHomeConfigured
+                          ? 'Prêt (OAuth requis)'
+                          : 'OAuth non configuré'}
+                  </span>
+                </div>
+
+                {!isGhConnected && data.env.mode === 'live' && (
+                  <select
+                    value={selectedGoogleMode}
+                    onChange={(e) => setSelectedGoogleMode(e.target.value as GoogleHomeMode)}
+                    aria-label="Mode API Google Home"
+                    className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 focus:border-sky-500 focus:outline-none"
+                  >
+                    <option value="mcp">Mode Home MCP (tous appareils)</option>
+                    <option value="sdm">Mode Nest SDM (Nest)</option>
+                  </select>
+                )}
+              </div>
+
+              <p className="text-xs text-slate-400 mt-2">
+                {VENDOR_REGISTRY.google_home.description}. Fusionnez les doublons Tuya sans duplication.
+              </p>
+
+              {ghVendor?.lastError && (
+                <p className="text-[11px] text-rose-300 mt-1.5">{ghVendor.lastError}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <span className="text-[11px] text-slate-500">
+              {ghVendor?.lastSyncedAt
+                ? `Synchro : ${new Date(ghVendor.lastSyncedAt).toLocaleString('fr-FR')}`
+                : data.env.mode === 'live' && !data.env.googleHomeConfigured
+                  ? 'Ajoutez GOOGLE_CLIENT_ID / SECRET (voir Guide Setup)'
+                  : 'Lecture seule · zéro commande envoyée'}
+            </span>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {data.env.mode === 'live' && !isGhConnected ? (
+                <a
+                  href={`/api/vendors/google-home/oauth/start?mode=${selectedGoogleMode}`}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 px-3.5 py-2 text-xs font-medium text-white transition"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Connecter Google Home ({selectedGoogleMode.toUpperCase()})
+                </a>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleSyncGoogleHome}
+                    disabled={syncingGoogle || disconnectingGoogle}
+                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${syncingGoogle ? 'animate-spin' : ''}`} />
+                    {syncingGoogle ? 'Synchronisation...' : 'Synchroniser Google Home'}
+                  </button>
+                  {data.env.mode === 'live' && isGhConnected && (
+                    <button
+                      type="button"
+                      onClick={handleDisconnectGoogleHome}
+                      disabled={disconnectingGoogle || syncingGoogle}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3 py-2 text-xs text-slate-300 transition"
+                    >
+                      Déconnecter
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {syncMessage && (
@@ -286,6 +625,71 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
             <AlertCircle className="h-4 w-4 shrink-0" />
           )}
           <span>{syncMessage.text}</span>
+        </div>
+      )}
+
+      {/* Bannière de déduplication Tuya <-> Google Home */}
+      {visibleDuplicateCandidates.length > 0 && (
+        <div className="rounded-2xl border border-amber-500/35 bg-amber-500/10 p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs font-semibold text-amber-200">
+              <GitMerge className="h-4 w-4 text-amber-400 shrink-0" />
+              Doublons potentiels Tuya ↔ Google Home détectés ({visibleDuplicateCandidates.length})
+            </div>
+            <span className="text-[11px] text-amber-300/80">
+              Fusionnez en 1 clic pour combiner les badges sur une seule ligne et conserver les mesures Tuya.
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {visibleDuplicateCandidates.map((cand) => (
+              <div
+                key={cand.sourceDeviceId}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-slate-950/60 px-3.5 py-2.5 text-xs"
+              >
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                  <span
+                    className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${VENDOR_REGISTRY[cand.sourceVendor].badgeClass}`}
+                  >
+                    {VENDOR_REGISTRY[cand.sourceVendor].label}
+                  </span>
+                  <span className="font-medium text-white">{cand.sourceName}</span>
+                  <span className="text-slate-500">→</span>
+                  <span
+                    className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${VENDOR_REGISTRY[cand.targetVendor].badgeClass}`}
+                  >
+                    {VENDOR_REGISTRY[cand.targetVendor].label}
+                  </span>
+                  <span className="font-medium text-white">{cand.targetName}</span>
+                  <span className="text-[11px] text-slate-400">
+                    ({cand.reason}
+                    {cand.roomName ? ` · ${cand.roomName}` : ''})
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={mergingId === cand.sourceDeviceId}
+                    onClick={() => void handleMergeDevices(cand.targetDeviceId, cand.sourceDeviceId)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 px-3 py-1.5 text-[11px] font-semibold text-slate-950 transition"
+                  >
+                    <GitMerge className="h-3.5 w-3.5" />
+                    {mergingId === cand.sourceDeviceId ? 'Fusion...' : 'Fusionner en 1 clic'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDismissedDuplicates((prev) => [...prev, cand.sourceDeviceId])
+                    }
+                    className="rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 px-2.5 py-1.5 text-[11px] text-slate-300 transition"
+                  >
+                    Ignorer
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -543,17 +947,72 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-semibold text-white">
-                Appareils Tuya détectés ({filteredDevices.length}
-                {roomFilter !== 'all' ? ` / ${data.devices.length}` : ''})
+                Appareils détectés ({filteredDevices.length}
+                {roomFilter !== 'all' || systemFilter !== 'all' ? ` / ${data.devices.length}` : ''})
               </h3>
               <p className="text-xs text-slate-400">
-                Associez chaque appareil à une pièce et choisissez la méthode de calcul des kWh
+                Filtrez par système ou pièce, déclarez les liaisons multi-systèmes sans doublons et calibrez vos calculs kWh
               </p>
             </div>
           </div>
 
+          {/* Barre de filtres par système (Vendor) */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 mr-1">
+              <Layers className="h-3.5 w-3.5 text-slate-500" />
+              Système :
+            </span>
+            <button
+              type="button"
+              onClick={() => setSystemFilter('all')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                systemFilter === 'all'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              Tous ({systemCounts.all})
+            </button>
+            {VENDOR_IDS.map((vId) => {
+              const meta = VENDOR_REGISTRY[vId];
+              const active = systemFilter === vId;
+              const count = systemCounts[vId];
+              return (
+                <button
+                  key={vId}
+                  type="button"
+                  onClick={() => setSystemFilter(vId)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition border ${
+                    active
+                      ? meta.badgeClass
+                      : 'border-transparent bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <span className={`h-2 w-2 rounded-full shrink-0 ${meta.dotClass}`} />
+                  {meta.label} ({count})
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setSystemFilter('multi')}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition border ${
+                systemFilter === 'multi'
+                  ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-200'
+                  : 'border-transparent bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              <Link2 className="h-3 w-3" />
+              Multi-systèmes ({systemCounts.multi})
+            </button>
+          </div>
+
           {/* Barre de filtres par pièce */}
           <div className="flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 mr-1">
+              <Home className="h-3.5 w-3.5 text-slate-500" />
+              Pièce :
+            </span>
             <button
               type="button"
               onClick={() => setRoomFilter('all')}
@@ -563,7 +1022,7 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                   : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
               }`}
             >
-              Tous ({data.devices.length})
+              Toutes ({systemCounts.all === filteredDevices.length && roomFilter === 'all' ? systemCounts.all : unassignedCount + Array.from(roomDeviceCounts.values()).reduce((a, b) => a + b, 0)})
             </button>
 
             <button
@@ -611,6 +1070,7 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
             <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider">
               <tr>
                 <th className="px-4 py-3">Appareil</th>
+                <th className="px-4 py-3">Système</th>
                 <th className="px-4 py-3">Nom affiché</th>
                 <th className="px-4 py-3">IP / MAC Address</th>
                 <th className="px-4 py-3">Pièce</th>
@@ -634,7 +1094,7 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
             <tbody className="divide-y divide-slate-800/80">
               {filteredDevices.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-xs text-slate-500">
+                  <td colSpan={10} className="px-4 py-8 text-center text-xs text-slate-500">
                     Aucun appareil dans ce filtre.
                   </td>
                 </tr>
@@ -654,6 +1114,38 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                           {dev.productName || dev.tuyaCategory || dev.id}
                         </div>
                       </div>
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {dev.systems.map((sys) => {
+                        const meta = VENDOR_REGISTRY[sys];
+                        const isPrimary = sys === dev.primaryVendor;
+                        return (
+                          <span
+                            key={sys}
+                            title={
+                              isPrimary
+                                ? `${meta.label} — Source principale de mesure`
+                                : `${meta.label} — Lié sans doublon`
+                            }
+                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${meta.badgeClass}`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${meta.dotClass}`} />
+                            {meta.label}
+                          </span>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => openManageSystems(dev)}
+                        title="Gérer les systèmes liés (déclarer Google Home / fusionner un doublon)"
+                        className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/80 hover:border-slate-500 hover:bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300 transition"
+                      >
+                        <Link2 className="h-2.5 w-2.5" />
+                        Lier
+                      </button>
                     </div>
                   </td>
 
@@ -912,7 +1404,7 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
 
             <div>
               <div className="text-xs font-medium text-slate-300 mb-1.5">
-                Dernier statut brut reçu de Tuya (`lastRawStatus`)
+                Dernier statut brut reçu (`lastRawStatus`)
               </div>
               <pre className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-[11px] font-mono text-emerald-300 overflow-x-auto max-h-48">
                 {JSON.stringify(inspectDevice.lastRawStatus ?? [], null, 2)}
@@ -932,6 +1424,216 @@ export function DevicesRoomsTab({ data, onRefresh }: DevicesRoomsTabProps) {
                 className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-medium text-white"
               >
                 {savingDp ? 'Enregistrement...' : 'Appliquer le mapping'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modale Systèmes & Fusion (Multi-Vendors sans doublon) */}
+      {manageSystemsDevice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Link2 className="h-4 w-4 text-sky-400" />
+                  Systèmes &amp; Fusion — {manageSystemsDevice.customName || manageSystemsDevice.name}
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Source principale de mesure :{' '}
+                  <strong className="text-slate-200">
+                    {VENDOR_REGISTRY[manageSystemsDevice.primaryVendor].label}
+                  </strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setManageSystemsDeviceId(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {linkFeedback && (
+              <div
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
+                  linkFeedback.ok
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                    : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                }`}
+              >
+                {linkFeedback.ok ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                )}
+                <span>{linkFeedback.text}</span>
+              </div>
+            )}
+
+            {/* Cases à cocher présence multi-systèmes */}
+            <div className="space-y-2.5">
+              <div className="text-xs font-semibold text-slate-200">
+                Présence déclarée dans les écosystèmes (sans créer de doublon)
+              </div>
+              <div className="space-y-2">
+                {VENDOR_IDS.map((vId) => {
+                  const meta = VENDOR_REGISTRY[vId];
+                  const isPrimary = manageSystemsDevice.primaryVendor === vId;
+                  const checked = manageSystemsDevice.systems.includes(vId);
+                  return (
+                    <label
+                      key={vId}
+                      className={`flex items-start justify-between gap-3 rounded-xl border p-3 text-xs transition ${
+                        checked
+                          ? 'border-slate-700 bg-slate-950/80'
+                          : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'
+                      } ${isPrimary ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={isPrimary || savingLink}
+                          onChange={(e) =>
+                            void handleToggleSystemTag(
+                              manageSystemsDevice.id,
+                              vId,
+                              e.target.checked
+                            )
+                          }
+                          className="mt-0.5 h-4 w-4 rounded border-slate-600 bg-slate-900 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2 font-medium text-white">
+                            <span>{meta.label}</span>
+                            {isPrimary && (
+                              <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] text-indigo-300">
+                                Système principal
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            {isPrimary
+                              ? 'Collecte active et source principale des métriques de cet appareil.'
+                              : `Cochez si cet appareil est aussi remonté dans ${meta.label}. Il apparaîtra dans les deux filtres sans doublon.`}
+                          </p>
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Fusion d'un doublon existant */}
+            <div className="space-y-2.5 pt-2 border-t border-slate-800">
+              <div className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <GitMerge className="h-3.5 w-3.5 text-amber-400" />
+                Fusionner un doublon existant dans cet appareil
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Sélectionnez une ligne doublon d&apos;un autre système pour transférer son ID
+                externe vers cette fiche et supprimer la ligne en double.
+              </p>
+
+              {mergeableCandidatesForModal.length === 0 ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5 text-[11px] text-slate-500">
+                  Aucun appareil d&apos;un autre fournisseur disponible à fusionner pour le moment.
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <select
+                    value={mergeSourceId}
+                    onChange={(e) => setMergeSourceId(e.target.value)}
+                    className="flex-1 min-w-[200px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  >
+                    <option value="">Choisir un appareil à absorber...</option>
+                    {mergeableCandidatesForModal.map((cand) => {
+                      const candRoom = data.rooms.find((r) => r.id === cand.roomId);
+                      return (
+                        <option key={cand.id} value={cand.id}>
+                          [{VENDOR_REGISTRY[cand.primaryVendor].label}] {cand.customName || cand.name}
+                          {candRoom ? ` (${candRoom.name})` : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!mergeSourceId || savingLink}
+                    onClick={() =>
+                      void handleMergeDevices(manageSystemsDevice.id, mergeSourceId)
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 px-3.5 py-2 text-xs font-semibold text-slate-950 transition"
+                  >
+                    <GitMerge className="h-3.5 w-3.5" />
+                    Fusionner
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Liens mémorisés */}
+            {(manageSystemsDevice.vendorLinks?.length ?? 0) > 0 && (
+              <div className="space-y-2 pt-2 border-t border-slate-800">
+                <div className="text-xs font-semibold text-slate-200">
+                  Identités externes mémorisées (anti-doublon)
+                </div>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {manageSystemsDevice.vendorLinks?.map((link) => {
+                    const meta = VENDOR_REGISTRY[link.vendor];
+                    const canUnlink =
+                      link.vendor !== manageSystemsDevice.primaryVendor &&
+                      manageSystemsDevice.systems.length > 1;
+                    return (
+                      <div
+                        key={link.id}
+                        className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-[11px]"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`rounded border px-1.5 py-0.2 text-[10px] ${meta.badgeClass}`}>
+                              {meta.label}
+                            </span>
+                            <span className="text-slate-200 truncate">
+                              {link.externalName || link.externalId}
+                            </span>
+                          </div>
+                          <div className="font-mono text-[10px] text-slate-500 truncate mt-0.5">
+                            {link.externalId}
+                          </div>
+                        </div>
+                        {canUnlink && (
+                          <button
+                            type="button"
+                            disabled={savingLink}
+                            onClick={() =>
+                              void handleUnlinkVendor(manageSystemsDevice.id, link.vendor)
+                            }
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 hover:border-rose-500/40 hover:text-rose-300 px-2 py-1 text-[10px] text-slate-300 shrink-0"
+                            title="Dissocier ce système"
+                          >
+                            <Unlink className="h-3 w-3" />
+                            Délier
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setManageSystemsDeviceId(null)}
+                className="rounded-xl border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800"
+              >
+                Fermer
               </button>
             </div>
           </div>

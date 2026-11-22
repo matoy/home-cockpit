@@ -25,6 +25,7 @@ export function SetupGuideTab({ data }: SetupGuideTabProps) {
   const origin =
     typeof window !== 'undefined' ? window.location.origin : 'https://votre-app.vercel.app';
   const scheduleUrl = `${origin}/api/schedule/collect`;
+  const googleRedirectUri = `${origin}/api/vendors/google-home/oauth/callback`;
 
   function copyText(key: string, text: string) {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -55,6 +56,13 @@ export function SetupGuideTab({ data }: SetupGuideTabProps) {
       detail: env.tuyaUserUidConfigured
         ? 'Renseigné pour liste directe /v1.0/users/{uid}/devices'
         : 'Optionnel (repli sur associated-users)',
+    },
+    {
+      label: 'Google Home OAuth (GOOGLE_CLIENT_ID & SECRET)',
+      ok: env.googleHomeConfigured,
+      detail: env.googleHomeConfigured
+        ? `Mode par défaut : ${env.googleHomeMode.toUpperCase()} (${env.googleHomeConnected ? 'connecté' : 'prêt pour OAuth'})`
+        : 'Optionnel — ajoutez les identifiants OAuth Google Cloud pour Google Home',
     },
     {
       label: 'Protection Dashboard (APP_PASSWORD)',
@@ -264,6 +272,73 @@ export function SetupGuideTab({ data }: SetupGuideTabProps) {
               </button>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Étape 4 : Google Home Multi-Vendors */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-4">
+        <div className="flex items-center gap-2.5">
+          <div className="rounded-xl bg-sky-500/15 p-2 text-sky-400">
+            <Cloud className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white">
+              Étape 4 (Optionnel) — Connecter Google Home (MCP ou Nest SDM)
+            </h3>
+            <p className="text-xs text-slate-400">
+              Synchronisez vos appareils Google Home / Nest en 100 % lecture seule et fusionnez les doublons Tuya sans duplication.
+            </p>
+          </div>
+        </div>
+
+        <ol className="list-decimal list-inside space-y-2 text-xs text-slate-300 leading-relaxed">
+          <li>
+            Dans <strong>Google Cloud Console</strong>, créez des identifiants{' '}
+            <strong>OAuth 2.0 Client ID</strong> (type <em>Web Application</em>) et ajoutez
+            l&apos;URI de redirection autorisée ci-dessous.
+          </li>
+          <li>
+            Choisissez votre mode selon vos équipements et votre compte Google :
+            <ul className="list-disc list-inside ml-5 mt-1 text-slate-400 space-y-0.5">
+              <li>
+                <strong>Mode <code>mcp</code></strong> (<code>GOOGLE_HOME_MODE=mcp</code>) : active
+                l&apos;API <strong>Home API</strong> (<code>https://home.googleapis.com/mcp</code>).
+                Remonte <strong>tous</strong> vos appareils Google Home (Nest, Matter, Tuya…),
+                mais nécessite <em>Google Home Premium Advanced</em> côté compte Google.
+              </li>
+              <li>
+                <strong>Mode <code>sdm</code></strong> (<code>GOOGLE_HOME_MODE=sdm</code> +{' '}
+                <code>GOOGLE_SDM_PROJECT_ID</code>) : active la{' '}
+                <strong>Smart Device Management API</strong> (Nest Device Access, 5 $ unique).
+                Remonte vos thermostats et équipements Google Nest.
+              </li>
+            </ul>
+          </li>
+          <li>
+            Renseignez <code>GOOGLE_CLIENT_ID</code> et <code>GOOGLE_CLIENT_SECRET</code> dans vos
+            variables d&apos;environnement Vercel (ou <code>.env.local</code>), puis cliquez sur{' '}
+            <strong>Connecter Google Home</strong> dans l&apos;onglet <em>Appareils &amp; Pièces</em>.
+          </li>
+        </ol>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-4 py-2.5 text-xs">
+          <div>
+            <div className="text-[10px] uppercase text-slate-500">
+              Authorized Redirect URI (Google Cloud Console)
+            </div>
+            <div className="font-mono text-sky-300 break-all">{googleRedirectUri}</div>
+          </div>
+          <button
+            onClick={() => copyText('ghredirect', googleRedirectUri)}
+            className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
+          >
+            {copiedKey === 'ghredirect' ? (
+              <Check className="h-3 w-3 text-emerald-400" />
+            ) : (
+              <Copy className="h-3 w-3" />
+            )}
+            Copier
+          </button>
         </div>
       </div>
     </div>

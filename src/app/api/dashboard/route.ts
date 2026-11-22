@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getDashboardData } from '@/lib/data-service';
-import type { TimeRange } from '@/types';
+import type { SystemFilter, TimeRange } from '@/types';
 
 const VALID_RANGES = new Set<TimeRange>(['24h', '7d', '30d', '365d', 'custom']);
+const VALID_SYSTEMS = new Set<SystemFilter>(['all', 'tuya', 'google_home']);
 
 export async function GET(request: Request) {
   try {
@@ -26,12 +27,15 @@ export async function GET(request: Request) {
           ? rawRange
           : '24h';
     const roomId = searchParams.get('roomId') ?? 'all';
+    const rawSystem = (searchParams.get('system') ?? 'all') as SystemFilter;
+    const system: SystemFilter = VALID_SYSTEMS.has(rawSystem) ? rawSystem : 'all';
 
     const payload = await getDashboardData(
       range,
       roomId,
       hasValidCustom ? fromParam : null,
-      hasValidCustom ? toParam : null
+      hasValidCustom ? toParam : null,
+      system
     );
     return NextResponse.json(payload);
   } catch (err) {

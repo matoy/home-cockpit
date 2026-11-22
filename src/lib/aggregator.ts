@@ -1,5 +1,7 @@
 import { computeDewPointC, computeReadingCost, getParisDateAndTime } from './tariff-engine';
 import { hasValidHumidityMeasurement, hasValidTempMeasurement } from './device-utils';
+import { findDuplicateCandidates } from './vendors/deduplication';
+import { normalizeSystems } from './vendors/registry';
 import type {
   AutomationDeviceRef,
   AutomationDiagnostic,
@@ -19,9 +21,11 @@ import type {
   MetricReadingRecord,
   RoomRecord,
   RoomSummary,
+  SystemFilter,
   TariffPeriodRecord,
   TimeRange,
   TimeSeriesPoint,
+  VendorConnectionSummary,
 } from '@/types';
 
 const RANGE_HOURS: Record<Exclude<TimeRange, 'custom'>, number> = {
@@ -147,7 +151,8 @@ export function buildAutomationsPayload(
   automations: AutomationRecord[],
   devices: DeviceRecord[],
   rooms: RoomRecord[],
-  selectedRoomNumeric: number | null
+  selectedRoomNumeric: number | null,
+  selectedSystem: SystemFilter = 'all'
 ): AutomationsPayload {
   const deviceMap = new Map(devices.map((d) => [d.id, d]));
   const roomMap = new Map(rooms.map((r) => [r.id, r]));
@@ -277,11 +282,24 @@ export function buildAutomationsPayload(
     };
   });
 
-  // Filtre par pièce si sélectionnée en haut du dashboard
-  const scopedRules =
+  // Filtre par pièce et par système si sélectionnés en haut du dashboard
+  const roomScopedRules =
     selectedRoomNumeric !== null
       ? allEnriched.filter((r) => r.rooms.some((rm) => rm.id === selectedRoomNumeric))
       : allEnriched;
+
+  const scopedRules =
+    selectedSystem === 'all'
+      ? roomScopedRules
+      : roomScopedRules.filter((r) => {
+          if ((r.vendor ?? 'tuya') === selectedSystem) return true;
+          return [...r.triggerDevices, ...r.targetDevices].some((ref) => {
+            const dev = deviceMap.get(ref.deviceId);
+            return dev
+              ? normalizeSystems(dev.systems, dev.primaryVendor).includes(selectedSystem)
+              : false;
+          });
+        });
 
   // Détection des conflits / chevauchements entre automatisations actives ciblant le même appareil
   const targetRulesByDevice = new Map<string, EnrichedAutomation[]>();
@@ -453,10 +471,12 @@ export function buildAutomationsPayload(
     .sort((a, b) => b.rulesCount - a.rulesCount);
 
   const coveredDevicesCount = deviceStatsMap.size;
-  const totalDevicesCount =
-    selectedRoomNumeric !== null
-      ? devices.filter((d) => d.roomId === selectedRoomNumeric).length
-      : devices.length;
+  const totalDevicesCount = devices.filter(
+    (d) =>
+      (selectedRoomNumeric === null || d.roomId === selectedRoomNumeric) &&
+      (selectedSystem === 'all' ||
+        normalizeSystems(d.systems, d.primaryVendor).includes(selectedSystem))
+  ).length;
   const coveredRoomsCount = roomCoverage.filter((rc) => rc.rulesCount > 0).length;
 
   const lastSyncedAt =
@@ -496,8 +516,10 @@ export function buildDashboardPayload(params: {
   customFrom?: string | null;
   customTo?: string | null;
   selectedRoomId: string;
+  selectedSystem?: SystemFilter;
   rooms: RoomRecord[];
   devices: DeviceRecord[];
+  vendors?: VendorConnectionSummary[];
   readings: MetricReadingRecord[];
   tariffs: TariffPeriodRecord[];
   automations?: AutomationRecord[];
@@ -510,8 +532,10 @@ export function buildDashboardPayload(params: {
     customFrom = null,
     customTo = null,
     selectedRoomId,
+    selectedSystem = 'all',
     rooms,
     devices,
+    vendors = [],
     readings,
     tariffs,
     automations = [],
@@ -520,6 +544,14 @@ export function buildDashboardPayload(params: {
   } = params;
 
   const { startMs, endMs, effectiveHours } = resolveTimeWindow(range, customFrom, customTo, now);
+
+  const duplicateCandidates = findDuplicateCandidates(devices, rooms);
+
+  const systemScopedDevices =
+    selectedSystem === 'all'
+      ? devices
+      : devices.filter((d) => normalizeSystems(d.systems, d.primaryVendor).includes(selectedSystem));
+  const systemScopedDeviceIds = new Set(systemScopedDevices.map((d) => d.id));
 
   const roomMap = new Map<number, RoomRecord>();
   for (const r of rooms) {
@@ -536,7 +568,7 @@ export function buildDashboardPayload(params: {
     return ts >= startMs && ts <= endMs;
   });
 
-  // Calcul des coûts par lecture + agrégation par pièce pour roomSummaries (toujours sur toutes les pièces)
+  // Calcul des coûts par lecture + agrégation par pièce pour roomSummaries (toujours sur toutes les pièces, filtré par système)
   const roomEnergyTotals = new Map<number, number>();
   const roomCostTotals = new Map<number, number>();
   const roomTempStats = new Map<number, number[]>();
@@ -544,7 +576,7 @@ export function buildDashboardPayload(params: {
 
   for (const r of periodReadings) {
     const dev = deviceMap.get(r.deviceId);
-    if (!dev || !dev.isMonitored) continue;
+    if (!dev || !dev.isMonitored || !systemScopedDeviceIds.has(dev.id)) continue;
     const effectiveRoomId = r.roomId ?? dev.roomId ?? null;
     if (effectiveRoomId === null) continue;
 
@@ -568,7 +600,7 @@ export function buildDashboardPayload(params: {
   }
 
   const roomSummaries: RoomSummary[] = rooms.map((room) => {
-    const roomDevices = devices.filter((d) => d.roomId === room.id);
+    const roomDevices = systemScopedDevices.filter((d) => d.roomId === room.id);
     const monitoredDevices = roomDevices.filter((d) => d.isMonitored);
 
     const currentPowerW = round2(
@@ -629,7 +661,7 @@ export function buildDashboardPayload(params: {
       ? Number(selectedRoomId)
       : null;
 
-  const filteredDevices = devices.filter((d) => {
+  const filteredDevices = systemScopedDevices.filter((d) => {
     if (!d.isMonitored) return false;
     if (selectedRoomNumeric !== null) {
       return d.roomId === selectedRoomNumeric;
@@ -1104,7 +1136,8 @@ export function buildDashboardPayload(params: {
     automations,
     devices,
     rooms,
-    selectedRoomNumeric
+    selectedRoomNumeric,
+    selectedSystem
   );
 
   return {
@@ -1113,6 +1146,7 @@ export function buildDashboardPayload(params: {
     customFrom: range === 'custom' ? customFrom : null,
     customTo: range === 'custom' ? customTo : null,
     selectedRoomId,
+    selectedSystem,
     generatedAt: now.toISOString(),
     kpis: {
       currentPowerW,
@@ -1137,6 +1171,8 @@ export function buildDashboardPayload(params: {
     rooms,
     roomSummaries,
     devices,
+    vendors,
+    duplicateCandidates,
     tariffs,
     energyByRoom,
     energyByDevice,
