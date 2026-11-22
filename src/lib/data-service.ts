@@ -1565,16 +1565,17 @@ export async function syncGoogleHomeDevices(): Promise<{
     .set({
       status: 'connected',
       lastSyncedAt: now,
-      lastError: null,
+      lastError: inventory.warning ?? null,
       updatedAt: now,
     })
     .where(eq(vendorConnections.vendor, 'google_home'));
 
+  const baseMsg = `${inventory.devices.length} appareil(x) et ${inventory.roomNames.length} pièce(s) synchronisés depuis Google Home (${mode.toUpperCase()}, ${newCount} nouveau(x)).`;
   return {
     syncedCount: inventory.devices.length,
     newCount,
     mode: 'live',
-    message: `${inventory.devices.length} appareil(x) et ${inventory.roomNames.length} pièce(s) synchronisés depuis Google Home (${mode.toUpperCase()}, ${newCount} nouveau(x)).`,
+    message: inventory.warning ? `${baseMsg} (${inventory.warning})` : baseMsg,
   };
 }
 
@@ -2505,18 +2506,19 @@ async function syncRoomsFromGoogleHome(): Promise<RoomVendorSyncResult> {
     .set({
       status: 'connected',
       lastSyncedAt: now,
-      lastError: null,
+      lastError: inventory.warning ?? null,
       updatedAt: now,
     })
     .where(eq(vendorConnections.vendor, 'google_home'));
 
+  const baseMsg = `Google Home (${mode.toUpperCase()}) : ${inventory.roomNames.length} pièce(s) détectée(s) (${createdCount} créée(s), ${assignedDevicesCount} appareil(s) rattaché(s)).`;
   return {
     vendor: 'google_home',
     roomsFound: inventory.roomNames.length,
     createdCount,
     assignedDevicesCount,
     mode: 'live',
-    message: `Google Home (${mode.toUpperCase()}) : ${inventory.roomNames.length} pièce(s) détectée(s) (${createdCount} créée(s), ${assignedDevicesCount} appareil(s) rattaché(s)).`,
+    message: inventory.warning ? `${baseMsg} (${inventory.warning})` : baseMsg,
   };
 }
 
