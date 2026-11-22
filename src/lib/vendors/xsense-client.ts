@@ -7,6 +7,7 @@ const DEFAULT_XSENSE_API_URL = 'https://api.x-sense-iot.com';
 const DEFAULT_CLIENT_SECRET = '3412567890abcdef1234567890abcdef';
 const X_SENSE_APP_VERSION = 'v1.22.0_20240914.1';
 const X_SENSE_APP_CODE = '1220';
+const X_SENSE_CLIENT_TYPE = '1';
 
 // Nombre premier sûr 3072-bit AWS Cognito SRP (RFC 5054 / AWS Cognito standard)
 const COGNITO_N_HEX =
@@ -45,6 +46,7 @@ export interface XSenseSession {
   refreshToken: string;
   expiresAtMs: number;
   userId?: string;
+  email?: string;
   clientId?: string;
   userPoolId?: string;
   region?: string;
@@ -106,6 +108,17 @@ function toBool(val: unknown): boolean | null {
 }
 
 /**
+ * Décode le clientSecret Base64 renvoyé par l'endpoint X-Sense `101001` (`value[4:-1]`).
+ */
+export function decodeXSenseClientSecret(encoded: string): string {
+  const raw = Buffer.from(encoded.trim(), 'base64');
+  if (raw.length > 5) {
+    return raw.subarray(4, raw.length - 1).toString('utf8');
+  }
+  return raw.toString('utf8');
+}
+
+/**
  * Calcule la signature MD5 `mac` attendue par l'API REST X-Sense (`api.x-sense-iot.com`).
  */
 export function calculateXSenseMac(
@@ -116,13 +129,33 @@ export function calculateXSenseMac(
   for (const key of Object.keys(params)) {
     const value = params[key];
     if (value === undefined || value === null) continue;
-    if (Array.isArray(value) || (typeof value === 'object' && value !== null)) {
+    if (Array.isArray(value)) {
+      if (value.length > 0 && typeof value[0] === 'string') {
+        acc += value.join('');
+      } else {
+        acc += JSON.stringify(value);
+      }
+    } else if (typeof value === 'object') {
       acc += JSON.stringify(value);
     } else {
       acc += String(value);
     }
   }
-  return crypto.createHash('md5').update(`${acc}${clientSecret}`, 'utf8').digest('hex');
+  return crypto
+    .createHash('md5')
+    .update(Buffer.concat([Buffer.from(acc, 'utf8'), Buffer.from(clientSecret, 'utf8')]))
+    .digest('hex');
+}
+
+function computeCognitoSecretHash(
+  username: string,
+  clientId: string,
+  clientSecret: string
+): string {
+  return crypto
+    .createHmac('sha256', Buffer.from(clientSecret, 'utf8'))
+    .update(`${username}${clientId}`, 'utf8')
+    .digest('base64');
 }
 
 function modPow(base: bigint, exp: bigint, mod: bigint): bigint {
@@ -231,13 +264,22 @@ async function authenticateCognitoSrp(params: {
   const A = modPow(COGNITO_G, a, COGNITO_N);
   const AHex = A.toString(16);
 
+  const authParameters: Record<string, string> = {
+    USERNAME: params.email,
+    SRP_A: AHex,
+  };
+  if (params.clientSecret) {
+    authParameters.SECRET_HASH = computeCognitoSecretHash(
+      params.email,
+      params.clientId,
+      params.clientSecret
+    );
+  }
+
   const initRes = await callCognitoAction(params.region, 'InitiateAuth', {
     AuthFlow: 'USER_SRP_AUTH',
     ClientId: params.clientId,
-    AuthParameters: {
-      USERNAME: params.email,
-      SRP_A: AHex,
-    },
+    AuthParameters: authParameters,
   });
 
   if (initRes.ChallengeName !== 'PASSWORD_VERIFIER') {
@@ -250,7 +292,8 @@ async function authenticateCognitoSrp(params: {
   const srpBHex = toStr(chParams.SRP_B);
   const saltHex = toStr(chParams.SALT);
   const secretBlockB64 = toStr(chParams.SECRET_BLOCK);
-  const usernameForSrp = toStr(chParams.USER_ID_FOR_SRP) ?? params.email;
+  const cognitoUsername = toStr(chParams.USERNAME) ?? params.email;
+  const usernameForSrp = toStr(chParams.USER_ID_FOR_SRP) ?? cognitoUsername;
   if (!srpBHex || !saltHex || !secretBlockB64) {
     throw new Error('Paramètres Cognito SRP incomplets renvoyés par X-Sense.');
   }
@@ -291,24 +334,33 @@ async function authenticateCognitoSrp(params: {
   ]);
   const signature = crypto.createHmac('sha256', hkdfKey).update(sigMsg).digest('base64');
 
+  const challengeResponses: Record<string, string> = {
+    USERNAME: cognitoUsername,
+    PASSWORD_CLAIM_SECRET_BLOCK: secretBlockB64,
+    PASSWORD_CLAIM_SIGNATURE: signature,
+    TIMESTAMP: timestamp,
+  };
+  if (params.clientSecret) {
+    challengeResponses.SECRET_HASH = computeCognitoSecretHash(
+      cognitoUsername,
+      params.clientId,
+      params.clientSecret
+    );
+  }
+
   const respondRes = await callCognitoAction(params.region, 'RespondToAuthChallenge', {
     ChallengeName: 'PASSWORD_VERIFIER',
     ClientId: params.clientId,
-    ChallengeResponses: {
-      USERNAME: usernameForSrp,
-      PASSWORD_CLAIM_SECRET_BLOCK: secretBlockB64,
-      PASSWORD_CLAIM_SIGNATURE: signature,
-      TIMESTAMP: timestamp,
-    },
+    ChallengeResponses: challengeResponses,
   });
 
   const authResult = asRecord(respondRes.AuthenticationResult);
-  const idToken = toStr(authResult?.IdToken);
-  const accessToken = toStr(authResult?.AccessToken) ?? '';
+  const idToken = toStr(authResult?.IdToken) ?? '';
+  const accessToken = toStr(authResult?.AccessToken);
   const refreshToken = toStr(authResult?.RefreshToken) ?? '';
   const expiresInSec = toNum(authResult?.ExpiresIn) ?? 3600;
-  if (!idToken) {
-    throw new Error('Aucun IdToken renvoyé par AWS Cognito X-Sense.');
+  if (!accessToken) {
+    throw new Error('Aucun AccessToken renvoyé par AWS Cognito X-Sense.');
   }
 
   return {
@@ -316,6 +368,8 @@ async function authenticateCognitoSrp(params: {
     accessToken,
     refreshToken,
     expiresAtMs: Date.now() + expiresInSec * 1000,
+    userId: cognitoUsername,
+    email: params.email,
     userPoolId: params.userPoolId,
     clientId: params.clientId,
     region: params.region,
@@ -327,25 +381,33 @@ async function refreshCognitoSession(session: XSenseSession): Promise<XSenseSess
   if (!session.refreshToken || !session.clientId || !session.region) {
     throw new Error('RefreshToken Cognito X-Sense indisponible.');
   }
+  const authParams: Record<string, string> = {
+    REFRESH_TOKEN: session.refreshToken,
+  };
+  if (session.clientSecret) {
+    const hashUser = session.userId ?? session.email ?? '';
+    authParams.SECRET_HASH = hashUser
+      ? computeCognitoSecretHash(hashUser, session.clientId, session.clientSecret)
+      : session.clientSecret;
+  }
+
   const res = await callCognitoAction(session.region, 'InitiateAuth', {
     AuthFlow: 'REFRESH_TOKEN_AUTH',
     ClientId: session.clientId,
-    AuthParameters: {
-      REFRESH_TOKEN: session.refreshToken,
-    },
+    AuthParameters: authParams,
   });
 
   const authResult = asRecord(res.AuthenticationResult);
-  const idToken = toStr(authResult?.IdToken);
-  if (!idToken) {
+  const accessToken = toStr(authResult?.AccessToken);
+  if (!accessToken) {
     throw new Error('Échec de renouvellement de session Cognito X-Sense.');
   }
   const expiresInSec = toNum(authResult?.ExpiresIn) ?? 3600;
 
   return {
     ...session,
-    idToken,
-    accessToken: toStr(authResult?.AccessToken) ?? session.accessToken,
+    accessToken,
+    idToken: toStr(authResult?.IdToken) ?? session.idToken,
     refreshToken: toStr(authResult?.RefreshToken) ?? session.refreshToken,
     expiresAtMs: Date.now() + expiresInSec * 1000,
   };
@@ -355,23 +417,29 @@ async function callXSenseApi(params: {
   apiUrl: string;
   bizCode: string;
   payload: Record<string, unknown>;
-  idToken?: string;
+  accessToken?: string;
   clientSecret?: string;
+  unauth?: boolean;
 }): Promise<unknown> {
+  const mac = params.unauth
+    ? 'abcdefg'
+    : calculateXSenseMac(params.payload, params.clientSecret);
+
   const bodyObj: Record<string, unknown> = {
     ...params.payload,
-    bizCode: params.bizCode,
+    clientType: X_SENSE_CLIENT_TYPE,
+    mac,
     appVersion: X_SENSE_APP_VERSION,
+    bizCode: params.bizCode,
     appCode: X_SENSE_APP_CODE,
-    mac: calculateXSenseMac(params.payload, params.clientSecret),
   };
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
   };
-  if (params.idToken) {
-    headers.Authorization = params.idToken;
+  if (!params.unauth && params.accessToken) {
+    headers.Authorization = params.accessToken;
   }
 
   const res = await fetch(`${params.apiUrl}/app`, {
@@ -384,7 +452,7 @@ async function callXSenseApi(params: {
 
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    throw new Error(`Erreur HTTP X-Sense (${res.status}).`);
+    throw new Error(`Erreur HTTP X-Sense (${res.status}) : ${toStr(json.message ?? json.reMsg) ?? 'requête refusée'}`);
   }
   const reCode = toNum(json.reCode);
   if (reCode !== null && reCode !== 200 && reCode !== 0) {
@@ -392,6 +460,109 @@ async function callXSenseApi(params: {
   }
   return json.reData ?? json;
 }
+
+// ---------- AWS IoT SigV4 GET (Lecture seule des Shadows X-Sense) ----------
+
+function hmacSha256Raw(key: Buffer | string, msg: string): Buffer {
+  return crypto.createHmac('sha256', key).update(msg, 'utf8').digest();
+}
+
+function sha256Hex(msg: string): string {
+  return crypto.createHash('sha256').update(msg, 'utf8').digest('hex');
+}
+
+function encodeRfc3986(str: string): string {
+  return encodeURIComponent(str).replace(
+    /[!'()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+}
+
+async function fetchAwsIotShadowGet(params: {
+  url: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken: string;
+}): Promise<Record<string, unknown> | null> {
+  const parsed = new URL(params.url);
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+  const dateStamp = amzDate.slice(0, 8);
+  const service = 'iotdata';
+  const scope = `${dateStamp}/${params.region}/${service}/aws4_request`;
+
+  const queryPairs: Array<[string, string]> = [];
+  parsed.searchParams.forEach((v, k) => {
+    queryPairs.push([k, v]);
+  });
+  queryPairs.sort((a, b) => (a[0] === b[0] ? a[1].localeCompare(b[1]) : a[0].localeCompare(b[0])));
+  const canonicalQuery = queryPairs
+    .map(([k, v]) => `${encodeRfc3986(k)}=${encodeRfc3986(v)}`)
+    .join('&');
+
+  const rawHeaders: Record<string, string> = {
+    'content-type': 'application/x-amz-json-1.0',
+    host: parsed.host,
+    'user-agent': 'aws-sdk-iOS/2.26.5 iOS/17.3',
+    'x-amz-date': amzDate,
+    'x-amz-security-token': params.sessionToken,
+  };
+  const headerKeys = Object.keys(rawHeaders).sort();
+  const canonicalHeaders = headerKeys.map((k) => `${k}:${rawHeaders[k]}\n`).join('');
+  const signedHeaders = headerKeys.join(';');
+  const payloadHash = sha256Hex('');
+
+  const canonicalRequest = [
+    'GET',
+    parsed.pathname,
+    canonicalQuery,
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash,
+  ].join('\n');
+
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    scope,
+    sha256Hex(canonicalRequest),
+  ].join('\n');
+
+  const kDate = hmacSha256Raw(`AWS4${params.secretAccessKey}`, dateStamp);
+  const kRegion = hmacSha256Raw(kDate, params.region);
+  const kService = hmacSha256Raw(kRegion, service);
+  const kSigning = hmacSha256Raw(kService, 'aws4_request');
+  const signature = crypto
+    .createHmac('sha256', kSigning)
+    .update(stringToSign, 'utf8')
+    .digest('hex');
+
+  const authorization =
+    `AWS4-HMAC-SHA256 Credential=${params.accessKeyId}/${scope}, ` +
+    `SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  const res = await fetch(params.url, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/x-amz-json-1.0',
+      'User-Agent': 'aws-sdk-iOS/2.26.5 iOS/17.3',
+      'X-Amz-Date': amzDate,
+      'X-Amz-Security-Token': params.sessionToken,
+      Authorization: authorization,
+    },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => null);
+
+  if (!res || !res.ok) return null;
+  const json = (await res.json().catch(() => null)) as unknown;
+  const root = asRecord(json);
+  const state = asRecord(root?.state);
+  return asRecord(state?.reported);
+}
+
+// ---------- Normalisation des appareils ----------
 
 function convertBatteryLevel(batInfo: unknown, directPct?: unknown): number | null {
   const pct = toNum(directPct);
@@ -441,17 +612,30 @@ function parseDeviceStatusBlock(
   batteryPct: number | null;
   isOnline: boolean;
 } {
-  const status = asRecord(rawStatusInput) ?? {};
+  const raw = asRecord(rawStatusInput) ?? {};
+  // Les Shadows X-Sense STH51 / STH0A encodent les propriétés sous a/b/c/d
+  const status: Record<string, unknown> = { ...raw };
+  if (unitType === 'thermoHygrometer') {
+    if (status.a !== undefined && status.alarmStatus === undefined) status.alarmStatus = status.a;
+    if (status.b !== undefined && status.temperature === undefined) status.temperature = status.b;
+    if (status.c !== undefined && status.humidity === undefined) status.humidity = status.c;
+    if (status.d !== undefined && status.tempUnit === undefined) status.tempUnit = status.d;
+  }
 
   const tempRaw =
     toNum(status.temperature) ??
     toNum(status.temp) ??
     toNum(status.tempC) ??
     toNum(status.t);
-  const tempUnit = toStr(status.tempUnit ?? status.unit)?.toUpperCase();
+  const tempUnitRaw = toStr(status.tempUnit ?? status.temperatureUnit ?? status.unit)?.toUpperCase();
   let tempC = tempRaw;
-  if (tempC !== null && tempUnit === 'F') {
-    tempC = Math.round(((tempC - 32) * (5 / 9)) * 10) / 10;
+  if (tempC !== null && (tempUnitRaw === 'F' || tempUnitRaw === '0')) {
+    // Sous X-Sense STH, temperatureUnit === "0" ou "F" peut indiquer Fahrenheit uniquement si unit explicitement F
+    if (tempUnitRaw === 'F') {
+      tempC = Math.round(((tempC - 32) * (5 / 9)) * 10) / 10;
+    } else {
+      tempC = Math.round(tempC * 10) / 10;
+    }
   } else if (tempC !== null) {
     tempC = Math.round(tempC * 10) / 10;
   }
@@ -483,9 +667,12 @@ function parseDeviceStatusBlock(
 
   const rfLevel = toNum(status.rfLevel ?? status.rf);
   const wifiRssi = toNum(status.wifiRSSI ?? status.wifiRssi ?? status.rssi);
-  const batteryPct = convertBatteryLevel(status.batInfo ?? status.batteryLevel, status.batteryPct ?? status.battery);
+  const batteryPct = convertBatteryLevel(
+    status.batInfo ?? status.batteryLevel,
+    status.batteryPct ?? status.battery
+  );
 
-  const onlineRaw = toBool(status.online ?? status.isOnline);
+  const onlineRaw = toBool(status.online ?? status.onLine ?? status.isOnline);
   const isOnline = onlineRaw !== null ? onlineRaw : true;
 
   return {
@@ -523,13 +710,20 @@ export function normalizeXSenseInventory(rawPayload: unknown): NormalizedVendorD
     const house = asRecord(hRaw);
     if (!house) continue;
     const houseName = toStr(house.houseName ?? house.name);
-    const roomsList = Array.isArray(house.rooms) ? house.rooms : [];
     const roomNameById = new Map<string, string>();
+    const roomsList = Array.isArray(house.rooms) ? house.rooms : [];
     for (const rRaw of roomsList) {
       const rr = asRecord(rRaw);
       const rid = toStr(rr?.roomId ?? rr?.id);
       const rName = toStr(rr?.roomName ?? rr?.name);
       if (rid && rName) roomNameById.set(rid, rName);
+    }
+    const houseRoomsObj = asRecord(house.houseRooms);
+    if (houseRoomsObj) {
+      for (const [rid, rVal] of Object.entries(houseRoomsObj)) {
+        const rName = toStr(asRecord(rVal)?.roomName ?? asRecord(rVal)?.name ?? rVal);
+        if (rid && rName) roomNameById.set(rid, rName);
+      }
     }
 
     const stations = Array.isArray(house.stations)
@@ -537,7 +731,6 @@ export function normalizeXSenseInventory(rawPayload: unknown): NormalizedVendorD
       : Array.isArray(house.stationList)
         ? house.stationList
         : [];
-
     const standaloneDevices = Array.isArray(house.devices) ? house.devices : [];
 
     const processNode = (nodeRaw: unknown, parentStationName: string | null) => {
@@ -549,9 +742,9 @@ export function normalizeXSenseInventory(rawPayload: unknown): NormalizedVendorD
       seenIds.add(extId);
 
       const model =
-        toStr(node.deviceType ?? node.stationType ?? node.model ?? node.category) ?? 'X-Sense';
+        toStr(node.deviceType ?? node.stationType ?? node.category ?? node.model) ?? 'X-Sense';
       const unitType = classifyXSenseUnitType(
-        toStr(node.unitType ?? node.deviceType ?? node.stationType),
+        toStr(node.unitType ?? node.deviceType ?? node.stationType ?? node.category),
         model
       );
       const name =
@@ -562,8 +755,9 @@ export function normalizeXSenseInventory(rawPayload: unknown): NormalizedVendorD
 
       const mergedStatus = {
         ...node,
-        ...(asRecord(node.status) ?? {}),
         ...(asRecord(node.shadow) ?? {}),
+        ...(asRecord(node.status) ?? {}),
+        ...(asRecord(asRecord(node.shadow)?.status) ?? {}),
       };
       const parsed = parseDeviceStatusBlock(mergedStatus, unitType);
 
@@ -573,10 +767,12 @@ export function normalizeXSenseInventory(rawPayload: unknown): NormalizedVendorD
           : 'other';
 
       const serialNumber = toStr(node.deviceSn ?? node.stationSn ?? node.sn);
-      const firmware = toStr(node.sw ?? node.firmwareVersion ?? node.version);
-      const wifiSsid = toStr(node.ssid ?? node.wifiSsid);
-      const ipAddress = toStr(node.ip ?? node.ipAddress);
-      const macAddress = formatMacAddress(toStr(node.mac ?? node.wifiMac));
+      const firmware = toStr(mergedStatus.swMain ?? mergedStatus.sw ?? node.firmwareVersion ?? node.version);
+      const wifiSsid = toStr(mergedStatus.ssid ?? mergedStatus.wifiSsid ?? node.ssid);
+      const ipAddress = toStr(mergedStatus.ip ?? mergedStatus.ipAddress ?? node.ip);
+      const macAddress = formatMacAddress(
+        toStr(mergedStatus.mac ?? mergedStatus.wifiMac ?? node.mac ?? node.wifiMac)
+      );
 
       const rawTraits: RawDpStatus[] = [
         { code: 'xsense:unitType', value: unitType },
@@ -643,7 +839,8 @@ export function normalizeXSenseInventory(rawPayload: unknown): NormalizedVendorD
 }
 
 /**
- * Récupère l'inventaire complet X-Sense Cloud en mode strictement lecture seule.
+ * Récupère l'inventaire complet X-Sense Cloud (REST + Shadows AWS IoT en GET uniquement)
+ * en mode strictement lecture seule.
  */
 export async function fetchXSenseInventoryWithSession(
   cachedSession?: XSenseSession | null
@@ -662,7 +859,7 @@ export async function fetchXSenseInventoryWithSession(
   let session = cachedSession ?? null;
   let sessionRenewed = false;
 
-  const needNewLogin = !session || (!session.idToken && !session.refreshToken);
+  const needNewLogin = !session || (!session.accessToken && !session.refreshToken);
   if (!needNewLogin && session && session.expiresAtMs - Date.now() < 120_000) {
     try {
       session = await refreshCognitoSession(session);
@@ -677,17 +874,18 @@ export async function fetchXSenseInventoryWithSession(
       await callXSenseApi({
         apiUrl: cfg.apiUrl,
         bizCode: '101001',
-        payload: {
-          countryCode: 'FR',
-          type: '1',
-        },
+        payload: {},
+        unauth: true,
       })
     );
 
-    const region = toStr(appInfo?.cgtRegion) ?? 'eu-central-1';
-    const userPoolId = toStr(appInfo?.cgtUserPoolId);
-    const clientId = toStr(appInfo?.cgtClientId);
-    const clientSecret = toStr(appInfo?.cgtClientSecret) ?? DEFAULT_CLIENT_SECRET;
+    const region = toStr(appInfo?.cgtRegion ?? appInfo?.region) ?? 'us-east-1';
+    const userPoolId = toStr(appInfo?.userPoolId ?? appInfo?.cgtUserPoolId);
+    const clientId = toStr(appInfo?.clientId ?? appInfo?.cgtClientId);
+    const rawEncodedSecret = toStr(appInfo?.clientSecret ?? appInfo?.cgtClientSecret);
+    const clientSecret = rawEncodedSecret
+      ? decodeXSenseClientSecret(rawEncodedSecret)
+      : DEFAULT_CLIENT_SECRET;
 
     if (cfg.refreshToken && clientId) {
       session = await refreshCognitoSession({
@@ -695,6 +893,7 @@ export async function fetchXSenseInventoryWithSession(
         accessToken: '',
         refreshToken: cfg.refreshToken,
         expiresAtMs: 0,
+        email: cfg.email || undefined,
         clientId,
         userPoolId: userPoolId ?? undefined,
         region,
@@ -723,9 +922,9 @@ export async function fetchXSenseInventoryWithSession(
     apiUrl: cfg.apiUrl,
     bizCode: '102007',
     payload: {
-      utctime: Math.floor(Date.now() / 1000),
+      utctimestamp: '0',
     },
-    idToken: session.idToken,
+    accessToken: session.accessToken,
     clientSecret: secret,
   });
 
@@ -734,6 +933,23 @@ export async function fetchXSenseInventoryWithSession(
     : Array.isArray(asRecord(housesData)?.houses)
       ? (asRecord(housesData)!.houses as unknown[])
       : [];
+
+  // Récupération optionnelle des credentials AWS STS temporaires pour lire les shadows GET (lecture seule)
+  const stsUserName = session.email ?? cfg.email ?? session.userId;
+  const awsCreds = stsUserName
+    ? asRecord(
+        await callXSenseApi({
+          apiUrl: cfg.apiUrl,
+          bizCode: '101003',
+          payload: { userName: stsUserName },
+          accessToken: session.accessToken,
+          clientSecret: secret,
+        }).catch(() => null)
+      )
+    : null;
+  const awsAccessKey = toStr(awsCreds?.accessKeyId);
+  const awsSecretKey = toStr(awsCreds?.secretAccessKey);
+  const awsSessionToken = toStr(awsCreds?.sessionToken);
 
   const enrichedHouses: unknown[] = [];
   for (const hRaw of housesArr) {
@@ -744,18 +960,27 @@ export async function fetchXSenseInventoryWithSession(
       enrichedHouses.push(h);
       continue;
     }
-    const stationsData = await callXSenseApi({
-      apiUrl: cfg.apiUrl,
-      bizCode: '103007',
-      payload: {
-        houseId,
-        utctime: Math.floor(Date.now() / 1000),
-      },
-      idToken: session.idToken,
-      clientSecret: secret,
-    }).catch(() => null);
 
-    const stationsArr = Array.isArray(stationsData)
+    const [roomsData, stationsData] = await Promise.all([
+      callXSenseApi({
+        apiUrl: cfg.apiUrl,
+        bizCode: '102008',
+        payload: { houseId, utctimestamp: '0' },
+        accessToken: session.accessToken,
+        clientSecret: secret,
+      }).catch(() => null),
+      callXSenseApi({
+        apiUrl: cfg.apiUrl,
+        bizCode: '103007',
+        payload: { houseId, utctimestamp: '0' },
+        accessToken: session.accessToken,
+        clientSecret: secret,
+      }).catch(() => null),
+    ]);
+
+    const roomsObj = asRecord(roomsData);
+    const houseRooms = roomsObj?.houseRooms ?? h.houseRooms;
+    const rawStations = Array.isArray(stationsData)
       ? stationsData
       : Array.isArray(asRecord(stationsData)?.stations)
         ? (asRecord(stationsData)!.stations as unknown[])
@@ -763,9 +988,95 @@ export async function fetchXSenseInventoryWithSession(
           ? h.stations
           : [];
 
+    const mqttRegion = toStr(h.mqttRegion) ?? toStr(h.houseRegion);
+    const houseShadowBySn: Record<string, Record<string, unknown>> = {};
+
+    if (mqttRegion && awsAccessKey && awsSecretKey && awsSessionToken) {
+      for (const page of ['mainpage', '2nd_mainpage']) {
+        const rep = await fetchAwsIotShadowGet({
+          url: `https://${mqttRegion}.x-sense-iot.com/things/${houseId}/shadow?name=${page}`,
+          region: mqttRegion,
+          accessKeyId: awsAccessKey,
+          secretAccessKey: awsSecretKey,
+          sessionToken: awsSessionToken,
+        });
+        if (rep) {
+          for (const [snKey, snVal] of Object.entries(rep)) {
+            const rec = asRecord(snVal);
+            if (rec) houseShadowBySn[snKey] = { ...(houseShadowBySn[snKey] ?? {}), ...rec };
+          }
+        }
+      }
+    }
+
+    const stationsWithShadows = await Promise.all(
+      rawStations.map(async (stRaw) => {
+        const st = asRecord(stRaw);
+        if (!st) return stRaw;
+        const stSn = toStr(st.stationSn ?? st.sn);
+        const stType = toStr(st.category ?? st.stationType) ?? '';
+        let stShadow: Record<string, unknown> = stSn ? { ...(houseShadowBySn[stSn] ?? {}) } : {};
+
+        if (stSn && mqttRegion && awsAccessKey && awsSecretKey && awsSessionToken) {
+          const prefix =
+            stType === 'SBS10'
+              ? ''
+              : stType === 'XC04-WX' || stType === 'SC07-WX' || stType === 'SC06-WX'
+                ? `${stType}-`
+                : stType;
+
+          const shadowPages = [
+            `info_${stSn}`,
+            `2nd_info_${stSn}`,
+            '2nd_mainpage',
+            'mainpage',
+          ];
+          const shadowResults = await Promise.all(
+            shadowPages.map((pg) =>
+              fetchAwsIotShadowGet({
+                url: `https://${mqttRegion}.x-sense-iot.com/things/${encodeURIComponent(`${prefix}${stSn}`)}/shadow?name=${encodeURIComponent(pg)}`,
+                region: mqttRegion,
+                accessKeyId: awsAccessKey,
+                secretAccessKey: awsSecretKey,
+                sessionToken: awsSessionToken,
+              })
+            )
+          );
+          for (const sr of shadowResults) {
+            if (!sr) continue;
+            stShadow = { ...stShadow, ...sr };
+          }
+        }
+
+        const shadowDevsMap = asRecord(stShadow.devs) ?? {};
+        const childArr = Array.isArray(st.devs)
+          ? st.devs
+          : Array.isArray(st.devices)
+            ? st.devices
+            : [];
+        const updatedChildren = childArr.map((childRaw) => {
+          const child = asRecord(childRaw);
+          if (!child) return childRaw;
+          const childSn = toStr(child.deviceSn ?? child.sn);
+          const childShadow = childSn ? asRecord(shadowDevsMap[childSn]) : null;
+          return childShadow ? { ...child, shadow: childShadow } : child;
+        });
+
+        const stShadowWithoutDevs = { ...stShadow };
+        delete stShadowWithoutDevs.devs;
+
+        return {
+          ...st,
+          ...(Object.keys(stShadowWithoutDevs).length > 0 ? { shadow: stShadowWithoutDevs } : {}),
+          ...(st.devices ? { devices: updatedChildren } : { devs: updatedChildren }),
+        };
+      })
+    );
+
     enrichedHouses.push({
       ...h,
-      stations: stationsArr,
+      ...(houseRooms ? { houseRooms } : {}),
+      stations: stationsWithShadows,
     });
   }
 
