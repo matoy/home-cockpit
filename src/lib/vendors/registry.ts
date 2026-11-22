@@ -1,6 +1,6 @@
 import type { DeviceCategory, RawDpStatus, VendorId } from '@/types';
 
-export const VENDOR_IDS: readonly VendorId[] = ['tuya', 'kasa', 'home_connect', 'google_home'];
+export const VENDOR_IDS: readonly VendorId[] = ['tuya', 'kasa', 'home_connect', 'somfy', 'google_home'];
 
 export interface VendorMeta {
   id: VendorId;
@@ -42,6 +42,16 @@ export const VENDOR_REGISTRY: Record<VendorId, VendorMeta> = {
     dotClass: 'bg-cyan-400',
     description:
       'Électroménager Siemens / BSH Home Connect via Cloud OAuth (100 % lecture seule : état, programme, temps restant, températures internes)',
+  },
+  somfy: {
+    id: 'somfy',
+    label: 'Somfy',
+    shortLabel: 'SF',
+    accentColor: '#eab308',
+    badgeClass: 'border-amber-500/40 bg-amber-500/15 text-amber-300',
+    dotClass: 'bg-amber-400',
+    description:
+      'Kit de connectivité Somfy / Overkiz Cloud (100 % cloud, lecture seule : volets io/RTS, stores, capteurs)',
   },
   google_home: {
     id: 'google_home',
@@ -88,7 +98,13 @@ export interface VendorAdapter {
 }
 
 export function isValidVendorId(value: unknown): value is VendorId {
-  return value === 'tuya' || value === 'kasa' || value === 'home_connect' || value === 'google_home';
+  return (
+    value === 'tuya' ||
+    value === 'kasa' ||
+    value === 'home_connect' ||
+    value === 'somfy' ||
+    value === 'google_home'
+  );
 }
 
 export function getVendorMeta(vendor: VendorId): VendorMeta {

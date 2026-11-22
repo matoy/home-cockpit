@@ -36,6 +36,12 @@ import {
   makeHomeConnectDeviceId,
   refreshHomeConnectAccessToken,
 } from './vendors/home-connect-client';
+import { isSomfyCoverUiClass } from './covers-utils';
+import {
+  fetchSomfyInventoryWithSession,
+  getSomfyConfig,
+  makeSomfyDeviceId,
+} from './vendors/somfy-client';
 import {
   isValidVendorId,
   normalizeSystems,
@@ -98,6 +104,7 @@ export function getEnvStatus(
   const tuya = getTuyaConfig();
   const kasa = getKasaConfig();
   const hc = getHomeConnectConfig();
+  const somfy = getSomfyConfig();
   const google = getGoogleHomeConfig();
   const databaseConfigured = isDatabaseConfigured();
   return {
@@ -111,6 +118,8 @@ export function getEnvStatus(
     homeConnectConfigured: hc.configured,
     homeConnectConnected: hc.configured && homeConnectConnected,
     homeConnectEnv: hc.defaultEnv,
+    somfyConfigured: somfy.configured,
+    somfyRegion: somfy.region,
     appPasswordConfigured: isAppPasswordConfigured(),
     scheduleSecretConfigured: Boolean(process.env.SCHEDULE_SECRET?.trim()),
     googleHomeApiEnabled: google.apiEnabled,
@@ -577,6 +586,9 @@ function buildVendorConnectionSummaries(params: {
   hcEnv: HomeConnectEnv;
   hcLastSyncedAt: string | null;
   hcLastError: string | null;
+  somfyConnected: boolean;
+  somfyLastSyncedAt: string | null;
+  somfyLastError: string | null;
   ghConnected: boolean;
   ghMode: GoogleHomeMode;
   ghLastSyncedAt: string | null;
@@ -585,6 +597,7 @@ function buildVendorConnectionSummaries(params: {
   const tuyaCfg = getTuyaConfig();
   const kasaCfg = getKasaConfig();
   const hcCfg = getHomeConnectConfig();
+  const somfyCfg = getSomfyConfig();
   const googleCfg = getGoogleHomeConfig();
 
   const countFor = (vendor: VendorId) =>
@@ -622,6 +635,16 @@ function buildVendorConnectionSummaries(params: {
       lastError: params.hcLastError,
     },
     {
+      vendor: 'somfy',
+      label: VENDOR_REGISTRY.somfy.label,
+      mode: 'cloud_account',
+      configured: somfyCfg.configured,
+      connected: params.somfyConnected,
+      devicesCount: countFor('somfy'),
+      lastSyncedAt: params.somfyLastSyncedAt,
+      lastError: params.somfyLastError,
+    },
+    {
       vendor: 'google_home',
       label: VENDOR_REGISTRY.google_home.label,
       mode: params.ghMode,
@@ -649,6 +672,7 @@ export async function getDashboardData(
     const tuyaState = state.vendorConnections.tuya;
     const kasaState = state.vendorConnections.kasa;
     const hcState = state.vendorConnections.home_connect;
+    const somfyState = state.vendorConnections.somfy;
     const hcEnv: HomeConnectEnv =
       hcState.mode === 'oauth_simulator'
         ? 'simulator'
@@ -681,6 +705,9 @@ export async function getDashboardData(
       hcEnv,
       hcLastSyncedAt: hcState.lastSyncedAt,
       hcLastError: hcState.lastError,
+      somfyConnected: somfyState.connected,
+      somfyLastSyncedAt: somfyState.lastSyncedAt,
+      somfyLastError: somfyState.lastError,
       ghConnected: ghState.connected,
       ghMode: env.googleHomeMode,
       ghLastSyncedAt: ghState.lastSyncedAt,
@@ -749,11 +776,13 @@ export async function getDashboardData(
   const tuyaConn = connRows.find((c) => c.vendor === 'tuya');
   const kasaConn = connRows.find((c) => c.vendor === 'kasa');
   const hcConn = connRows.find((c) => c.vendor === 'home_connect');
+  const somfyConn = connRows.find((c) => c.vendor === 'somfy');
   const ghConn = connRows.find((c) => c.vendor === 'google_home');
   const googleCfg = getGoogleHomeConfig();
   const tuyaCfg = getTuyaConfig();
   const kasaCfg = getKasaConfig();
   const hcCfg = getHomeConnectConfig();
+  const somfyCfg = getSomfyConfig();
 
   const ghMode: GoogleHomeMode =
     ghConn?.mode === 'mcp' || ghConn?.mode === 'sdm' ? ghConn.mode : googleCfg.defaultMode;
@@ -774,6 +803,10 @@ export async function getDashboardData(
   const hcConnected =
     hcCfg.configured &&
     Boolean(hcConn && hcConn.status === 'connected' && (hcConn.accessToken || hcConn.refreshToken));
+  const somfyConnected =
+    somfyCfg.configured ||
+    somfyConn?.status === 'connected' ||
+    mappedDevices.some((d) => d.systems.includes('somfy'));
 
   const env: EnvStatus = {
     ...getEnvStatus(ghConnected, hcConnected),
@@ -793,6 +826,9 @@ export async function getDashboardData(
     hcEnv,
     hcLastSyncedAt: hcConn?.lastSyncedAt ? hcConn.lastSyncedAt.toISOString() : null,
     hcLastError: hcConn?.lastError ?? null,
+    somfyConnected,
+    somfyLastSyncedAt: somfyConn?.lastSyncedAt ? somfyConn.lastSyncedAt.toISOString() : null,
+    somfyLastError: somfyConn?.lastError ?? null,
     ghConnected,
     ghMode,
     ghLastSyncedAt: ghConn?.lastSyncedAt ? ghConn.lastSyncedAt.toISOString() : null,
@@ -2926,11 +2962,459 @@ async function collectHomeConnectStatusInDb(
   return updatedCount;
 }
 
+async function loadCachedSomfySession(db: AppDatabase): Promise<{ cachedCookie: string | null }> {
+  const rows = await db
+    .select()
+    .from(vendorConnections)
+    .where(eq(vendorConnections.vendor, 'somfy'))
+    .limit(1);
+  const conn = rows[0];
+  if (!conn) return { cachedCookie: null };
+  return { cachedCookie: decryptSecret(conn.accessToken) };
+}
+
+async function persistSomfyConnectionInDb(
+  db: AppDatabase,
+  params: {
+    status: 'connected' | 'error' | 'disconnected';
+    sessionCookie?: string | null;
+    region: string;
+    baseUrl?: string | null;
+    lastSyncedAt?: Date;
+    lastError: string | null;
+  }
+): Promise<void> {
+  const now = new Date();
+  const encryptedCookie = params.sessionCookie ? encryptSecret(params.sessionCookie) : undefined;
+  const config = {
+    region: params.region,
+    ...(params.baseUrl ? { baseUrl: params.baseUrl } : {}),
+  };
+
+  await db
+    .insert(vendorConnections)
+    .values({
+      vendor: 'somfy',
+      mode: 'cloud_account',
+      status: params.status,
+      ...(encryptedCookie ? { accessToken: encryptedCookie } : {}),
+      config,
+      ...(params.lastSyncedAt ? { lastSyncedAt: params.lastSyncedAt } : {}),
+      lastError: params.lastError,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: vendorConnections.vendor,
+      set: {
+        mode: 'cloud_account',
+        status: params.status,
+        ...(encryptedCookie ? { accessToken: encryptedCookie } : {}),
+        config,
+        ...(params.lastSyncedAt ? { lastSyncedAt: params.lastSyncedAt } : {}),
+        lastError: params.lastError,
+        updatedAt: now,
+      },
+    });
+}
+
+export async function syncSomfyDevices(): Promise<{
+  syncedCount: number;
+  newCount: number;
+  mode: 'live' | 'demo';
+  message: string;
+}> {
+  const db = getDb();
+  const somfyCfg = getSomfyConfig();
+  const now = new Date();
+
+  if (!somfyCfg.configured) {
+    if (!db) {
+      const state = getDemoState();
+      state.vendorConnections.somfy.lastSyncedAt = now.toISOString();
+      state.vendorConnections.somfy.lastError = null;
+      const somfyCount = state.devices.filter((d) => d.systems.includes('somfy')).length;
+      return {
+        syncedCount: somfyCount,
+        newCount: 0,
+        mode: 'demo',
+        message: `Mode démo actif : ${somfyCount} équipement(s) Somfy simulé(s) déjà synchronisé(s).`,
+      };
+    }
+    throw new Error(
+      'Identifiants Somfy manquants. Configurez SOMFY_EMAIL et SOMFY_PASSWORD dans Vercel / .env.local.'
+    );
+  }
+
+  if (!db) {
+    const res = await fetchSomfyInventoryWithSession(null);
+    const inventory = res.inventory;
+    const state = getDemoState();
+    const { roomNameToId } = ensureMissingRoomsInDemo(inventory.roomNames);
+    let newCount = 0;
+
+    for (const sf of inventory.devices) {
+      const mappedRoomId = sf.roomName
+        ? (roomNameToId.get(sf.roomName.trim().toLowerCase()) ?? null)
+        : null;
+      const existingLink = state.vendorLinks.find(
+        (l) => l.vendor === 'somfy' && l.externalId === sf.externalId
+      );
+      const existing = existingLink
+        ? state.devices.find((d) => d.id === existingLink.deviceId)
+        : undefined;
+      const isCover = isSomfyCoverUiClass(sf.deviceType);
+
+      if (existing) {
+        existing.systems = mergeDeviceSystems(
+          normalizeSystems(existing.systems, existing.primaryVendor),
+          'somfy',
+          existing.primaryVendor
+        );
+        if (existing.primaryVendor === 'tuya') {
+          if (existing.roomId === null && mappedRoomId !== null) existing.roomId = mappedRoomId;
+        } else {
+          existing.name = sf.name;
+          if (mappedRoomId !== null) existing.roomId = mappedRoomId;
+          existing.category = sf.category;
+          existing.tuyaCategory = sf.deviceType ?? 'somfy';
+          existing.productName =
+            [sf.manufacturer, sf.deviceType].filter(Boolean).join(' · ') || existing.productName;
+          existing.isOnline = sf.isOnline;
+          existing.lastRawStatus = sf.rawTraits;
+          existing.lastSeenAt = now.toISOString();
+          if (sf.tempC !== null) existing.lastTempC = sf.tempC;
+          if (sf.humidityPct !== null) existing.lastHumidityPct = sf.humidityPct;
+          if (sf.batteryPct !== null) existing.lastBatteryPct = sf.batteryPct;
+          if (sf.contactOpen !== null) existing.lastContactOpen = sf.contactOpen;
+        }
+        if (existingLink) {
+          existingLink.externalName = sf.name;
+        }
+      } else {
+        let candidateId = makeSomfyDeviceId(sf.externalId);
+        if (state.devices.some((d) => d.id === candidateId)) {
+          candidateId = `${candidateId}_${now.getTime().toString(36).slice(-4)}`;
+        }
+        state.devices.push({
+          id: candidateId,
+          name: sf.name,
+          customName: null,
+          primaryVendor: 'somfy',
+          systems: ['somfy'],
+          roomId: mappedRoomId,
+          category: sf.category,
+          tuyaCategory: sf.deviceType ?? 'somfy',
+          productName: [sf.manufacturer, sf.deviceType].filter(Boolean).join(' · ') || 'Somfy Overkiz',
+          ipAddress: null,
+          macAddress: null,
+          isOnline: sf.isOnline,
+          isMonitored: isCover || sf.category !== 'other',
+          excludeFromTotals: false,
+          energyMode: 'hybrid',
+          dpConfig: {},
+          lastRawStatus: sf.rawTraits,
+          lastSeenAt: now.toISOString(),
+          lastPowerW: null,
+          lastVoltageV: null,
+          lastAddEleKwh: null,
+          lastTempC: sf.tempC,
+          lastHumidityPct: sf.humidityPct,
+          lastBatteryPct: sf.batteryPct,
+          lastContactOpen: sf.contactOpen,
+        });
+        state.vendorLinks.push({
+          id: state.nextLinkId++,
+          deviceId: candidateId,
+          vendor: 'somfy',
+          externalId: sf.externalId,
+          externalName: sf.name,
+          isPrimaryTelemetry: true,
+          linkedAt: now.toISOString(),
+        });
+        newCount++;
+      }
+    }
+
+    state.vendorConnections.somfy = {
+      mode: 'cloud_account',
+      connected: true,
+      lastSyncedAt: now.toISOString(),
+      lastError: inventory.warning ?? null,
+    };
+
+    const baseMsg = `${inventory.devices.length} équipement(s) et ${inventory.roomNames.length} pièce(s) synchronisés depuis Somfy Cloud (${newCount} nouveau(x)).`;
+    return {
+      syncedCount: inventory.devices.length,
+      newCount,
+      mode: 'demo',
+      message: inventory.warning ? `${baseMsg} (${inventory.warning})` : baseMsg,
+    };
+  }
+
+  await seedDefaultDataIfEmpty(db);
+  const { cachedCookie } = await loadCachedSomfySession(db);
+  let res;
+  try {
+    res = await fetchSomfyInventoryWithSession(cachedCookie);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur synchronisation Somfy Cloud';
+    await persistSomfyConnectionInDb(db, {
+      status: 'error',
+      region: somfyCfg.region,
+      baseUrl: somfyCfg.baseUrl,
+      lastError: msg,
+    });
+    throw err;
+  }
+
+  const inventory = res.inventory;
+  const { roomNameToId } = await ensureMissingRoomsInDb(db, inventory.roomNames);
+  const [existingDeviceRows, somfyLinkRows] = await Promise.all([
+    db.select().from(devices),
+    db.select().from(deviceVendorLinks).where(eq(deviceVendorLinks.vendor, 'somfy')),
+  ]);
+
+  const deviceById = new Map(existingDeviceRows.map((d) => [d.id, d]));
+  const linkByExternalId = new Map(somfyLinkRows.map((l) => [l.externalId, l]));
+  let newCount = 0;
+
+  for (const sf of inventory.devices) {
+    const mappedRoomId = sf.roomName
+      ? (roomNameToId.get(sf.roomName.trim().toLowerCase()) ?? null)
+      : null;
+    const existingLink = linkByExternalId.get(sf.externalId);
+    const linkedDevice = existingLink ? deviceById.get(existingLink.deviceId) : undefined;
+    const isCover = isSomfyCoverUiClass(sf.deviceType);
+    const productName =
+      [sf.manufacturer, sf.deviceType].filter(Boolean).join(' · ') || 'Somfy Overkiz';
+    const vendorMetadata = {
+      manufacturer: sf.manufacturer,
+      model: sf.model,
+      deviceType: sf.deviceType,
+    };
+
+    if (linkedDevice) {
+      const primaryVendor: VendorId = isValidVendorId(linkedDevice.primaryVendor)
+        ? linkedDevice.primaryVendor
+        : 'somfy';
+      const nextSystems = mergeDeviceSystems(
+        normalizeSystems(linkedDevice.systems, primaryVendor),
+        'somfy',
+        primaryVendor
+      );
+
+      if (primaryVendor === 'tuya') {
+        await db
+          .update(devices)
+          .set({
+            systems: nextSystems,
+            roomId: linkedDevice.roomId ?? mappedRoomId,
+          })
+          .where(eq(devices.id, linkedDevice.id));
+      } else {
+        const nextRoomId = mappedRoomId ?? linkedDevice.roomId;
+        await db
+          .update(devices)
+          .set({
+            name: sf.name,
+            systems: nextSystems,
+            roomId: nextRoomId,
+            category: sf.category,
+            tuyaCategory: sf.deviceType ?? 'somfy',
+            productName,
+            isOnline: sf.isOnline,
+            lastRawStatus: sf.rawTraits,
+            lastSeenAt: now,
+            ...(sf.tempC !== null ? { lastTempC: sf.tempC } : {}),
+            ...(sf.humidityPct !== null ? { lastHumidityPct: sf.humidityPct } : {}),
+            ...(sf.batteryPct !== null ? { lastBatteryPct: sf.batteryPct } : {}),
+            ...(sf.contactOpen !== null ? { lastContactOpen: sf.contactOpen } : {}),
+          })
+          .where(eq(devices.id, linkedDevice.id));
+
+        if (nextRoomId !== null && nextRoomId !== linkedDevice.roomId) {
+          await db
+            .update(metricReadings)
+            .set({ roomId: nextRoomId })
+            .where(and(eq(metricReadings.deviceId, linkedDevice.id), isNull(metricReadings.roomId)));
+        }
+      }
+
+      await db
+        .update(deviceVendorLinks)
+        .set({
+          externalName: sf.name,
+          vendorMetadata,
+        })
+        .where(eq(deviceVendorLinks.id, existingLink!.id));
+    } else {
+      let candidateId = makeSomfyDeviceId(sf.externalId);
+      if (deviceById.has(candidateId)) {
+        candidateId = `${candidateId}_${now.getTime().toString(36).slice(-4)}`;
+      }
+      const isMonitored = isCover || sf.category !== 'other';
+
+      const [inserted] = await db
+        .insert(devices)
+        .values({
+          id: candidateId,
+          name: sf.name,
+          customName: null,
+          primaryVendor: 'somfy',
+          systems: ['somfy'],
+          roomId: mappedRoomId,
+          category: sf.category,
+          tuyaCategory: sf.deviceType ?? 'somfy',
+          productName,
+          ipAddress: null,
+          macAddress: null,
+          isOnline: sf.isOnline,
+          isMonitored,
+          excludeFromTotals: false,
+          energyMode: 'hybrid',
+          dpConfig: {},
+          lastRawStatus: sf.rawTraits,
+          lastSeenAt: now,
+          lastPowerW: null,
+          lastVoltageV: null,
+          lastAddEleKwh: null,
+          lastTempC: sf.tempC,
+          lastHumidityPct: sf.humidityPct,
+          lastBatteryPct: sf.batteryPct,
+          lastContactOpen: sf.contactOpen,
+        })
+        .returning();
+
+      await db
+        .insert(deviceVendorLinks)
+        .values({
+          deviceId: candidateId,
+          vendor: 'somfy',
+          externalId: sf.externalId,
+          externalName: sf.name,
+          vendorMetadata,
+          isPrimaryTelemetry: true,
+          linkedAt: now,
+        })
+        .onConflictDoNothing();
+
+      deviceById.set(candidateId, inserted);
+      newCount++;
+    }
+  }
+
+  await persistSomfyConnectionInDb(db, {
+    status: 'connected',
+    sessionCookie: res.sessionRenewed || !cachedCookie ? res.sessionCookie : undefined,
+    region: res.region,
+    baseUrl: res.baseUrl,
+    lastSyncedAt: now,
+    lastError: inventory.warning ?? null,
+  });
+
+  const baseMsg = `${inventory.devices.length} équipement(s) et ${inventory.roomNames.length} pièce(s) synchronisés depuis Somfy Cloud (${newCount} nouveau(x)).`;
+  return {
+    syncedCount: inventory.devices.length,
+    newCount,
+    mode: 'live',
+    message: inventory.warning ? `${baseMsg} (${inventory.warning})` : baseMsg,
+  };
+}
+
+async function collectSomfyReadingsInDb(
+  db: AppDatabase,
+  somfyDevices: Array<typeof devices.$inferSelect>,
+  now: Date
+): Promise<{ updatedCount: number; readingsInserted: number }> {
+  const somfyCfg = getSomfyConfig();
+  if (somfyDevices.length === 0 || !somfyCfg.configured) {
+    return { updatedCount: 0, readingsInserted: 0 };
+  }
+
+  const { cachedCookie } = await loadCachedSomfySession(db);
+  let res;
+  try {
+    res = await fetchSomfyInventoryWithSession(cachedCookie);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur collecte Somfy Cloud';
+    await persistSomfyConnectionInDb(db, {
+      status: 'error',
+      region: somfyCfg.region,
+      baseUrl: somfyCfg.baseUrl,
+      lastError: msg,
+    });
+    throw err;
+  }
+
+  await persistSomfyConnectionInDb(db, {
+    status: 'connected',
+    sessionCookie: res.sessionRenewed || !cachedCookie ? res.sessionCookie : undefined,
+    region: res.region,
+    baseUrl: res.baseUrl,
+    lastError: res.inventory.warning ?? null,
+  });
+
+  const somfyLinks = await db
+    .select()
+    .from(deviceVendorLinks)
+    .where(eq(deviceVendorLinks.vendor, 'somfy'));
+  const deviceIdByExternalId = new Map(somfyLinks.map((l) => [l.externalId, l.deviceId]));
+  const deviceById = new Map(somfyDevices.map((d) => [d.id, d]));
+
+  const readingsToInsert: Array<typeof metricReadings.$inferInsert> = [];
+  let updatedCount = 0;
+
+  for (const sf of res.inventory.devices) {
+    const devId = deviceIdByExternalId.get(sf.externalId) ?? makeSomfyDeviceId(sf.externalId);
+    const dev = deviceById.get(devId);
+    if (!dev || !dev.isMonitored) continue;
+
+    await db
+      .update(devices)
+      .set({
+        isOnline: sf.isOnline,
+        lastRawStatus: sf.rawTraits,
+        lastSeenAt: now,
+        ...(sf.tempC !== null ? { lastTempC: sf.tempC } : {}),
+        ...(sf.humidityPct !== null ? { lastHumidityPct: sf.humidityPct } : {}),
+        ...(sf.batteryPct !== null ? { lastBatteryPct: sf.batteryPct } : {}),
+        ...(sf.contactOpen !== null ? { lastContactOpen: sf.contactOpen } : {}),
+      })
+      .where(eq(devices.id, dev.id));
+    updatedCount++;
+
+    const hasClimate = sf.tempC !== null || sf.humidityPct !== null;
+    const hasContact = sf.contactOpen !== null;
+    if (hasClimate || hasContact) {
+      readingsToInsert.push({
+        deviceId: dev.id,
+        roomId: dev.roomId,
+        recordedAt: now,
+        powerW: null,
+        voltageV: null,
+        energyKwh: null,
+        energySource: null,
+        tempC: sf.tempC,
+        humidityPct: sf.humidityPct,
+        contactOpen: sf.contactOpen,
+      });
+    }
+  }
+
+  if (readingsToInsert.length > 0) {
+    await db.insert(metricReadings).values(readingsToInsert);
+  }
+
+  return { updatedCount, readingsInserted: readingsToInsert.length };
+}
+
 export async function runCollection(trigger: 'schedule' | 'manual'): Promise<CollectionLogRecord> {
   const db = getDb();
   const tuya = getTuyaConfig();
   const kasa = getKasaConfig();
   const hcCfg = getHomeConnectConfig();
+  const somfyCfg = getSomfyConfig();
+  const ghCfg = getGoogleHomeConfig();
   const startedMs = Date.now();
 
   if (!tuya.configured) {
@@ -2941,8 +3425,9 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
     const now = new Date();
     try {
       let allDevices = await db.select().from(devices);
-      if (allDevices.length === 0 && kasa.configured) {
-        await syncKasaDevices();
+      if (allDevices.length === 0) {
+        if (kasa.configured) await syncKasaDevices();
+        if (somfyCfg.configured) await syncSomfyDevices();
         allDevices = await db.select().from(devices);
       }
 
@@ -2958,6 +3443,12 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           !d.id.startsWith('manual_') &&
           d.primaryVendor === 'home_connect'
       );
+      const somfyMonitored = allDevices.filter(
+        (d) =>
+          d.isMonitored &&
+          !d.id.startsWith('manual_') &&
+          d.primaryVendor === 'somfy'
+      );
       const ghMonitored = allDevices.filter(
         (d) =>
           d.isMonitored &&
@@ -2965,33 +3456,52 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           d.primaryVendor === 'google_home'
       );
 
+      const hasFallbackVendors =
+        kasa.configured || hcCfg.configured || (ghCfg.apiEnabled && ghMonitored.length > 0);
       const kasaInserted = kasa.configured
         ? await collectKasaReadingsInDb(db, kasaMonitored, now)
         : 0;
+      const somfyRes = somfyCfg.configured
+        ? await collectSomfyReadingsInDb(db, somfyMonitored, now).catch((err) => {
+          if (!hasFallbackVendors) throw err;
+          return { updatedCount: 0, readingsInserted: 0 };
+        })
+        : { updatedCount: 0, readingsInserted: 0 };
       const hcUpdated = hcCfg.configured
         ? await collectHomeConnectStatusInDb(db, hcMonitored, now).catch((err) => {
-          if (!kasa.configured && ghMonitored.length === 0) throw err;
+          if (!kasa.configured && !somfyCfg.configured && (!ghCfg.apiEnabled || ghMonitored.length === 0)) {
+            throw err;
+          }
           return 0;
         })
         : 0;
-      const ghInserted = await collectGoogleHomeReadingsInDb(db, ghMonitored, now).catch((err) => {
-        if (!kasa.configured && hcMonitored.length === 0) throw err;
-        return 0;
-      });
+      const ghInserted = ghCfg.apiEnabled
+        ? await collectGoogleHomeReadingsInDb(db, ghMonitored, now).catch((err) => {
+          if (!kasa.configured && !somfyCfg.configured && hcMonitored.length === 0) throw err;
+          return 0;
+        })
+        : 0;
 
       if (
         kasa.configured ||
+        somfyCfg.configured ||
+        somfyRes.updatedCount > 0 ||
+        somfyMonitored.length > 0 ||
         hcUpdated > 0 ||
         hcMonitored.length > 0 ||
         ghInserted > 0 ||
-        ghMonitored.length > 0
+        (ghCfg.apiEnabled && ghMonitored.length > 0)
       ) {
         const [logRow] = await db
           .insert(collectionLogs)
           .values({
             trigger,
-            devicesCount: kasaMonitored.length + hcMonitored.length + ghMonitored.length,
-            readingsInserted: kasaInserted + ghInserted,
+            devicesCount:
+              kasaMonitored.length +
+              somfyMonitored.length +
+              hcMonitored.length +
+              (ghCfg.apiEnabled ? ghMonitored.length : 0),
+            readingsInserted: kasaInserted + somfyRes.readingsInserted + ghInserted,
             status: 'success',
             errorMessage: null,
             durationMs: Date.now() - startedMs,
@@ -3003,7 +3513,7 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       const msg =
         err instanceof Error
           ? err.message
-          : 'Erreur collecte Kasa / Siemens Home Connect / Google Home';
+          : 'Erreur collecte Kasa / Somfy / Siemens Home Connect / Google Home';
       const [logRow] = await db
         .insert(collectionLogs)
         .values({
@@ -3178,6 +3688,12 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
         !d.id.startsWith('manual_') &&
         d.primaryVendor === 'home_connect'
     );
+    const somfyMonitored = allDevices.filter(
+      (d) =>
+        d.isMonitored &&
+        !d.id.startsWith('manual_') &&
+        d.primaryVendor === 'somfy'
+    );
     const googleMonitored = allDevices.filter(
       (d) =>
         d.isMonitored &&
@@ -3251,8 +3767,12 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       await db.insert(metricReadings).values(readingsToInsert);
     }
 
-    const [kasaInserted, ghInserted] = await Promise.all([
+    const [kasaInserted, somfyRes, ghInserted] = await Promise.all([
       collectKasaReadingsInDb(db, kasaMonitored, now).catch(() => 0),
+      collectSomfyReadingsInDb(db, somfyMonitored, now).catch(() => ({
+        updatedCount: 0,
+        readingsInserted: 0,
+      })),
       collectGoogleHomeReadingsInDb(db, googleMonitored, now).catch(() => 0),
       collectHomeConnectStatusInDb(db, hcMonitored, now).catch(() => 0),
     ]);
@@ -3262,8 +3782,13 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       .values({
         trigger,
         devicesCount:
-          tuyaMonitored.length + kasaMonitored.length + hcMonitored.length + googleMonitored.length,
-        readingsInserted: readingsToInsert.length + kasaInserted + ghInserted,
+          tuyaMonitored.length +
+          kasaMonitored.length +
+          somfyMonitored.length +
+          hcMonitored.length +
+          (ghCfg.apiEnabled ? googleMonitored.length : 0),
+        readingsInserted:
+          readingsToInsert.length + kasaInserted + somfyRes.readingsInserted + ghInserted,
         status: 'success',
         errorMessage: null,
         durationMs: Date.now() - startedMs,
@@ -3382,7 +3907,7 @@ export async function deleteRoom(id: number): Promise<void> {
 }
 
 export interface RoomVendorSyncResult {
-  vendor: 'tuya' | 'kasa' | 'google_home' | 'all';
+  vendor: 'tuya' | 'kasa' | 'somfy' | 'google_home' | 'all';
   roomsFound: number;
   createdCount: number;
   assignedDevicesCount: number;
@@ -3785,11 +4310,168 @@ async function syncRoomsFromKasa(): Promise<RoomVendorSyncResult> {
   };
 }
 
+async function syncRoomsFromSomfy(): Promise<RoomVendorSyncResult> {
+  const db = getDb();
+  const somfyCfg = getSomfyConfig();
+  const now = new Date();
+
+  if (!somfyCfg.configured) {
+    if (!db) {
+      const state = getDemoState();
+      state.vendorConnections.somfy.lastSyncedAt = now.toISOString();
+      state.vendorConnections.somfy.lastError = null;
+      return {
+        vendor: 'somfy',
+        roomsFound: state.rooms.length,
+        createdCount: 0,
+        assignedDevicesCount: 0,
+        mode: 'demo',
+        message: `Mode démo actif : ${state.rooms.length} pièce(s) Somfy Cloud simulée(s) déjà disponible(s).`,
+      };
+    }
+    throw new Error(
+      'Identifiants Somfy manquants. Configurez SOMFY_EMAIL et SOMFY_PASSWORD dans Vercel / .env.local.'
+    );
+  }
+
+  if (!db) {
+    const res = await fetchSomfyInventoryWithSession(null);
+    const inventory = res.inventory;
+    const state = getDemoState();
+    const { roomNameToId, createdCount } = ensureMissingRoomsInDemo(inventory.roomNames);
+    let assignedDevicesCount = 0;
+
+    for (const sf of inventory.devices) {
+      if (!sf.roomName) continue;
+      const mappedRoomId = roomNameToId.get(sf.roomName.trim().toLowerCase()) ?? null;
+      if (mappedRoomId === null) continue;
+      const existingLink = state.vendorLinks.find(
+        (l) => l.vendor === 'somfy' && l.externalId === sf.externalId
+      );
+      const linkedDevice = existingLink
+        ? state.devices.find((d) => d.id === existingLink.deviceId)
+        : undefined;
+      if (!linkedDevice) continue;
+      const shouldUpdate =
+        linkedDevice.primaryVendor === 'tuya'
+          ? linkedDevice.roomId === null
+          : linkedDevice.roomId !== mappedRoomId;
+      if (shouldUpdate) {
+        linkedDevice.roomId = mappedRoomId;
+        assignedDevicesCount++;
+      }
+    }
+
+    state.vendorConnections.somfy = {
+      mode: 'cloud_account',
+      connected: true,
+      lastSyncedAt: now.toISOString(),
+      lastError: inventory.warning ?? null,
+    };
+
+    const baseMsg = `Somfy Cloud : ${inventory.roomNames.length} pièce(s) détectée(s) (${createdCount} créée(s), ${assignedDevicesCount} équipement(s) rattaché(s)).`;
+    return {
+      vendor: 'somfy',
+      roomsFound: inventory.roomNames.length,
+      createdCount,
+      assignedDevicesCount,
+      mode: 'demo',
+      message: inventory.warning ? `${baseMsg} (${inventory.warning})` : baseMsg,
+    };
+  }
+
+  await seedDefaultDataIfEmpty(db);
+  const { cachedCookie } = await loadCachedSomfySession(db);
+  let res;
+  try {
+    res = await fetchSomfyInventoryWithSession(cachedCookie);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur synchronisation pièces Somfy Cloud';
+    await persistSomfyConnectionInDb(db, {
+      status: 'error',
+      region: somfyCfg.region,
+      baseUrl: somfyCfg.baseUrl,
+      lastError: msg,
+    });
+    throw err;
+  }
+
+  const inventory = res.inventory;
+  const { roomNameToId, createdCount } = await ensureMissingRoomsInDb(db, inventory.roomNames);
+  const [existingDeviceRows, somfyLinkRows] = await Promise.all([
+    db
+      .select({
+        id: devices.id,
+        primaryVendor: devices.primaryVendor,
+        roomId: devices.roomId,
+      })
+      .from(devices),
+    db.select().from(deviceVendorLinks).where(eq(deviceVendorLinks.vendor, 'somfy')),
+  ]);
+
+  const deviceById = new Map(existingDeviceRows.map((d) => [d.id, d]));
+  const linkByExternalId = new Map(somfyLinkRows.map((l) => [l.externalId, l]));
+
+  let assignedDevicesCount = 0;
+  const updatedDeviceIds = new Set<string>();
+
+  for (const sf of inventory.devices) {
+    if (!sf.roomName) continue;
+    const mappedRoomId = roomNameToId.get(sf.roomName.trim().toLowerCase()) ?? null;
+    if (mappedRoomId === null) continue;
+
+    const existingLink = linkByExternalId.get(sf.externalId);
+    const linkedDevice = existingLink ? deviceById.get(existingLink.deviceId) : undefined;
+    if (!linkedDevice || updatedDeviceIds.has(linkedDevice.id)) continue;
+
+    const primaryVendor: VendorId = isValidVendorId(linkedDevice.primaryVendor)
+      ? linkedDevice.primaryVendor
+      : 'somfy';
+    const shouldUpdate =
+      primaryVendor === 'tuya'
+        ? linkedDevice.roomId === null
+        : linkedDevice.roomId !== mappedRoomId;
+
+    if (shouldUpdate) {
+      await db
+        .update(devices)
+        .set({ roomId: mappedRoomId })
+        .where(eq(devices.id, linkedDevice.id));
+      await db
+        .update(metricReadings)
+        .set({ roomId: mappedRoomId })
+        .where(and(eq(metricReadings.deviceId, linkedDevice.id), isNull(metricReadings.roomId)));
+      updatedDeviceIds.add(linkedDevice.id);
+      assignedDevicesCount++;
+    }
+  }
+
+  await persistSomfyConnectionInDb(db, {
+    status: 'connected',
+    sessionCookie: res.sessionRenewed || !cachedCookie ? res.sessionCookie : undefined,
+    region: res.region,
+    baseUrl: res.baseUrl,
+    lastSyncedAt: now,
+    lastError: inventory.warning ?? null,
+  });
+
+  const baseMsg = `Somfy Cloud : ${inventory.roomNames.length} pièce(s) détectée(s) (${createdCount} créée(s), ${assignedDevicesCount} équipement(s) rattaché(s)).`;
+  return {
+    vendor: 'somfy',
+    roomsFound: inventory.roomNames.length,
+    createdCount,
+    assignedDevicesCount,
+    mode: 'live',
+    message: inventory.warning ? `${baseMsg} (${inventory.warning})` : baseMsg,
+  };
+}
+
 export async function syncRoomsFromVendor(
-  vendor: 'tuya' | 'kasa' | 'google_home' | 'all' = 'all'
+  vendor: 'tuya' | 'kasa' | 'somfy' | 'google_home' | 'all' = 'all'
 ): Promise<RoomVendorSyncResult> {
   if (vendor === 'tuya') return syncRoomsFromTuya();
   if (vendor === 'kasa') return syncRoomsFromKasa();
+  if (vendor === 'somfy') return syncRoomsFromSomfy();
   if (vendor === 'google_home') return syncRoomsFromGoogleHome();
 
   const db = getDb();
@@ -3799,6 +4481,7 @@ export async function syncRoomsFromVendor(
   if (!db) {
     tasks.push({ label: 'Tuya', run: syncRoomsFromTuya });
     tasks.push({ label: 'Kasa', run: syncRoomsFromKasa });
+    tasks.push({ label: 'Somfy', run: syncRoomsFromSomfy });
     if (googleApiEnabled) {
       tasks.push({ label: 'Google Home', run: syncRoomsFromGoogleHome });
     }
@@ -3808,6 +4491,9 @@ export async function syncRoomsFromVendor(
     }
     if (getKasaConfig().configured) {
       tasks.push({ label: 'Kasa', run: syncRoomsFromKasa });
+    }
+    if (getSomfyConfig().configured) {
+      tasks.push({ label: 'Somfy', run: syncRoomsFromSomfy });
     }
     if (googleApiEnabled) {
       const ghRows = await db
@@ -3827,8 +4513,8 @@ export async function syncRoomsFromVendor(
     if (tasks.length === 0) {
       throw new Error(
         googleApiEnabled
-          ? 'Aucun système configuré ou connecté pour synchroniser les pièces (configurez Tuya, Kasa ou connectez Google Home).'
-          : 'Aucun système configuré pour synchroniser les pièces (configurez Tuya ou Kasa).'
+          ? 'Aucun système configuré ou connecté pour synchroniser les pièces (configurez Tuya, Kasa, Somfy ou connectez Google Home).'
+          : 'Aucun système configuré pour synchroniser les pièces (configurez Tuya, Kasa ou Somfy).'
       );
     }
   }

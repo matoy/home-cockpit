@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { hasValidHumidityMeasurement, hasValidTempMeasurement } from '@/lib/device-utils';
 import { extractHomeConnectSummary } from '@/lib/vendors/home-connect-display';
+import { extractSomfyDisplaySummary } from '@/lib/vendors/somfy-display';
 import { VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import type { ComfortStatus, DashboardPayload, TabId } from '@/types';
 
@@ -261,6 +262,7 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                     <div className="mt-3 space-y-1.5">
                       {rs.devices.map((dev) => {
                         const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
+                        const somfySummary = extractSomfyDisplaySummary(dev);
                         return (
                           <div
                             key={dev.id}
@@ -318,6 +320,20 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                                   }
                                 >
                                   {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
+                                </span>
+                              )}
+                              {somfySummary?.cover && (
+                                <span
+                                  className={
+                                    somfySummary.cover.state === 'closed'
+                                      ? 'text-emerald-300'
+                                      : somfySummary.cover.state === 'open'
+                                        ? 'text-sky-300'
+                                        : 'text-amber-300'
+                                  }
+                                  title={somfySummary.cover.kindLabel}
+                                >
+                                  {somfySummary.compactBadge}
                                 </span>
                               )}
                               {hcSummary && (hcSummary.compactText || hcSummary.doorOpen) && (

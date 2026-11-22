@@ -1,6 +1,6 @@
 export type DeviceCategory = 'power' | 'climate' | 'contact' | 'hybrid' | 'other';
 
-export type VendorId = 'tuya' | 'kasa' | 'home_connect' | 'google_home';
+export type VendorId = 'tuya' | 'kasa' | 'home_connect' | 'somfy' | 'google_home';
 
 export type SystemFilter = 'all' | VendorId;
 
@@ -21,6 +21,7 @@ export type TabId =
   | 'energy'
   | 'climate'
   | 'contacts'
+  | 'covers'
   | 'automations'
   | 'devices'
   | 'rooms'
@@ -229,6 +230,8 @@ export interface EnvStatus {
   homeConnectConfigured: boolean;
   homeConnectConnected: boolean;
   homeConnectEnv: HomeConnectEnv;
+  somfyConfigured: boolean;
+  somfyRegion: string;
   appPasswordConfigured: boolean;
   scheduleSecretConfigured: boolean;
   googleHomeApiEnabled: boolean;

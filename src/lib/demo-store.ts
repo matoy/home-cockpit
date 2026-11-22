@@ -711,6 +711,109 @@ function createInitialDemoState(): DemoState {
       lastBatteryPct: null,
       lastContactOpen: null,
     },
+    {
+      id: 'somfy_demo_volet_salon',
+      name: 'Volet Roulant Baie Salon',
+      customName: 'Volet Baie Vitree Salon',
+      primaryVendor: 'somfy',
+      systems: ['somfy'],
+      roomId: 1,
+      category: 'other',
+      tuyaCategory: 'RollerShutter',
+      productName: 'Somfy · io-homecontrol (Kit de connectivité)',
+      ipAddress: null,
+      macAddress: null,
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'somfy:uiClass', value: 'RollerShutter' },
+        { code: 'somfy:protocol', value: 'io' },
+        { code: 'somfy:controllableName', value: 'io:RollerShutterGenericIOComponent' },
+        { code: 'somfy:deviceURL', value: 'io://1234-5678-9012/400001' },
+        { code: 'core:ClosureState', value: 25 },
+        { code: 'core:OpenClosedState', value: 'open' },
+        { code: 'core:MovingState', value: false },
+        { code: 'core:RSSILevelState', value: 84 },
+        { code: 'core:DiscreteRSSILevelState', value: 'good' },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
+    {
+      id: 'somfy_demo_store_terrasse',
+      name: 'Store Banne Terrasse RTS',
+      customName: 'Store Banne Terrasse',
+      primaryVendor: 'somfy',
+      systems: ['somfy'],
+      roomId: 1,
+      category: 'other',
+      tuyaCategory: 'Awning',
+      productName: 'Somfy · RTS (Kit de connectivité)',
+      ipAddress: null,
+      macAddress: null,
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'somfy:uiClass', value: 'Awning' },
+        { code: 'somfy:protocol', value: 'RTS' },
+        { code: 'somfy:controllableName', value: 'rts:AwningHorizontalRTSComponent' },
+        { code: 'somfy:deviceURL', value: 'rts://1234-5678-9012/400002' },
+        { code: 'core:OpenClosedUnknownState', value: 'unknown' },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
+    {
+      id: 'bf81a2c9tubularbureau',
+      name: 'Volet Bureau Tubular Motor',
+      customName: 'Volet Bureau (Tubular Motor)',
+      primaryVendor: 'tuya',
+      systems: ['tuya'],
+      roomId: 2,
+      category: 'other',
+      tuyaCategory: 'cl',
+      productName: 'Tuya · Tubular Motors',
+      ipAddress: null,
+      macAddress: null,
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'control', value: 'open' },
+        { code: 'percent_state', value: 0 },
+        { code: 'percent_control', value: 0 },
+        { code: 'situation_set', value: 'fully_open' },
+        { code: 'work_state', value: 'standby' },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
   ];
 
   // Deux périodes tarifaires (2025 -> 2026) pour illustrer la gestion multi-périodes
@@ -1311,7 +1414,9 @@ function createInitialDemoState(): DemoState {
             ? d.id.replace(/^kasa_/, '')
             : d.primaryVendor === 'home_connect'
               ? d.id.replace(/^hc_/, '')
-              : d.id,
+              : d.primaryVendor === 'somfy'
+                ? d.id.replace(/^somfy_/, '')
+                : d.id,
       externalName: d.name,
       isPrimaryTelemetry: true,
       linkedAt: syncedIso,
@@ -1319,7 +1424,8 @@ function createInitialDemoState(): DemoState {
     if (
       (d.primaryVendor === 'tuya' ||
         d.primaryVendor === 'kasa' ||
-        d.primaryVendor === 'home_connect') &&
+        d.primaryVendor === 'home_connect' ||
+        d.primaryVendor === 'somfy') &&
       d.systems.includes('google_home')
     ) {
       vendorLinks.push({
@@ -1350,6 +1456,12 @@ function createInitialDemoState(): DemoState {
     },
     home_connect: {
       mode: 'oauth_prod',
+      connected: true,
+      lastSyncedAt: syncedIso,
+      lastError: null,
+    },
+    somfy: {
+      mode: 'cloud_account',
       connected: true,
       lastSyncedAt: syncedIso,
       lastError: null,

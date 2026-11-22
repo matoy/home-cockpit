@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { VENDOR_IDS, VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import { extractHomeConnectSummary } from '@/lib/vendors/home-connect-display';
+import { extractSomfyDisplaySummary } from '@/lib/vendors/somfy-display';
 import type {
   DashboardPayload,
   DeviceCategory,
@@ -44,6 +45,7 @@ interface DevicesRoomsTabProps {
   onOpenRoomsTab?: () => void;
   onOpenGoogleGuide?: () => void;
   onOpenHomeConnectGuide?: () => void;
+  onOpenSomfyGuide?: () => void;
 }
 
 const SCALE_OPTIONS = [
@@ -62,6 +64,7 @@ function normalizeSearchText(value: string): string {
 
 function buildDeviceSearchHaystack(dev: DeviceRecord, roomName?: string): string {
   const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
+  const somfySummary = extractSomfyDisplaySummary(dev);
   const parts: Array<string | number | null | undefined> = [
     dev.id,
     dev.id.startsWith('manual_') ? 'manuel manual' : null,
@@ -92,6 +95,9 @@ function buildDeviceSearchHaystack(dev: DeviceRecord, roomName?: string): string
     dev.lastHumidityPct !== null ? `${dev.lastHumidityPct}%` : null,
     dev.lastBatteryPct !== null ? `${dev.lastBatteryPct}%` : null,
     hcSummary?.searchableText,
+    somfySummary?.protocol,
+    somfySummary?.cover?.kindLabel,
+    somfySummary?.cover?.stateLabel,
   ];
 
   return normalizeSearchText(parts.filter((p) => p !== null && p !== undefined && p !== '').join(' '));
@@ -104,13 +110,16 @@ export function DevicesRoomsTab({
   onOpenRoomsTab,
   onOpenGoogleGuide,
   onOpenHomeConnectGuide,
+  onOpenSomfyGuide,
 }: DevicesRoomsTabProps) {
   const showKasa = data.env.kasaConfigured;
   const showHomeConnect = data.env.homeConnectConfigured;
+  const showSomfy = data.env.somfyConfigured;
   const showGoogleHomeApi = data.env.googleHomeApiEnabled;
   const [syncingTuya, setSyncingTuya] = useState(false);
   const [syncingKasa, setSyncingKasa] = useState(false);
   const [syncingHomeConnect, setSyncingHomeConnect] = useState(false);
+  const [syncingSomfy, setSyncingSomfy] = useState(false);
   const [disconnectingHomeConnect, setDisconnectingHomeConnect] = useState(false);
   const [selectedHomeConnectEnv, setSelectedHomeConnectEnv] = useState<HomeConnectEnv>(
     data.env.homeConnectEnv ?? 'prod'
@@ -350,6 +359,7 @@ export function DevicesRoomsTab({
       tuya: 0,
       kasa: 0,
       home_connect: 0,
+      somfy: 0,
       google_home: 0,
       multi: 0,
     };
@@ -379,6 +389,7 @@ export function DevicesRoomsTab({
       if (dev.systems.includes('tuya')) sysCounts.tuya += 1;
       if (dev.systems.includes('kasa')) sysCounts.kasa += 1;
       if (dev.systems.includes('home_connect')) sysCounts.home_connect += 1;
+      if (dev.systems.includes('somfy')) sysCounts.somfy += 1;
       if (dev.systems.includes('google_home')) sysCounts.google_home += 1;
       if (dev.systems.length > 1) sysCounts.multi += 1;
 
@@ -441,6 +452,25 @@ export function DevicesRoomsTab({
       });
     } finally {
       setSyncingKasa(false);
+    }
+  }
+
+  async function handleSyncSomfy() {
+    setSyncingSomfy(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/vendors/somfy/sync', { method: 'POST' });
+      const json = (await res.json()) as { message?: string; error?: string };
+      if (!res.ok) throw new Error(json.error || 'Échec de synchronisation Somfy Cloud');
+      setSyncMessage({ ok: true, text: json.message || 'Synchronisation Somfy Cloud terminée.' });
+      await onRefresh();
+    } catch (err) {
+      setSyncMessage({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Erreur Somfy Cloud',
+      });
+    } finally {
+      setSyncingSomfy(false);
     }
   }
 
@@ -649,11 +679,16 @@ export function DevicesRoomsTab({
   const kasaVendor = data.vendors.find((v) => v.vendor === 'kasa');
   const hcVendor = data.vendors.find((v) => v.vendor === 'home_connect');
   const isHcConnected = Boolean(hcVendor?.connected);
+  const somfyVendor = data.vendors.find((v) => v.vendor === 'somfy');
   const ghVendor = data.vendors.find((v) => v.vendor === 'google_home');
   const isGhConnected = Boolean(ghVendor?.connected);
 
   const visibleSyncCardsCount =
-    1 + (showKasa ? 1 : 0) + (showHomeConnect ? 1 : 0) + (showGoogleHomeApi ? 1 : 0);
+    1 +
+    (showKasa ? 1 : 0) +
+    (showHomeConnect ? 1 : 0) +
+    (showSomfy ? 1 : 0) +
+    (showGoogleHomeApi ? 1 : 0);
   const syncGridClass =
     visibleSyncCardsCount === 1
       ? 'grid grid-cols-1 gap-4'
@@ -893,6 +928,75 @@ export function DevicesRoomsTab({
                     )}
                   </>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Somfy Cloud (masqué si non configuré) */}
+        {showSomfy && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.somfy.badgeClass}`}
+                  >
+                    {VENDOR_REGISTRY.somfy.label}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {somfyVendor?.devicesCount ?? systemCounts.somfy} appareil(s)
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.somfyConfigured || data.env.mode === 'demo'
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-slate-800 text-slate-400'
+                      }`}
+                  >
+                    {data.env.mode === 'demo'
+                      ? 'Mode Démo'
+                      : data.env.somfyConfigured
+                        ? `Prêt (${data.env.somfyRegion.toUpperCase()})`
+                        : 'Non configuré'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-2">
+                  Kit de connectivité Overkiz Cloud (volets io/RTS, stores, capteurs · 100 %
+                  lecture seule, session chiffrée).
+                </p>
+                {somfyVendor?.lastError && (
+                  <p className="text-[11px] text-amber-300 mt-1">{somfyVendor.lastError}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <span className="text-[11px] text-slate-500">
+                {somfyVendor?.lastSyncedAt
+                  ? `Synchro : ${new Date(somfyVendor.lastSyncedAt).toLocaleString('fr-FR')}`
+                  : '100 % cloud · zéro commande envoyée'}
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                {onOpenSomfyGuide && (
+                  <button
+                    type="button"
+                    onClick={onOpenSomfyGuide}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:text-white transition"
+                    title="Afficher le guide de configuration Somfy Kit de connectivité"
+                  >
+                    <BookOpen className="h-3.5 w-3.5 text-amber-400" />
+                    Déroulé setup
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSyncSomfy}
+                  disabled={syncingSomfy}
+                  className="flex items-center gap-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${syncingSomfy ? 'animate-spin' : ''}`} />
+                  {syncingSomfy ? 'Synchronisation...' : 'Synchroniser Somfy'}
+                </button>
               </div>
             </div>
           </div>
@@ -1164,6 +1268,8 @@ export function DevicesRoomsTab({
               if (vId === 'kasa') return showKasa || (data.env.mode === 'live' && count > 0);
               if (vId === 'home_connect')
                 return showHomeConnect || (data.env.mode === 'live' && count > 0);
+              if (vId === 'somfy')
+                return showSomfy || (data.env.mode === 'live' && count > 0);
               if (vId === 'google_home')
                 return showGoogleHomeApi || (data.env.mode === 'live' && count > 0);
               return true;
@@ -1442,6 +1548,7 @@ export function DevicesRoomsTab({
                       <td className="px-2.5 py-2.5 font-mono text-[11px] text-slate-300 min-w-0">
                         {(() => {
                           const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
+                          const somfySummary = extractSomfyDisplaySummary(dev);
                           return (
                             <div className="flex flex-wrap gap-x-2 gap-y-0.5">
                               {dev.lastPowerW !== null && (
@@ -1460,6 +1567,20 @@ export function DevicesRoomsTab({
                                   }
                                 >
                                   {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
+                                </span>
+                              )}
+                              {somfySummary?.cover && (
+                                <span
+                                  title={`${somfySummary.cover.kindLabel} (${somfySummary.protocol})`}
+                                  className={
+                                    somfySummary.cover.state === 'closed'
+                                      ? 'text-emerald-300'
+                                      : somfySummary.cover.state === 'open'
+                                        ? 'text-sky-300'
+                                        : 'text-amber-300'
+                                  }
+                                >
+                                  {somfySummary.compactBadge}
                                 </span>
                               )}
                               {hcSummary?.operationLabel && (
@@ -1738,8 +1859,23 @@ export function DevicesRoomsTab({
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                     {(() => {
                       const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
+                      const somfySummary = extractSomfyDisplaySummary(dev);
                       return (
                         <div className="flex flex-wrap gap-2 font-mono text-[11px] text-slate-300">
+                          {somfySummary?.cover && (
+                            <span
+                              title={`${somfySummary.cover.kindLabel} (${somfySummary.protocol})`}
+                              className={
+                                somfySummary.cover.state === 'closed'
+                                  ? 'text-emerald-300'
+                                  : somfySummary.cover.state === 'open'
+                                    ? 'text-sky-300'
+                                    : 'text-amber-300'
+                              }
+                            >
+                              {somfySummary.compactBadge}
+                            </span>
+                          )}
                           {dev.lastPowerW !== null && (
                             <span className="text-indigo-300">{dev.lastPowerW} W</span>
                           )}

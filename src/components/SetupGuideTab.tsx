@@ -50,6 +50,7 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
 
   const showKasa = env.kasaConfigured;
   const showHomeConnect = env.homeConnectConfigured;
+  const showSomfy = env.somfyConfigured;
   const showGoogleHomeApi = env.googleHomeApiEnabled;
 
   const googleOAuthDetail = env.googleHomeConfigured
@@ -102,6 +103,15 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
           ok: env.homeConnectConfigured,
           detail: `Env : ${env.homeConnectEnv.toUpperCase()} · ${env.homeConnectConnected ? 'OAuth connecté' : 'Prêt pour connexion OAuth'
             }`,
+        },
+      ]
+      : []),
+    ...(showSomfy
+      ? [
+        {
+          label: 'Somfy Cloud Kit de connectivité (SOMFY_EMAIL & PASSWORD)',
+          ok: env.somfyConfigured,
+          detail: `Overkiz Cloud 100 % lecture seule · Région : ${env.somfyRegion.toUpperCase()}`,
         },
       ]
       : []),
@@ -327,157 +337,197 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
         </div>
       </div>
 
-      {/* Étape Kasa Cloud (masqué si KASA_EMAIL / PASSWORD non configurés) */}
-      {showKasa && (
-        <div
-          id="setup-kasa-cloud"
-          className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-4 scroll-mt-24"
-        >
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="rounded-xl bg-teal-500/15 p-2 text-teal-400">
-                <Cloud className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-white">
-                  TP-Link Kasa Cloud — Appareils, pièces/groupes &amp; kWh (100 % cloud, lecture seule)
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Connexion directe au cloud TP-Link (<code>*.tplinkcloud.com</code>) compatible Vercel
-                  serverless · zéro découverte locale LAN et zéro commande d&apos;allumage/extinction.
-                </p>
-              </div>
+      {/* Étape Kasa Cloud (toujours visible dans Guide Setup, repliable) */}
+      <div
+        id="setup-kasa-cloud"
+        className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-4 scroll-mt-24"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-xl bg-teal-500/15 p-2 text-teal-400">
+              <Cloud className="h-5 w-5" />
             </div>
-
-            <span
-              className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${env.kasaConfigured
-                ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                : 'border-slate-700 bg-slate-800 text-slate-400'
-                }`}
-            >
-              {env.kasaConfigured
-                ? `Configuré (${env.kasaRegion.toUpperCase()})`
-                : 'Non configuré'}
-            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-white">
+                TP-Link Kasa Cloud — Appareils, pièces/groupes &amp; kWh (100 % cloud, lecture
+                seule)
+              </h3>
+              <p className="text-xs text-slate-400">
+                Connexion directe au cloud TP-Link (<code>*.tplinkcloud.com</code>) compatible Vercel
+                serverless · zéro découverte locale LAN et zéro commande d&apos;allumage/extinction.
+              </p>
+            </div>
           </div>
 
-          <ol className="list-decimal list-inside space-y-2 text-xs text-slate-300 leading-relaxed">
-            <li>
-              Ajoutez vos identifiants de compte TP-Link / Kasa dans <code>.env.local</code> et sur
-              Vercel : <code>KASA_EMAIL</code>, <code>KASA_PASSWORD</code> et{' '}
-              <code>KASA_REGION=&quot;eu&quot;</code> (<code>eu</code>, <code>us</code>,{' '}
-              <code>ap</code> ou <code>global</code>).
-            </li>
-            <li>
-              <strong className="text-amber-300">Important (erreur -20675) :</strong> désactivez la
-              double authentification (<strong>2FA / MFA</strong>) dans l&apos;application mobile
-              Kasa/Tapo afin que l&apos;API cloud puisse authentifier votre session automatiquement.
-            </li>
-            <li>
-              <strong>Mesures énergétiques &amp; multiprises :</strong> les prises équipées d&apos;un
-              compteur (HS110, KP115, KP125, HS300) remontent automatiquement puissance (W), tension
-              (V) et cumul kWh à chaque collecte, y compris chaque prise individuelle d&apos;une
-              multiprise HS300.
-            </li>
-            <li>
-              <strong>Pièces et groupes Kasa :</strong> si votre compte Kasa Cloud expose des groupes ou
-              pièces, ils sont importés dans <strong>Pièces</strong>. À défaut, assignez librement la
-              pièce de chaque appareil depuis <strong>Appareils</strong>.
-            </li>
-          </ol>
+          <span
+            className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${env.kasaConfigured
+              ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+              : 'border-slate-700 bg-slate-800 text-slate-400'
+              }`}
+          >
+            {env.kasaConfigured
+              ? `Configuré (${env.kasaRegion.toUpperCase()})`
+              : 'Optionnel — non configuré'}
+          </span>
+        </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5">
-                <KeyRound className="h-3.5 w-3.5 text-teal-400" />
-                Variables d&apos;environnement TP-Link Kasa Cloud
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  copyText(
-                    'kasa-env',
-                    'KASA_EMAIL="votre-email@exemple.com"\nKASA_PASSWORD="votre-mot-de-passe"\nKASA_REGION="eu"'
-                  )
-                }
-                className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
-              >
-                {copiedKey === 'kasa-env' ? (
-                  <Check className="h-3 w-3 text-emerald-400" />
-                ) : (
-                  <Copy className="h-3 w-3" />
-                )}
-                Copier
-              </button>
-            </div>
-            <pre className="font-mono text-[11px] text-teal-300 overflow-x-auto leading-relaxed">
-              {`KASA_EMAIL="votre-email@exemple.com"
+        <details
+          id="setup-kasa-details"
+          open={showKasa}
+          className="group rounded-xl border border-slate-800/90 bg-slate-950/40 p-4"
+        >
+          <summary className="cursor-pointer select-none text-xs font-medium text-teal-300 hover:text-teal-200 flex items-center justify-between gap-2">
+            <span>Déroulé pas-à-pas &amp; variables .env.local TP-Link Kasa Cloud</span>
+            <span className="text-[11px] text-slate-400 group-open:hidden">
+              Cliquer pour déplier
+            </span>
+            <span className="text-[11px] text-slate-400 hidden group-open:inline">
+              Cliquer pour replier
+            </span>
+          </summary>
+
+          <div className="mt-4 space-y-4">
+            <ol className="list-decimal list-inside space-y-2 text-xs text-slate-300 leading-relaxed">
+              <li>
+                Ajoutez vos identifiants de compte TP-Link / Kasa dans <code>.env.local</code> et
+                sur Vercel : <code>KASA_EMAIL</code>, <code>KASA_PASSWORD</code> et{' '}
+                <code>KASA_REGION=&quot;eu&quot;</code> (<code>eu</code>, <code>us</code>,{' '}
+                <code>ap</code> ou <code>global</code>).
+              </li>
+              <li>
+                <strong className="text-amber-300">Important (erreur -20675) :</strong> désactivez
+                la double authentification (<strong>2FA / MFA</strong>) dans l&apos;application
+                mobile Kasa/Tapo afin que l&apos;API cloud puisse authentifier votre session
+                automatiquement.
+              </li>
+              <li>
+                <strong>Mesures énergétiques &amp; multiprises :</strong> les prises équipées
+                d&apos;un compteur (HS110, KP115, KP125, HS300) remontent automatiquement puissance
+                (W), tension (V) et cumul kWh à chaque collecte, y compris chaque prise individuelle
+                d&apos;une multiprise HS300.
+              </li>
+              <li>
+                <strong>Pièces et groupes Kasa :</strong> si votre compte Kasa Cloud expose des
+                groupes ou pièces, ils sont importés dans <strong>Pièces</strong>. À défaut,
+                assignez librement la pièce de chaque appareil depuis <strong>Appareils</strong>.
+              </li>
+            </ol>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5">
+                  <KeyRound className="h-3.5 w-3.5 text-teal-400" />
+                  Variables d&apos;environnement TP-Link Kasa Cloud
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    copyText(
+                      'kasa-env',
+                      'KASA_EMAIL="votre-email@exemple.com"\nKASA_PASSWORD="votre-mot-de-passe"\nKASA_REGION="eu"'
+                    )
+                  }
+                  className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
+                >
+                  {copiedKey === 'kasa-env' ? (
+                    <Check className="h-3 w-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                  Copier
+                </button>
+              </div>
+              <pre className="font-mono text-[11px] text-teal-300 overflow-x-auto leading-relaxed">
+                {`KASA_EMAIL="votre-email@exemple.com"
 KASA_PASSWORD="votre-mot-de-passe"
 KASA_REGION="eu" # eu, us, ap ou global`}
-            </pre>
+              </pre>
+            </div>
+
+            {onNavigateTab && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('devices')}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 px-3 py-1.5 text-xs font-medium text-white transition"
+                >
+                  Synchroniser Kasa dans Appareils
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('rooms')}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
+                >
+                  Synchroniser pièces Kasa
+                  <ArrowRight className="h-3.5 w-3.5 text-teal-400" />
+                </button>
+              </div>
+            )}
+          </div>
+        </details>
+      </div>
+
+      {/* Étape Siemens Home Connect (toujours visible dans Guide Setup, repliable) */}
+      <div
+        id="setup-home-connect"
+        className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-5 scroll-mt-24"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-xl bg-cyan-500/15 p-2 text-cyan-400">
+              <Cloud className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-white">
+                Siemens Home Connect — Déroulé portail développeur &amp; OAuth 2.0 (100 % lecture seule)
+              </h3>
+              <p className="text-xs text-slate-400">
+                Suivi des programmes actifs, temps restant, porte ouverte et températures four /
+                réfrigérateur / congélateur sans impacter Climat ni Ouvertures.
+              </p>
+            </div>
           </div>
 
-          {onNavigateTab && (
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onNavigateTab('devices')}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 px-3 py-1.5 text-xs font-medium text-white transition"
-              >
-                Synchroniser Kasa dans Appareils
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigateTab('rooms')}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
-              >
-                Synchroniser pièces Kasa
-                <ArrowRight className="h-3.5 w-3.5 text-teal-400" />
-              </button>
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+            {env.homeConnectConfigured ? (
+              <>
+                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 font-medium text-emerald-300">
+                  Env : {env.homeConnectEnv.toUpperCase()}
+                </span>
+                <span
+                  className={`rounded-full border px-2.5 py-0.5 font-medium ${env.homeConnectConnected
+                    ? 'border-cyan-500/30 bg-cyan-500/15 text-cyan-300'
+                    : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                    }`}
+                >
+                  Session OAuth : {env.homeConnectConnected ? 'Connectée' : 'À autoriser'}
+                </span>
+              </>
+            ) : (
+              <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-0.5 text-[10px] font-semibold text-slate-400">
+                Optionnel — non configuré
+              </span>
+            )}
+          </div>
         </div>
-      )}
 
-      {/* Étape Siemens Home Connect (masqué si SIEMENSHOMECONNET_* non configuré) */}
-      {showHomeConnect && (
-        <div
-          id="setup-home-connect"
-          className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-5 scroll-mt-24"
+        <details
+          id="setup-home-connect-details"
+          open={showHomeConnect}
+          className="group rounded-xl border border-slate-800/90 bg-slate-950/40 p-4"
         >
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="rounded-xl bg-cyan-500/15 p-2 text-cyan-400">
-                <Cloud className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-white">
-                  Siemens Home Connect — Déroulé portail développeur &amp; OAuth 2.0 (100 % lecture seule)
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Suivi des programmes actifs, temps restant, porte ouverte et températures four /
-                  réfrigérateur / congélateur sans impacter Climat ni Ouvertures.
-                </p>
-              </div>
-            </div>
+          <summary className="cursor-pointer select-none text-xs font-medium text-cyan-300 hover:text-cyan-200 flex items-center justify-between gap-2">
+            <span>Déroulé complet portail développeur Siemens / BSH &amp; OAuth 2.0</span>
+            <span className="text-[11px] text-slate-400 group-open:hidden">
+              Cliquer pour déplier
+            </span>
+            <span className="text-[11px] text-slate-400 hidden group-open:inline">
+              Cliquer pour replier
+            </span>
+          </summary>
 
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 font-medium text-emerald-300">
-                Env : {env.homeConnectEnv.toUpperCase()}
-              </span>
-              <span
-                className={`rounded-full border px-2.5 py-0.5 font-medium ${env.homeConnectConnected
-                  ? 'border-cyan-500/30 bg-cyan-500/15 text-cyan-300'
-                  : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-                  }`}
-              >
-                Session OAuth : {env.homeConnectConnected ? 'Connectée' : 'À autoriser'}
-              </span>
-            </div>
-          </div>
-
-          <div className="space-y-3 text-xs text-slate-300 leading-relaxed">
+          <div className="mt-4 space-y-3 text-xs text-slate-300 leading-relaxed">
             <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-2">
               <div className="font-semibold text-white flex items-center justify-between gap-2">
                 <span>Étape 1 — Créer / connecter votre compte développeur</span>
@@ -648,7 +698,7 @@ SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
             </div>
           </div>
 
-          <details className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-xs">
+          <details className="mt-3 rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-xs">
             <summary className="cursor-pointer select-none font-semibold text-slate-200 flex items-center gap-2">
               <Wrench className="h-3.5 w-3.5 text-amber-400" />
               Dépannage, pièges courants &amp; quotas Home Connect
@@ -694,7 +744,7 @@ SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
           </details>
 
           {onNavigateTab && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => onNavigateTab('devices')}
@@ -705,8 +755,186 @@ SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
               </button>
             </div>
           )}
+        </details>
+      </div>
+
+      {/* Étape Somfy Cloud (toujours visible dans Guide Setup, repliable) */}
+      <div
+        id="setup-somfy"
+        className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-4 scroll-mt-24"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-xl bg-amber-500/15 p-2 text-amber-400">
+              <Cloud className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-white">
+                Somfy Kit de connectivité — Volets, stores &amp; pièces (100 % Cloud Overkiz,
+                lecture seule)
+              </h3>
+              <p className="text-xs text-slate-400">
+                Connexion Overkiz Cloud (<code>ha101-1.overkiz.com</code>) compatible Vercel ·
+                volets/stores regroupés avec les moteurs tubulaires Tuya dans{' '}
+                <strong>Volets &amp; Stores</strong>.
+              </p>
+            </div>
+          </div>
+
+          <span
+            className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${env.somfyConfigured
+              ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+              : 'border-slate-700 bg-slate-800 text-slate-400'
+              }`}
+          >
+            {env.somfyConfigured
+              ? `Configuré (${env.somfyRegion.toUpperCase()})`
+              : 'Optionnel — non configuré'}
+          </span>
         </div>
-      )}
+
+        <details
+          id="setup-somfy-details"
+          open={showSomfy}
+          className="group rounded-xl border border-slate-800/90 bg-slate-950/40 p-4"
+        >
+          <summary className="cursor-pointer select-none text-xs font-medium text-amber-300 hover:text-amber-200 flex items-center justify-between gap-2">
+            <span>Déroulé pas-à-pas Kit de connectivité Somfy, io vs RTS &amp; .env.local</span>
+            <span className="text-[11px] text-slate-400 group-open:hidden">
+              Cliquer pour déplier
+            </span>
+            <span className="text-[11px] text-slate-400 hidden group-open:inline">
+              Cliquer pour replier
+            </span>
+          </summary>
+
+          <div className="mt-4 space-y-4 text-xs text-slate-300 leading-relaxed">
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3.5 text-[11px] text-amber-100/90 space-y-1">
+              <div>
+                <strong>Architecture 100 % cloud &amp; lecture seule :</strong> le Kit de
+                connectivité Somfy ne propose pas d&apos;API locale (réservée à TaHoma Switch). Le
+                cockpit utilise donc uniquement <code>POST /login</code> (cookie{' '}
+                <code>JSESSIONID</code> chiffré en AES-256-GCM en base pour éviter les blocages anti
+                brute-force) puis <code>GET /setup</code>. Aucune commande d&apos;ouverture ou de
+                fermeture (<code>/exec/apply</code>) n&apos;est jamais appelée.
+              </div>
+              <div>
+                <strong>io-homecontrol vs RTS :</strong> les volets <strong>io</strong> remontent
+                leur position exacte (%) et la qualité du signal ; les appareils <strong>RTS</strong>{' '}
+                sont unidirectionnels (ils s&apos;affichent dans <strong>Volets &amp; Stores</strong>{' '}
+                avec l&apos;indicateur <em>RTS unidirectionnel</em>). Les pièces TaHoma sont
+                importables dans <strong>Pièces</strong> sans toucher à vos cibles °C/%.
+              </div>
+            </div>
+
+            <ol className="list-decimal list-inside space-y-2">
+              <li>
+                Dans l&apos;application mobile <strong>TaHoma by Somfy</strong>, vérifiez que votre{' '}
+                <strong>Kit de connectivité</strong> apparaît en ligne et que vos volets/stores sont
+                affectés aux bonnes pièces.
+              </li>
+              <li>
+                Utilisez votre adresse e-mail et votre mot de passe de compte <strong>Somfy</strong>.{' '}
+                <span className="text-amber-300">
+                  Note : si vous vous connectez habituellement via « Continuer avec Google / Apple »,
+                  définissez d&apos;abord un mot de passe Somfy dédié via « Mot de passe oublié »
+                  dans TaHoma ou sur somfy.fr.
+                </span>
+              </li>
+              <li>
+                Ajoutez les variables ci-dessous dans <code>.env.local</code> et sur Vercel (Project
+                Settings → Environment Variables), puis redémarrez/redéployez.
+              </li>
+              <li>
+                Dans l&apos;onglet <strong>Appareils</strong>, cliquez sur{' '}
+                <strong>Synchroniser Somfy</strong> (et <strong>Synchroniser pièces Somfy</strong>{' '}
+                dans <strong>Pièces</strong> si souhaité), puis consultez le nouvel onglet{' '}
+                <strong>Volets &amp; Stores</strong>.
+              </li>
+            </ol>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-slate-400">
+                  <KeyRound className="h-3.5 w-3.5 text-amber-400" />
+                  Variables Somfy Cloud (.env.local / Vercel)
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    copyText(
+                      'somfy-env',
+                      'SOMFY_EMAIL="votre-email@exemple.com"\nSOMFY_PASSWORD="votre-mot-de-passe"\nSOMFY_REGION="eu"'
+                    )
+                  }
+                  className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
+                >
+                  {copiedKey === 'somfy-env' ? (
+                    <Check className="h-3 w-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                  Copier
+                </button>
+              </div>
+              <pre className="font-mono text-[11px] text-amber-300 overflow-x-auto leading-relaxed">
+                {`SOMFY_EMAIL="votre-email@exemple.com"
+SOMFY_PASSWORD="votre-mot-de-passe"
+SOMFY_REGION="eu" # eu (Europe / France), na (Amérique du Nord) ou oc (Océanie)
+# SOMFY_CLOUD_URL="" # Optionnel : surcharge l'URL Overkiz enduserAPI`}
+              </pre>
+            </div>
+
+            <details className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-xs">
+              <summary className="cursor-pointer select-none font-semibold text-slate-200 flex items-center gap-2">
+                <Wrench className="h-3.5 w-3.5 text-amber-400" />
+                Dépannage Somfy / Overkiz Cloud
+              </summary>
+              <ul className="mt-2.5 space-y-1.5 text-[11px] text-slate-300 list-disc list-inside leading-relaxed">
+                <li>
+                  <code>HTTP 429 / TOO_MANY_REQUESTS</code> : Overkiz bloque temporairement les
+                  connexions pendant 15 à 30 minutes en cas d&apos;appels <code>/login</code>{' '}
+                  répétés. Attendez avant de relancer ; en fonctionnement normal, le cockpit réutilise
+                  la session <code>JSESSIONID</code> chiffrée sans rappeler <code>/login</code>.
+                </li>
+                <li>
+                  <code>AUTHENTICATION_ERROR / BAD_CREDENTIALS</code> : vérifiez que{' '}
+                  <code>SOMFY_EMAIL</code> / <code>SOMFY_PASSWORD</code> fonctionnent dans
+                  l&apos;application TaHoma et que <code>SOMFY_REGION</code> vaut bien{' '}
+                  <code>eu</code> pour la France.
+                </li>
+                <li>
+                  <strong>Aucun pourcentage sur stores RTS :</strong> comportement normal du
+                  protocole radio Somfy RTS (unidirectionnel sans retour d&apos;état). Les volets{' '}
+                  <strong>io</strong> et les moteurs tubulaires Tuya remontent bien leur %
+                  d&apos;ouverture/fermeture.
+                </li>
+              </ul>
+            </details>
+
+            {onNavigateTab && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('devices')}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 px-3 py-1.5 text-xs font-medium text-white transition"
+                >
+                  Synchroniser Somfy dans Appareils
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('covers')}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
+                >
+                  Ouvrir Volets &amp; Stores
+                  <ArrowRight className="h-3.5 w-3.5 text-amber-400" />
+                </button>
+              </div>
+            )}
+          </div>
+        </details>
+      </div>
 
       {/* Étape 4 : Google Home Multi-Vendors */}
       {showGoogleHomeApi && (

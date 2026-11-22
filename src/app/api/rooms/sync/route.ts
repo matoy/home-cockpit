@@ -9,11 +9,12 @@ export async function POST(request: Request) {
     if (
       rawVendor !== 'tuya' &&
       rawVendor !== 'kasa' &&
+      rawVendor !== 'somfy' &&
       rawVendor !== 'google_home' &&
       rawVendor !== 'all'
     ) {
       return NextResponse.json(
-        { error: 'Paramètre vendor invalide (attendu : tuya, kasa, google_home ou all).' },
+        { error: 'Paramètre vendor invalide (attendu : tuya, kasa, somfy, google_home ou all).' },
         { status: 400 }
       );
     }

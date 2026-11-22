@@ -59,7 +59,7 @@ export function RoomsTab({
   onOpenGoogleGuide,
 }: RoomsTabProps) {
   // Synchronisation par système
-  const [syncingTarget, setSyncingTarget] = useState<'tuya' | 'kasa' | 'google_home' | 'all' | null>(null);
+  const [syncingTarget, setSyncingTarget] = useState<'tuya' | 'kasa' | 'somfy' | 'google_home' | 'all' | null>(null);
   const [selectedGoogleMode, setSelectedGoogleMode] = useState<GoogleHomeMode>(
     data.env.googleHomeMode ?? 'mcp'
   );
@@ -80,16 +80,21 @@ export function RoomsTab({
   const [roomFeedback, setRoomFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   const showKasa = data.env.kasaConfigured;
+  const showSomfy = data.env.somfyConfigured;
   const showGoogleHomeApi = data.env.googleHomeApiEnabled;
-  const visibleRoomSyncCards = 1 + (showKasa ? 1 : 0) + (showGoogleHomeApi ? 1 : 0);
+  const visibleRoomSyncCards =
+    1 + (showKasa ? 1 : 0) + (showSomfy ? 1 : 0) + (showGoogleHomeApi ? 1 : 0);
   const roomsSyncGridClass =
     visibleRoomSyncCards === 1
       ? 'grid grid-cols-1 gap-4'
       : visibleRoomSyncCards === 2
         ? 'grid grid-cols-1 lg:grid-cols-2 gap-4'
-        : 'grid grid-cols-1 lg:grid-cols-3 gap-4';
+        : visibleRoomSyncCards === 3
+          ? 'grid grid-cols-1 lg:grid-cols-3 gap-4'
+          : 'grid grid-cols-1 md:grid-cols-2 gap-4';
   const tuyaVendor = data.vendors.find((v) => v.vendor === 'tuya');
   const kasaVendor = data.vendors.find((v) => v.vendor === 'kasa');
+  const somfyVendor = data.vendors.find((v) => v.vendor === 'somfy');
   const ghVendor = data.vendors.find((v) => v.vendor === 'google_home');
   const isGhConnected = Boolean(ghVendor?.connected);
 
@@ -130,7 +135,7 @@ export function RoomsTab({
     };
   }, [data.devices, data.rooms, data.roomSummaries, searchQuery]);
 
-  async function handleSyncRooms(target: 'tuya' | 'kasa' | 'google_home' | 'all') {
+  async function handleSyncRooms(target: 'tuya' | 'kasa' | 'somfy' | 'google_home' | 'all') {
     setSyncingTarget(target);
     setSyncMessage(null);
     try {
@@ -288,7 +293,7 @@ export function RoomsTab({
               des appareils sans écraser vos couleurs ni vos cibles °C / %.
             </p>
           </div>
-          {(showKasa || showGoogleHomeApi) && (
+          {(showKasa || showSomfy || showGoogleHomeApi) && (
             <button
               type="button"
               onClick={() => void handleSyncRooms('all')}
@@ -398,6 +403,59 @@ export function RoomsTab({
                     className={`h-3.5 w-3.5 ${syncingTarget === 'kasa' ? 'animate-spin' : ''}`}
                   />
                   {syncingTarget === 'kasa' ? 'Synchronisation...' : 'Synchroniser pièces Kasa'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Somfy Cloud (masqué si non configuré) */}
+          {showSomfy && (
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 flex flex-col justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.somfy.badgeClass}`}
+                  >
+                    {VENDOR_REGISTRY.somfy.label}
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.somfyConfigured || data.env.mode === 'demo'
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-slate-800 text-slate-400'
+                      }`}
+                  >
+                    {data.env.mode === 'demo'
+                      ? 'Mode Démo'
+                      : data.env.somfyConfigured
+                        ? `Prêt (${data.env.somfyRegion.toUpperCase()})`
+                        : 'Non configuré'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-2">
+                  Importe les pièces TaHoma / Kit de connectivité Somfy Cloud (100 % cloud,
+                  lecture seule) et rattache vos volets / stores / capteurs.
+                </p>
+                {somfyVendor?.lastError && (
+                  <p className="text-[11px] text-amber-300 mt-1">{somfyVendor.lastError}</p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <span className="text-[11px] text-slate-500">
+                  {somfyVendor?.lastSyncedAt
+                    ? `Synchro : ${new Date(somfyVendor.lastSyncedAt).toLocaleString('fr-FR')}`
+                    : '100 % cloud · zéro commande envoyée'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleSyncRooms('somfy')}
+                  disabled={syncingTarget !== null}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 px-3 py-1.5 text-xs font-medium text-white transition"
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${syncingTarget === 'somfy' ? 'animate-spin' : ''}`}
+                  />
+                  {syncingTarget === 'somfy' ? 'Synchronisation...' : 'Synchroniser pièces Somfy'}
                 </button>
               </div>
             </div>

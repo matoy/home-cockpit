@@ -85,7 +85,8 @@ export function findDuplicateCandidates(
     (d) =>
       (d.primaryVendor === 'tuya' ||
         d.primaryVendor === 'kasa' ||
-        d.primaryVendor === 'home_connect') &&
+        d.primaryVendor === 'home_connect' ||
+        d.primaryVendor === 'somfy') &&
       !normalizeSystems(d.systems, d.primaryVendor).includes('google_home')
   );
 

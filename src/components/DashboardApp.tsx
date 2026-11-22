@@ -18,11 +18,14 @@ import {
   CalendarRange,
   Workflow,
   Home,
+  Blinds,
 } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
 import { EnergyTab } from './EnergyTab';
 import { ClimateTab } from './ClimateTab';
 import { ContactsTab } from './ContactsTab';
+import { CoversTab } from './CoversTab';
+import { extractCoverSummary } from '@/lib/covers-utils';
 import { AutomationsTab } from './AutomationsTab';
 import { TariffsTab } from './TariffsTab';
 import { DevicesRoomsTab } from './DevicesRoomsTab';
@@ -242,8 +245,21 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
   function handleOpenHomeConnectGuide() {
     setActiveTab('guide');
     setTimeout(() => {
+      const detailsEl = document.getElementById('setup-home-connect-details');
+      if (detailsEl instanceof HTMLDetailsElement) detailsEl.open = true;
       document
         .getElementById('setup-home-connect')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  }
+
+  function handleOpenSomfyGuide() {
+    setActiveTab('guide');
+    setTimeout(() => {
+      const detailsEl = document.getElementById('setup-somfy-details');
+      if (detailsEl instanceof HTMLDetailsElement) detailsEl.open = true;
+      document
+        .getElementById('setup-somfy')
         ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 60);
   }
@@ -254,6 +270,10 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
   }
 
   const lastLog = data.logs[0];
+  const openCoversCount = data.devices.filter((d) => {
+    const cover = extractCoverSummary(d);
+    return cover !== null && (cover.state === 'open' || cover.state === 'partial');
+  }).length;
 
   const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutGrid; badge?: number }> = [
     { id: 'overview', label: 'Synthèse & Pièces', icon: LayoutGrid },
@@ -264,6 +284,12 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
       label: 'Ouvertures',
       icon: DoorOpen,
       badge: data.contacts.summary.openCountNow,
+    },
+    {
+      id: 'covers',
+      label: 'Volets & Stores',
+      icon: Blinds,
+      badge: openCoversCount > 0 ? openCoversCount : undefined,
     },
     {
       id: 'automations',
@@ -357,6 +383,12 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
                   if (v.vendor === 'home_connect') {
                     return (
                       data.env.homeConnectConfigured ||
+                      (data.env.mode === 'live' && v.devicesCount > 0)
+                    );
+                  }
+                  if (v.vendor === 'somfy') {
+                    return (
+                      data.env.somfyConfigured ||
                       (data.env.mode === 'live' && v.devicesCount > 0)
                     );
                   }
@@ -543,6 +575,9 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
         {activeTab === 'contacts' && (
           <ContactsTab data={data} onNavigateTab={setActiveTab} />
         )}
+        {activeTab === 'covers' && (
+          <CoversTab data={data} onNavigateTab={setActiveTab} />
+        )}
         {activeTab === 'automations' && (
           <AutomationsTab data={data} onRefresh={() => fetchDashboard(range, roomId)} />
         )}
@@ -556,6 +591,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             onOpenHomeConnectGuide={
               data.env.homeConnectConfigured ? handleOpenHomeConnectGuide : undefined
             }
+            onOpenSomfyGuide={data.env.somfyConfigured ? handleOpenSomfyGuide : undefined}
           />
         )}
         {activeTab === 'rooms' && (
