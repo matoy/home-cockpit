@@ -693,11 +693,10 @@ export function DevicesRoomsTab({
                   {tuyaVendor?.devicesCount ?? systemCounts.tuya} appareil(s)
                 </span>
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    data.env.tuyaConfigured || data.env.mode === 'demo'
-                      ? 'bg-emerald-500/15 text-emerald-300'
-                      : 'bg-slate-800 text-slate-400'
-                  }`}
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.tuyaConfigured || data.env.mode === 'demo'
+                    ? 'bg-emerald-500/15 text-emerald-300'
+                    : 'bg-slate-800 text-slate-400'
+                    }`}
                 >
                   {data.env.mode === 'demo'
                     ? 'Mode Démo'
@@ -745,11 +744,10 @@ export function DevicesRoomsTab({
                     {kasaVendor?.devicesCount ?? systemCounts.kasa} appareil(s)
                   </span>
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                      data.env.kasaConfigured || data.env.mode === 'demo'
-                        ? 'bg-emerald-500/15 text-emerald-300'
-                        : 'bg-slate-800 text-slate-400'
-                    }`}
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.kasaConfigured || data.env.mode === 'demo'
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-slate-800 text-slate-400'
+                      }`}
                   >
                     {data.env.mode === 'demo'
                       ? 'Mode Démo'
@@ -804,11 +802,10 @@ export function DevicesRoomsTab({
                       {hcVendor?.devicesCount ?? systemCounts.home_connect} appareil(s)
                     </span>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                        isHcConnected || data.env.mode === 'demo'
-                          ? 'bg-emerald-500/15 text-emerald-300'
-                          : 'bg-slate-800 text-slate-400'
-                      }`}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isHcConnected || data.env.mode === 'demo'
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : 'bg-slate-800 text-slate-400'
+                        }`}
                     >
                       {data.env.mode === 'demo'
                         ? 'Mode Démo'
@@ -917,11 +914,10 @@ export function DevicesRoomsTab({
                       {ghVendor?.devicesCount ?? systemCounts.google_home} appareil(s)
                     </span>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                        isGhConnected
-                          ? 'bg-emerald-500/15 text-emerald-300'
-                          : 'bg-slate-800 text-slate-400'
-                      }`}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isGhConnected
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : 'bg-slate-800 text-slate-400'
+                        }`}
                     >
                       {data.env.mode === 'demo'
                         ? 'Mode Démo'
@@ -1016,11 +1012,10 @@ export function DevicesRoomsTab({
 
       {syncMessage && (
         <div
-          className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-xs ${
-            syncMessage.ok
-              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-              : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-          }`}
+          className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-xs ${syncMessage.ok
+            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+            : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+            }`}
         >
           {syncMessage.ok ? (
             <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -1156,11 +1151,10 @@ export function DevicesRoomsTab({
             <button
               type="button"
               onClick={() => setSystemFilter('all')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                systemFilter === 'all'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-              }`}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${systemFilter === 'all'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+                }`}
             >
               Tous ({systemCounts.all})
             </button>
@@ -1182,11 +1176,10 @@ export function DevicesRoomsTab({
                   key={vId}
                   type="button"
                   onClick={() => setSystemFilter(vId)}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition border ${
-                    active
-                      ? meta.badgeClass
-                      : 'border-transparent bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-                  }`}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition border ${active
+                    ? meta.badgeClass
+                    : 'border-transparent bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+                    }`}
                 >
                   <span className={`h-2 w-2 rounded-full shrink-0 ${meta.dotClass}`} />
                   {meta.label} ({count})
@@ -1196,11 +1189,10 @@ export function DevicesRoomsTab({
             <button
               type="button"
               onClick={() => setSystemFilter('multi')}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition border ${
-                systemFilter === 'multi'
-                  ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-200'
-                  : 'border-transparent bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-              }`}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition border ${systemFilter === 'multi'
+                ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-200'
+                : 'border-transparent bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+                }`}
             >
               <Link2 className="h-3 w-3" />
               Multi-systèmes ({systemCounts.multi})
@@ -1216,11 +1208,10 @@ export function DevicesRoomsTab({
             <button
               type="button"
               onClick={() => setRoomFilter('all')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                roomFilter === 'all'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-              }`}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${roomFilter === 'all'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+                }`}
             >
               Toutes ({systemCounts.all === filteredDevices.length && roomFilter === 'all' ? systemCounts.all : unassignedCount + Array.from(roomDeviceCounts.values()).reduce((a, b) => a + b, 0)})
             </button>
@@ -1228,13 +1219,12 @@ export function DevicesRoomsTab({
             <button
               type="button"
               onClick={() => setRoomFilter('unassigned')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition border ${
-                roomFilter === 'unassigned'
-                  ? 'border-amber-500 bg-amber-500/20 text-amber-200'
-                  : unassignedCount > 0
-                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
-                    : 'border-transparent bg-slate-800/80 text-slate-400 hover:bg-slate-800'
-              }`}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition border ${roomFilter === 'unassigned'
+                ? 'border-amber-500 bg-amber-500/20 text-amber-200'
+                : unassignedCount > 0
+                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                  : 'border-transparent bg-slate-800/80 text-slate-400 hover:bg-slate-800'
+                }`}
             >
               Sans pièce ({unassignedCount})
             </button>
@@ -1248,11 +1238,10 @@ export function DevicesRoomsTab({
                   key={r.id}
                   type="button"
                   onClick={() => setRoomFilter(key)}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition border ${
-                    active
-                      ? 'border-indigo-500 bg-indigo-600/25 text-white'
-                      : 'border-transparent bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-                  }`}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition border ${active
+                    ? 'border-indigo-500 bg-indigo-600/25 text-white'
+                    : 'border-transparent bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+                    }`}
                 >
                   <span
                     className="h-2 w-2 rounded-full shrink-0"
@@ -1845,9 +1834,8 @@ export function DevicesRoomsTab({
             >
               <div className="flex items-center gap-2.5">
                 <span
-                  className={`h-2 w-2 rounded-full ${
-                    log.status === 'success' ? 'bg-emerald-400' : 'bg-rose-400'
-                  }`}
+                  className={`h-2 w-2 rounded-full ${log.status === 'success' ? 'bg-emerald-400' : 'bg-rose-400'
+                    }`}
                 />
                 <span className="font-mono text-slate-300">
                   {new Date(log.executedAt).toLocaleString('fr-FR')}
@@ -2009,11 +1997,10 @@ export function DevicesRoomsTab({
 
             {linkFeedback && (
               <div
-                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
-                  linkFeedback.ok
-                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                    : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-                }`}
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${linkFeedback.ok
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                  : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                  }`}
               >
                 {linkFeedback.ok ? (
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
@@ -2037,11 +2024,10 @@ export function DevicesRoomsTab({
                   return (
                     <label
                       key={vId}
-                      className={`flex items-start justify-between gap-3 rounded-xl border p-3 text-xs transition ${
-                        checked
-                          ? 'border-slate-700 bg-slate-950/80'
-                          : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'
-                      } ${isPrimary ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                      className={`flex items-start justify-between gap-3 rounded-xl border p-3 text-xs transition ${checked
+                        ? 'border-slate-700 bg-slate-950/80'
+                        : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'
+                        } ${isPrimary ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                     >
                       <div className="flex items-start gap-2.5">
                         <input
@@ -2222,11 +2208,10 @@ export function DevicesRoomsTab({
 
             {manualFeedback && (
               <div
-                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
-                  manualFeedback.ok
-                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                    : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-                }`}
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${manualFeedback.ok
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                  : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                  }`}
               >
                 {manualFeedback.ok ? (
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
@@ -2338,11 +2323,10 @@ export function DevicesRoomsTab({
                   return (
                     <label
                       key={vId}
-                      className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 cursor-pointer transition ${
-                        checked
-                          ? 'border-slate-600 bg-slate-950/90 text-white'
-                          : 'border-slate-800 bg-slate-950/40 text-slate-400 hover:border-slate-700'
-                      }`}
+                      className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 cursor-pointer transition ${checked
+                        ? 'border-slate-600 bg-slate-950/90 text-white'
+                        : 'border-slate-800 bg-slate-950/40 text-slate-400 hover:border-slate-700'
+                        }`}
                     >
                       <input
                         type="checkbox"

@@ -187,11 +187,10 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                 <div
                   key={rs.room.id}
                   onClick={() => onSelectRoom(isSelected ? 'all' : String(rs.room.id))}
-                  className={`cursor-pointer rounded-2xl border p-5 transition ${
-                    isSelected
-                      ? 'border-indigo-500 bg-indigo-950/25 ring-1 ring-indigo-500/40'
-                      : 'border-slate-800 bg-slate-900/70 hover:border-slate-700 hover:bg-slate-900'
-                  }`}
+                  className={`cursor-pointer rounded-2xl border p-5 transition ${isSelected
+                    ? 'border-indigo-500 bg-indigo-950/25 ring-1 ring-indigo-500/40'
+                    : 'border-slate-800 bg-slate-900/70 hover:border-slate-700 hover:bg-slate-900'
+                    }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2.5">
@@ -208,9 +207,8 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                     </div>
 
                     <span
-                      className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${
-                        COMFORT_BADGE_CLASSES[rs.comfort.tone]
-                      }`}
+                      className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${COMFORT_BADGE_CLASSES[rs.comfort.tone]
+                        }`}
                     >
                       {rs.comfort.label}
                     </span>

@@ -292,11 +292,10 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
                   Home Cockpit · Multi-Vendors
                 </h1>
                 <span
-                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold border ${
-                    data.env.mode === 'live'
-                      ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
-                      : 'border-amber-500/30 bg-amber-500/15 text-amber-300'
-                  }`}
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold border ${data.env.mode === 'live'
+                    ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
+                    : 'border-amber-500/30 bg-amber-500/15 text-amber-300'
+                    }`}
                 >
                   <Database className="h-2.5 w-2.5" />
                   {data.env.mode === 'live' ? 'Neon Postgres' : 'Mode Démo'}
@@ -305,8 +304,8 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
               <p className="text-[11px] text-slate-400">
                 {lastLog
                   ? `Dernière collecte (${lastLog.trigger}) : ${new Date(
-                      lastLog.executedAt
-                    ).toLocaleString('fr-FR')}`
+                    lastLog.executedAt
+                  ).toLocaleString('fr-FR')}`
                   : 'Collecte planifiée toutes les 30 minutes'}
               </p>
             </div>
@@ -320,11 +319,10 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
                 <button
                   key={r.id}
                   onClick={() => void handleRangeChange(r.id)}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
-                    range === r.id
-                      ? 'bg-indigo-600 text-white'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${range === r.id
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200'
+                    }`}
                 >
                   {r.label}
                 </button>
@@ -332,11 +330,10 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
               <button
                 type="button"
                 onClick={() => setShowCustomPicker((v) => !v)}
-                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition ${
-                  range === 'custom' || showCustomPicker
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
+                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition ${range === 'custom' || showCustomPicker
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-slate-400 hover:text-slate-200'
+                  }`}
               >
                 <CalendarRange className="h-3.5 w-3.5" />
                 Personnalisé
@@ -493,11 +490,10 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-xs font-medium transition ${
-                  active
-                    ? 'border-indigo-500 text-white'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
-                }`}
+                className={`flex items-center gap-2 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-xs font-medium transition ${active
+                  ? 'border-indigo-500 text-white'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
               >
                 <Icon className="h-3.5 w-3.5" />
                 {tab.label}
