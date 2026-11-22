@@ -109,6 +109,8 @@ export const metricReadings = pgTable(
     tempC: real('temp_c'),
     humidityPct: real('humidity_pct'),
     contactOpen: boolean('contact_open'),
+    coverState: text('cover_state'),
+    coverOpenPct: real('cover_open_pct'),
   },
   (table) => [
     index('idx_readings_device_time').on(table.deviceId, table.recordedAt),

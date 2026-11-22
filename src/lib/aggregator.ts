@@ -1,3 +1,4 @@
+import { extractCoverSummary } from './covers-utils';
 import { computeDewPointC, computeReadingCost, getParisDateAndTime } from './tariff-engine';
 import { hasValidHumidityMeasurement, hasValidTempMeasurement } from './device-utils';
 import { findDuplicateCandidates } from './vendors/deduplication';
@@ -13,6 +14,11 @@ import type {
   ContactEventItem,
   ContactSensorStat,
   ContactsPayload,
+  CoverActivityPoint,
+  CoverDeviceHistoryStat,
+  CoverEventItem,
+  CoverHistoryState,
+  CoversPayload,
   DashboardPayload,
   DeviceRecord,
   EnergyBreakdownItem,
@@ -1079,6 +1085,7 @@ export function buildDashboardPayload(params: {
         roomColor,
         recordedAt: r.recordedAt,
         isOpen,
+        prevIsOpen: prevState,
         isTransition,
       });
 
@@ -1132,6 +1139,118 @@ export function buildDashboardPayload(params: {
     ),
   };
 
+  const formatCoverStateLabel = (
+    state: CoverHistoryState,
+    openPct: number | null
+  ): string => {
+    if (state === 'closed') return openPct !== null ? `Fermé (${openPct}%)` : 'Fermé';
+    if (state === 'open') return openPct !== null ? `Ouvert (${openPct}%)` : 'Ouvert';
+    if (state === 'partial') return openPct !== null ? `Partiel (${openPct}%)` : 'Partiel';
+    return 'Inconnu / RTS';
+  };
+
+  // Agrégation historique des Volets & Stores
+  const coverDevices = filteredDevices.filter((d) => extractCoverSummary(d) !== null);
+  const coverActivityBuckets = new Map<string, CoverActivityPoint>();
+  const coverEvents: CoverEventItem[] = [];
+  const coversByDevice: Record<string, CoverDeviceHistoryStat> = {};
+
+  for (const dev of coverDevices) {
+    const devName = dev.customName || dev.name;
+    const room = dev.roomId !== null ? roomMap.get(dev.roomId) : undefined;
+    const roomName = room?.name ?? 'Non assignée';
+    const roomColor = room?.color ?? '#64748b';
+
+    const devReadings = filteredReadings
+      .filter(
+        (r) =>
+          r.deviceId === dev.id &&
+          ((r.coverState !== undefined && r.coverState !== null) ||
+            (r.coverOpenPct !== undefined && r.coverOpenPct !== null))
+      )
+      .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
+
+    let prevState: CoverHistoryState | null = null;
+    let prevOpenPct: number | null = null;
+    let movementsCount = 0;
+    let lastMovedAt: string | null = null;
+
+    for (const r of devReadings) {
+      const openPct =
+        r.coverOpenPct !== undefined && r.coverOpenPct !== null
+          ? Math.round(r.coverOpenPct)
+          : null;
+      const state: CoverHistoryState =
+        r.coverState ??
+        (openPct === 0
+          ? 'closed'
+          : openPct === 100
+            ? 'open'
+            : openPct !== null
+              ? 'partial'
+              : 'unknown');
+
+      const pctChanged =
+        prevOpenPct !== null && openPct !== null && Math.abs(openPct - prevOpenPct) >= 1;
+      const stateChanged = prevState !== null && prevState !== state;
+      const isTransition = prevState === null ? false : Boolean(stateChanged || pctChanged);
+
+      if (isTransition) {
+        movementsCount += 1;
+        lastMovedAt = r.recordedAt;
+      }
+
+      const dt = new Date(r.recordedAt);
+      const { key: bucketKey, label: bucketLabel } = getBucketInfo(dt, range, effectiveHours);
+      const act = coverActivityBuckets.get(bucketKey) ?? {
+        bucket: bucketKey,
+        label: bucketLabel,
+        openCount: 0,
+        transitionsCount: 0,
+      };
+      if (state === 'open' || state === 'partial') act.openCount += 1;
+      if (isTransition) act.transitionsCount += 1;
+      coverActivityBuckets.set(bucketKey, act);
+
+      coverEvents.push({
+        id: `cov-${dev.id}-${r.id}-${r.recordedAt}`,
+        deviceId: dev.id,
+        deviceName: devName,
+        roomId: dev.roomId,
+        roomName,
+        roomColor,
+        recordedAt: r.recordedAt,
+        state,
+        stateLabel: formatCoverStateLabel(state, openPct),
+        openPct,
+        prevState,
+        prevOpenPct,
+        deltaPct:
+          prevOpenPct !== null && openPct !== null ? Math.round(openPct - prevOpenPct) : null,
+        isTransition,
+      });
+
+      prevState = state;
+      prevOpenPct = openPct;
+    }
+
+    coversByDevice[dev.id] = {
+      deviceId: dev.id,
+      movementsCount,
+      lastMovedAt,
+    };
+  }
+
+  coverEvents.sort((a, b) => b.recordedAt.localeCompare(a.recordedAt));
+
+  const covers: CoversPayload = {
+    byDevice: coversByDevice,
+    events: coverEvents.slice(0, 400),
+    activitySeries: Array.from(coverActivityBuckets.values()).sort((a, b) =>
+      a.bucket.localeCompare(b.bucket)
+    ),
+  };
+
   const automationsPayload = buildAutomationsPayload(
     automations,
     devices,
@@ -1178,6 +1297,7 @@ export function buildDashboardPayload(params: {
     energyByDevice,
     timeSeries,
     contacts,
+    covers,
     automations: automationsPayload,
     logs: logs.slice(0, 20),
   };

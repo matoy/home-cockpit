@@ -36,7 +36,7 @@ import {
   makeHomeConnectDeviceId,
   refreshHomeConnectAccessToken,
 } from './vendors/home-connect-client';
-import { isSomfyCoverUiClass } from './covers-utils';
+import { extractCoverSummary, isSomfyCoverUiClass } from './covers-utils';
 import {
   fetchSomfyInventoryWithSession,
   getSomfyConfig,
@@ -57,6 +57,7 @@ import {
   fetchDeviceSpecification,
   fetchTuyaAutomations,
   fetchTuyaDevices,
+  fetchTuyaDeviceReportLogs,
   fetchTuyaRoomMapping,
   formatMacAddress,
   getTuyaConfig,
@@ -204,6 +205,8 @@ function mapDbReading(row: typeof metricReadings.$inferSelect): MetricReadingRec
     tempC: row.tempC,
     humidityPct: row.humidityPct,
     contactOpen: row.contactOpen,
+    coverState: (row.coverState as MetricReadingRecord['coverState']) ?? null,
+    coverOpenPct: row.coverOpenPct ?? null,
   };
 }
 
@@ -353,6 +356,12 @@ async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
       `);
       await db.execute(sql`
         ALTER TABLE "metric_readings" ADD COLUMN IF NOT EXISTS "contact_open" boolean
+      `);
+      await db.execute(sql`
+        ALTER TABLE "metric_readings" ADD COLUMN IF NOT EXISTS "cover_state" text
+      `);
+      await db.execute(sql`
+        ALTER TABLE "metric_readings" ADD COLUMN IF NOT EXISTS "cover_open_pct" real
       `);
       await db.execute(sql`
         CREATE INDEX IF NOT EXISTS "idx_readings_device_time" ON "metric_readings" ("device_id", "recorded_at")
@@ -3731,7 +3740,17 @@ async function collectSomfyReadingsInDb(
 
     const hasClimate = sf.tempC !== null || sf.humidityPct !== null;
     const hasContact = sf.contactOpen !== null;
-    if (hasClimate || hasContact) {
+    const coverSummary = extractCoverSummary({
+      name: sf.name,
+      primaryVendor: 'somfy',
+      tuyaCategory: sf.deviceType,
+      category: sf.category,
+      lastRawStatus: sf.rawTraits,
+      lastBatteryPct: sf.batteryPct,
+    });
+    const hasCover = coverSummary !== null;
+
+    if (hasClimate || hasContact || hasCover) {
       readingsToInsert.push({
         deviceId: dev.id,
         roomId: dev.roomId,
@@ -3743,6 +3762,8 @@ async function collectSomfyReadingsInDb(
         tempC: sf.tempC,
         humidityPct: sf.humidityPct,
         contactOpen: sf.contactOpen,
+        coverState: coverSummary?.state ?? null,
+        coverOpenPct: coverSummary?.openPct ?? null,
       });
     }
   }
@@ -3752,6 +3773,103 @@ async function collectSomfyReadingsInDb(
   }
 
   return { updatedCount, readingsInserted: readingsToInsert.length };
+}
+
+interface TuyaIntermediateReading {
+  recordedAt: Date;
+  contactOpen: boolean | null;
+  coverState: NonNullable<MetricReadingRecord['coverState']> | null;
+  coverOpenPct: number | null;
+}
+
+const TUYA_COVER_EVENT_CODES = [
+  'percent_state',
+  'percent_control',
+  'situation_set',
+  'control',
+];
+
+async function collectTuyaIntermediateEvents(params: {
+  deviceId: string;
+  deviceName: string;
+  tuyaCategory: string | null;
+  category: DeviceCategory;
+  lastBatteryPct: number | null;
+  lastSeenAt: Date | string | null;
+  effectiveDpConfig: DpConfig;
+  hasContact: boolean;
+  hasCover: boolean;
+  now: Date;
+}): Promise<TuyaIntermediateReading[]> {
+  if (!params.hasContact && !params.hasCover) return [];
+
+  const codes: string[] = [];
+  if (params.hasContact && params.effectiveDpConfig.contact?.code) {
+    codes.push(params.effectiveDpConfig.contact.code);
+  }
+  if (params.hasCover) {
+    for (const code of TUYA_COVER_EVENT_CODES) {
+      if (!codes.includes(code)) codes.push(code);
+    }
+  }
+  if (codes.length === 0) return [];
+
+  const nowMs = params.now.getTime();
+  const rawLastMs = params.lastSeenAt ? new Date(params.lastSeenAt).getTime() : NaN;
+  const startTimeMs = Number.isFinite(rawLastMs)
+    ? Math.max(nowMs - 12 * 3_600_000, rawLastMs + 1000)
+    : nowMs - 30 * 60_000;
+  const endTimeMs = nowMs - 2000;
+  if (endTimeMs <= startTimeMs) return [];
+
+  const logs = await fetchTuyaDeviceReportLogs({
+    deviceId: params.deviceId,
+    codes,
+    startTimeMs,
+    endTimeMs,
+    size: 50,
+  });
+  if (logs.length === 0) return [];
+
+  // Regrouper les événements simultanés (ex. control + percent_state dans la même seconde)
+  const buckets = new Map<number, { tsMs: number; statuses: RawDpStatus[] }>();
+  for (const entry of logs) {
+    if (Math.abs(nowMs - entry.eventTimeMs) <= 2000) continue;
+    const key = Math.floor(entry.eventTimeMs / 2000);
+    const bucket = buckets.get(key) ?? { tsMs: entry.eventTimeMs, statuses: [] };
+    bucket.tsMs = Math.max(bucket.tsMs, entry.eventTimeMs);
+    bucket.statuses.push({ code: entry.code, value: entry.value });
+    buckets.set(key, bucket);
+  }
+
+  const results: TuyaIntermediateReading[] = [];
+  for (const bucket of Array.from(buckets.values()).sort((a, b) => a.tsMs - b.tsMs)) {
+    const contactOpen =
+      params.hasContact && params.effectiveDpConfig.contact
+        ? extractMetricsFromStatus(bucket.statuses, { contact: params.effectiveDpConfig.contact })
+            .contactOpen
+        : null;
+    const coverSummary = params.hasCover
+      ? extractCoverSummary({
+          name: params.deviceName,
+          primaryVendor: 'tuya',
+          tuyaCategory: params.tuyaCategory,
+          category: params.category,
+          lastRawStatus: bucket.statuses,
+          lastBatteryPct: params.lastBatteryPct,
+        })
+      : null;
+
+    if (contactOpen !== null || coverSummary !== null) {
+      results.push({
+        recordedAt: new Date(bucket.tsMs),
+        contactOpen,
+        coverState: coverSummary ? coverSummary.state : null,
+        coverOpenPct: coverSummary ? coverSummary.openPct : null,
+      });
+    }
+  }
+  return results;
 }
 
 export async function runCollection(trigger: 'schedule' | 'manual'): Promise<CollectionLogRecord> {
@@ -3953,6 +4071,47 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       if (!dev.isMonitored) continue;
       const effectiveDpConfig = sanitizeDeviceDpConfig(dev.dpConfig ?? {}, dev.tuyaCategory).dpConfig;
       const metrics = extractMetricsFromStatus(rawStatus, effectiveDpConfig);
+      const coverSummary = extractCoverSummary({
+        name: dev.name,
+        primaryVendor: 'tuya',
+        tuyaCategory: dev.tuyaCategory,
+        category: dev.category,
+        lastRawStatus: rawStatus,
+        lastBatteryPct: metrics.batteryPct,
+      });
+      const hasCover = coverSummary !== null;
+
+      const intermediateEvents = await collectTuyaIntermediateEvents({
+        deviceId: dev.id,
+        deviceName: dev.name,
+        tuyaCategory: dev.tuyaCategory,
+        category: dev.category,
+        lastBatteryPct: metrics.batteryPct,
+        lastSeenAt: dev.lastSeenAt,
+        effectiveDpConfig,
+        hasContact: Boolean(effectiveDpConfig.contact?.code) || dev.category === 'contact',
+        hasCover,
+        now,
+      });
+      for (const ev of intermediateEvents) {
+        state.readings.push({
+          id: state.nextReadingId++,
+          deviceId: dev.id,
+          roomId: dev.roomId,
+          recordedAt: ev.recordedAt.toISOString(),
+          powerW: null,
+          voltageV: null,
+          energyKwh: null,
+          energySource: null,
+          tempC: null,
+          humidityPct: null,
+          contactOpen: ev.contactOpen,
+          coverState: ev.coverState,
+          coverOpenPct: ev.coverOpenPct,
+        });
+        inserted++;
+      }
+
       const energyRes =
         metrics.powerW !== null || metrics.addEleKwh !== null
           ? computeHybridEnergyKwh({
@@ -3977,6 +4136,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
         tempC: metrics.tempC,
         humidityPct: metrics.humidityPct,
         contactOpen: metrics.contactOpen,
+        coverState: coverSummary ? coverSummary.state : null,
+        coverOpenPct: coverSummary ? coverSummary.openPct : null,
       });
 
       dev.lastRawStatus = rawStatus;
@@ -4061,7 +4222,48 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       const hasPower = metrics.powerW !== null || metrics.addEleKwh !== null;
       const hasClimate = metrics.tempC !== null || metrics.humidityPct !== null;
       const hasContact = metrics.contactOpen !== null;
-      if (!hasPower && !hasClimate && !hasContact) {
+      const coverSummary = extractCoverSummary({
+        name: dev.name,
+        primaryVendor: 'tuya',
+        tuyaCategory: dev.tuyaCategory,
+        category: (dev.category as DeviceCategory) || 'other',
+        lastRawStatus: rawStatus,
+        lastBatteryPct: metrics.batteryPct,
+      });
+      const hasCover = coverSummary !== null;
+
+      if (hasContact || Boolean(effectiveDpConfig.contact?.code) || dev.category === 'contact' || hasCover) {
+        const intermediateEvents = await collectTuyaIntermediateEvents({
+          deviceId: dev.id,
+          deviceName: dev.name,
+          tuyaCategory: dev.tuyaCategory,
+          category: (dev.category as DeviceCategory) || 'other',
+          lastBatteryPct: metrics.batteryPct,
+          lastSeenAt: dev.lastSeenAt,
+          effectiveDpConfig,
+          hasContact: hasContact || Boolean(effectiveDpConfig.contact?.code) || dev.category === 'contact',
+          hasCover,
+          now,
+        });
+        for (const ev of intermediateEvents) {
+          readingsToInsert.push({
+            deviceId: dev.id,
+            roomId: dev.roomId,
+            recordedAt: ev.recordedAt,
+            powerW: null,
+            voltageV: null,
+            energyKwh: null,
+            energySource: null,
+            tempC: null,
+            humidityPct: null,
+            contactOpen: ev.contactOpen,
+            coverState: ev.coverState,
+            coverOpenPct: ev.coverOpenPct,
+          });
+        }
+      }
+
+      if (!hasPower && !hasClimate && !hasContact && !hasCover) {
         await db
           .update(devices)
           .set({ lastRawStatus: rawStatus, lastSeenAt: now })
@@ -4091,6 +4293,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
         tempC: metrics.tempC,
         humidityPct: metrics.humidityPct,
         contactOpen: metrics.contactOpen,
+        coverState: coverSummary ? coverSummary.state : null,
+        coverOpenPct: coverSummary ? coverSummary.openPct : null,
       });
 
       await db

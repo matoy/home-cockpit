@@ -1156,3 +1156,61 @@ export function extractMetricsFromStatus(
     contactOpen: readContactMetric(rawStatus, dpConfig.contact),
   };
 }
+
+export interface TuyaReportLogEntry {
+  code: string;
+  value: unknown;
+  eventTimeMs: number;
+}
+
+export async function fetchTuyaDeviceReportLogs(params: {
+  deviceId: string;
+  codes: string[];
+  startTimeMs: number;
+  endTimeMs: number;
+  size?: number;
+}): Promise<TuyaReportLogEntry[]> {
+  if (
+    !getTuyaConfig().configured ||
+    params.codes.length === 0 ||
+    !Number.isFinite(params.startTimeMs) ||
+    !Number.isFinite(params.endTimeMs) ||
+    params.endTimeMs <= params.startTimeMs
+  ) {
+    return [];
+  }
+
+  const query = new URLSearchParams({
+    codes: params.codes.join(','),
+    start_time: String(Math.floor(params.startTimeMs)),
+    end_time: String(Math.floor(params.endTimeMs)),
+    size: String(params.size ?? 50),
+  });
+
+  try {
+    const res = await tuyaRequest<
+      | { logs?: Array<{ code?: string; value?: unknown; event_time?: number | string }> }
+      | Array<{ code?: string; value?: unknown; event_time?: number | string }>
+    >(`/v1.0/iot-03/devices/${encodeURIComponent(params.deviceId)}/report-logs?${query.toString()}`);
+
+    const rawLogs = Array.isArray(res) ? res : (res?.logs ?? []);
+    const entries: TuyaReportLogEntry[] = [];
+
+    for (const item of rawLogs) {
+      if (!item || typeof item.code !== 'string') continue;
+      const rawTs = Number(item.event_time);
+      if (!Number.isFinite(rawTs) || rawTs <= 0) continue;
+      const eventTimeMs = rawTs < 1e12 ? rawTs * 1000 : rawTs;
+      entries.push({
+        code: item.code,
+        value: item.value,
+        eventTimeMs,
+      });
+    }
+
+    entries.sort((a, b) => a.eventTimeMs - b.eventTimeMs);
+    return entries;
+  } catch {
+    return [];
+  }
+}

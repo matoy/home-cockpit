@@ -2,10 +2,21 @@
 
 import { useMemo, useState } from 'react';
 import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import {
+  Activity,
   AlertTriangle,
   BatteryWarning,
   Blinds,
   CheckCircle2,
+  Filter,
   Home,
   Search,
   SlidersHorizontal,
@@ -16,7 +27,14 @@ import {
   type CoverKind,
   type CoverSummary,
 } from '@/lib/covers-utils';
-import type { DashboardPayload, DeviceRecord, RoomRecord, TabId } from '@/types';
+import type {
+  CoverEventItem,
+  CoverHistoryState,
+  DashboardPayload,
+  DeviceRecord,
+  RoomRecord,
+  TabId,
+} from '@/types';
 
 interface CoversTabProps {
   data: DashboardPayload;
@@ -55,10 +73,34 @@ function formatTimeShort(iso: string | null): string {
   });
 }
 
+function formatPrevStateShort(
+  state: CoverHistoryState,
+  openPct: number | null
+): string {
+  if (state === 'closed') return openPct !== null ? `Fermé (${openPct}%)` : 'Fermé';
+  if (state === 'open') return openPct !== null ? `Ouvert (${openPct}%)` : 'Ouvert';
+  if (state === 'partial') return openPct !== null ? `Partiel (${openPct}%)` : 'Partiel';
+  return 'Inconnu';
+}
+
+function formatCoverEventBadge(ev: CoverEventItem): string {
+  if (ev.isTransition && ev.prevState !== null) {
+    const prevText = formatPrevStateShort(ev.prevState, ev.prevOpenPct);
+    const deltaStr =
+      ev.deltaPct !== null && ev.deltaPct !== 0
+        ? ` · ${ev.deltaPct > 0 ? '+' : ''}${ev.deltaPct}%`
+        : '';
+    return `${prevText} → ${ev.stateLabel}${deltaStr}`;
+  }
+  return ev.stateLabel;
+}
+
 export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversTabProps) {
   const [stateFilter, setStateFilter] = useState<StateFilter>('all');
   const [kindFilter, setKindFilter] = useState<KindFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedHistoryDeviceId, setSelectedHistoryDeviceId] = useState<string>('all');
+  const [transitionsOnly, setTransitionsOnly] = useState<boolean>(true);
 
   const roomById = useMemo(
     () => new Map(data.rooms.map((r) => [r.id, r])),
@@ -201,6 +243,25 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
 
     return [...groups.values()];
   }, [filteredCovers]);
+
+  const effectiveHistoryDeviceId =
+    selectedHistoryDeviceId !== 'all' &&
+    scopedCovers.some((c) => c.device.id === selectedHistoryDeviceId)
+      ? selectedHistoryDeviceId
+      : 'all';
+
+  const visibleCoverEvents = useMemo(() => {
+    const events = data.covers?.events ?? [];
+    return events.filter((ev) => {
+      if (effectiveHistoryDeviceId !== 'all' && ev.deviceId !== effectiveHistoryDeviceId) {
+        return false;
+      }
+      if (transitionsOnly && !ev.isTransition) return false;
+      return true;
+    });
+  }, [data.covers?.events, effectiveHistoryDeviceId, transitionsOnly]);
+
+  const coverActivitySeries = data.covers?.activitySeries ?? [];
 
   if (allCovers.length === 0) {
     return (
@@ -436,6 +497,8 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                 {group.items.map(({ device, summary }) => {
                   const displayName = device.customName || device.name;
                   const barPct = summary.openPct ?? 0;
+                  const historyStat = data.covers?.byDevice?.[device.id];
+                  const isHistorySelected = effectiveHistoryDeviceId === device.id;
                   const stateToneClass =
                     summary.state === 'open'
                       ? 'border-sky-500/40 bg-sky-500/15 text-sky-300'
@@ -455,7 +518,15 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                   return (
                     <div
                       key={device.id}
-                      className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 flex flex-col justify-between gap-3"
+                      onClick={() =>
+                        setSelectedHistoryDeviceId(isHistorySelected ? 'all' : device.id)
+                      }
+                      title="Cliquer pour filtrer l'historique ci-dessous sur cet équipement"
+                      className={`cursor-pointer rounded-xl border bg-slate-950/70 p-3.5 flex flex-col justify-between gap-3 transition ${
+                        isHistorySelected
+                          ? 'border-amber-500 ring-1 ring-amber-500/40'
+                          : 'border-slate-800 hover:border-slate-700'
+                      }`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
@@ -538,6 +609,18 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                               {summary.rssiLevel ?? `${summary.rssiPct}%`}
                             </span>
                           )}
+                          {historyStat && historyStat.movementsCount > 0 && (
+                            <span
+                              className="rounded bg-slate-900 px-1.5 py-0.5 text-amber-300/90"
+                              title={
+                                historyStat.lastMovedAt
+                                  ? `Dernier changement : ${formatTimeShort(historyStat.lastMovedAt)}`
+                                  : undefined
+                              }
+                            >
+                              {historyStat.movementsCount} mouv.
+                            </span>
+                          )}
                           {summary.batteryPct !== null && (
                             <span
                               className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${
@@ -563,6 +646,153 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Activité + Historique chronologique des changements d'état & positions */}
+      {(scopedCovers.length > 0 || coverActivitySeries.length > 0 || visibleCoverEvents.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                <Activity className="h-4 w-4 text-amber-400" />
+                Activité des volets &amp; stores sur la période
+              </h3>
+              <p className="text-xs text-slate-400">
+                Nombre de mouvements détectés et de relevés en position ouverte / partielle
+              </p>
+            </div>
+
+            {coverActivitySeries.length === 0 ? (
+              <div className="h-64 flex items-center justify-center text-xs text-slate-500">
+                Pas encore d&apos;historique collecté pour ces équipements sur la période.
+              </div>
+            ) : (
+              <div className="h-72 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={coverActivitySeries}
+                    margin={{ top: 10, right: 12, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis dataKey="label" stroke="#64748b" fontSize={11} minTickGap={24} />
+                    <YAxis stroke="#64748b" fontSize={11} allowDecimals={false} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#0f172a',
+                        borderColor: '#334155',
+                        borderRadius: '12px',
+                        fontSize: '12px',
+                      }}
+                    />
+                    <Bar
+                      dataKey="transitionsCount"
+                      name="Mouvements / changements"
+                      fill="#f59e0b"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="openCount"
+                      name="Relevés ouverts"
+                      fill="#38bdf8"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-amber-400" />
+                  Historique des changements ({visibleCoverEvents.length})
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Journal horodaté des mouvements et positions relevées
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={effectiveHistoryDeviceId}
+                  onChange={(e) => setSelectedHistoryDeviceId(e.target.value)}
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                >
+                  <option value="all">Tous les équipements</option>
+                  {scopedCovers.map(({ device }) => (
+                    <option key={device.id} value={device.id}>
+                      {device.customName || device.name}
+                    </option>
+                  ))}
+                </select>
+
+                <label className="inline-flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={transitionsOnly}
+                    onChange={(e) => setTransitionsOnly(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-950 text-amber-500"
+                  />
+                  Transitions seules
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {visibleCoverEvents.length === 0 ? (
+                <div className="py-12 text-center text-xs text-slate-500">
+                  {transitionsOnly
+                    ? 'Aucun changement de position détecté sur cette période (décochez « Transitions seules » pour voir tous les relevés).'
+                    : 'Aucun relevé historique sur cette période.'}
+                </div>
+              ) : (
+                visibleCoverEvents.map((ev) => {
+                  const badgeToneClass =
+                    ev.state === 'open'
+                      ? 'border-sky-500/30 bg-sky-500/15 text-sky-300'
+                      : ev.state === 'partial'
+                        ? 'border-amber-500/30 bg-amber-500/15 text-amber-300'
+                        : ev.state === 'closed'
+                          ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
+                          : 'border-slate-700 bg-slate-800/80 text-slate-300';
+
+                  return (
+                    <div
+                      key={ev.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800/80 bg-slate-950/60 px-3.5 py-2 text-xs"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Blinds className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                        <div className="min-w-0">
+                          <div className="font-medium text-slate-200 truncate">
+                            {ev.deviceName}
+                          </div>
+                          <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
+                            <span
+                              className="h-1.5 w-1.5 rounded-full"
+                              style={{ backgroundColor: ev.roomColor }}
+                            />
+                            <span>{ev.roomName}</span>
+                            <span>·</span>
+                            <span className="font-mono">{formatTimeShort(ev.recordedAt)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold shrink-0 border ${badgeToneClass}`}
+                      >
+                        {formatCoverEventBadge(ev)}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

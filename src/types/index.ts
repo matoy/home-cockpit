@@ -140,6 +140,8 @@ export interface MetricReadingRecord {
   tempC: number | null;
   humidityPct: number | null;
   contactOpen: boolean | null;
+  coverState?: 'open' | 'partial' | 'closed' | 'unknown' | null;
+  coverOpenPct?: number | null;
 }
 
 export interface TariffPeriodRecord {
@@ -265,6 +267,7 @@ export interface ContactEventItem {
   roomColor: string;
   recordedAt: string;
   isOpen: boolean;
+  prevIsOpen?: boolean | null;
   isTransition: boolean;
 }
 
@@ -288,6 +291,44 @@ export interface ContactsPayload {
   sensors: ContactSensorStat[];
   events: ContactEventItem[];
   activitySeries: ContactActivityPoint[];
+}
+
+export type CoverHistoryState = 'open' | 'partial' | 'closed' | 'unknown';
+
+export interface CoverDeviceHistoryStat {
+  deviceId: string;
+  movementsCount: number;
+  lastMovedAt: string | null;
+}
+
+export interface CoverEventItem {
+  id: string;
+  deviceId: string;
+  deviceName: string;
+  roomId: number | null;
+  roomName: string;
+  roomColor: string;
+  recordedAt: string;
+  state: CoverHistoryState;
+  stateLabel: string;
+  openPct: number | null;
+  prevState: CoverHistoryState | null;
+  prevOpenPct: number | null;
+  deltaPct: number | null;
+  isTransition: boolean;
+}
+
+export interface CoverActivityPoint {
+  bucket: string;
+  label: string;
+  openCount: number;
+  transitionsCount: number;
+}
+
+export interface CoversPayload {
+  byDevice: Record<string, CoverDeviceHistoryStat>;
+  events: CoverEventItem[];
+  activitySeries: CoverActivityPoint[];
 }
 
 export type AutomationRuleType = 'automation' | 'scene';
@@ -449,6 +490,7 @@ export interface DashboardPayload {
   energyByDevice: EnergyBreakdownItem[];
   timeSeries: TimeSeriesPoint[];
   contacts: ContactsPayload;
+  covers: CoversPayload;
   automations: AutomationsPayload;
   logs: CollectionLogRecord[];
 }

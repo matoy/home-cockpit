@@ -1,3 +1,4 @@
+import { extractCoverSummary } from './covers-utils';
 import { computeHybridEnergyKwh, normalizeTariffTimeline } from './tariff-engine';
 import type {
   AutomationRecord,
@@ -1134,6 +1135,62 @@ function createInitialDemoState(): DemoState {
         contactOpen: null,
       });
     }
+
+    // 13. Volet Roulant Salon (Somfy io) — ouvert 08h-20h30 (55%-100%), fermé la nuit (0%)
+    {
+      const noise = pseudoNoise(step * 6.1);
+      const isDay = hour >= 8 && hour <= 20.5;
+      const coverOpenPct =
+        step === 0
+          ? 75
+          : isDay
+            ? hour >= 13 && hour <= 16.5 && noise > 0.4
+              ? 55
+              : 100
+            : 0;
+      const coverState: MetricReadingRecord['coverState'] =
+        coverOpenPct === 0 ? 'closed' : coverOpenPct === 100 ? 'open' : 'partial';
+      readings.push({
+        id: nextReadingId++,
+        deviceId: 'somfy_demo_volet_salon',
+        roomId: 1,
+        recordedAt: ts.toISOString(),
+        powerW: null,
+        voltageV: null,
+        energyKwh: null,
+        energySource: null,
+        tempC: null,
+        humidityPct: null,
+        contactOpen: null,
+        coverState,
+        coverOpenPct,
+      });
+    }
+
+    // 14. Volet Bureau Tubular Motor (Tuya cl) — ouvert 08h30-19h30 (80%-100%), fermé la nuit (0%)
+    {
+      const noise = pseudoNoise(step * 6.5);
+      const isDay = hour >= 8.5 && hour <= 19.5;
+      const coverOpenPct =
+        step === 0 ? 100 : isDay ? (noise > 0.7 ? 80 : 100) : 0;
+      const coverState: MetricReadingRecord['coverState'] =
+        coverOpenPct === 0 ? 'closed' : coverOpenPct === 100 ? 'open' : 'partial';
+      readings.push({
+        id: nextReadingId++,
+        deviceId: 'bf81a2c9tubularbureau',
+        roomId: 2,
+        recordedAt: ts.toISOString(),
+        powerW: null,
+        voltageV: null,
+        energyKwh: null,
+        energySource: null,
+        tempC: null,
+        humidityPct: null,
+        contactOpen: null,
+        coverState,
+        coverOpenPct,
+      });
+    }
   }
 
   // Synchroniser les dernières valeurs des appareils avec la fin de la série générée
@@ -1536,6 +1593,39 @@ export function simulateDemoCollection(trigger: 'schedule' | 'manual'): Collecti
       contactOpen = !contactOpen;
     }
 
+    const coverSummary = extractCoverSummary(dev);
+    let coverState: MetricReadingRecord['coverState'] = coverSummary ? coverSummary.state : null;
+    let coverOpenPct: number | null = coverSummary ? coverSummary.openPct : null;
+    if (coverSummary && jitter > 0.55 && !coverSummary.unidirectional) {
+      coverOpenPct =
+        coverOpenPct === 0 ? 50 : coverOpenPct !== null && coverOpenPct < 100 ? 100 : 0;
+      coverState =
+        coverOpenPct === 0 ? 'closed' : coverOpenPct === 100 ? 'open' : 'partial';
+      const baseTraits = (dev.lastRawStatus ?? []).filter(
+        (item) =>
+          item.code !== 'core:ClosureState' &&
+          item.code !== 'core:OpenClosedState' &&
+          item.code !== 'percent_state' &&
+          item.code !== 'situation_set'
+      );
+      if (dev.primaryVendor === 'somfy') {
+        dev.lastRawStatus = [
+          ...baseTraits,
+          { code: 'core:ClosureState', value: 100 - coverOpenPct },
+          { code: 'core:OpenClosedState', value: coverState === 'closed' ? 'closed' : 'open' },
+        ];
+      } else {
+        dev.lastRawStatus = [
+          ...baseTraits,
+          { code: 'percent_state', value: 100 - coverOpenPct },
+          {
+            code: 'situation_set',
+            value: coverState === 'closed' ? 'fully_close' : coverState === 'open' ? 'fully_open' : 'half',
+          },
+        ];
+      }
+    }
+
     const energyRes =
       powerW !== null
         ? computeHybridEnergyKwh({
@@ -1549,7 +1639,11 @@ export function simulateDemoCollection(trigger: 'schedule' | 'manual'): Collecti
         : null;
 
     const hasNumericOrContact =
-      powerW !== null || tempC !== null || humidityPct !== null || contactOpen !== null;
+      powerW !== null ||
+      tempC !== null ||
+      humidityPct !== null ||
+      contactOpen !== null ||
+      coverSummary !== null;
 
     if (hasNumericOrContact) {
       state.readings.push({
@@ -1564,6 +1658,8 @@ export function simulateDemoCollection(trigger: 'schedule' | 'manual'): Collecti
         tempC,
         humidityPct,
         contactOpen,
+        coverState,
+        coverOpenPct,
       });
       inserted += 1;
     }

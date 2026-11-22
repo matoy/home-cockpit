@@ -177,7 +177,7 @@ export function DevicesRoomsTab({
   const [manualFeedback, setManualFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Filtres des appareils (système, pièce, recherche textuelle)
-  const [systemFilter, setSystemFilter] = useState<SystemFilter | 'multi'>(
+  const [systemFilter, setSystemFilter] = useState<SystemFilter | 'multi' | 'manual'>(
     data.selectedSystem ?? 'all'
   );
   const [roomFilter, setRoomFilter] = useState<string>(initialRoomFilter ?? 'all');
@@ -368,7 +368,7 @@ export function DevicesRoomsTab({
   );
 
   const { systemCounts, unassignedCount, roomDeviceCounts, filteredDevices } = useMemo(() => {
-    const sysCounts: Record<'all' | VendorId | 'multi', number> = {
+    const sysCounts: Record<'all' | VendorId | 'multi' | 'manual', number> = {
       all: data.devices.length,
       tuya: 0,
       kasa: 0,
@@ -376,6 +376,7 @@ export function DevicesRoomsTab({
       somfy: 0,
       google_home: 0,
       multi: 0,
+      manual: 0,
     };
 
     const roomNameById = new Map<number, string>(data.rooms.map((r) => [r.id, r.name]));
@@ -384,6 +385,7 @@ export function DevicesRoomsTab({
     const matchesSystem = (dev: DeviceRecord): boolean => {
       if (systemFilter === 'all') return true;
       if (systemFilter === 'multi') return dev.systems.length > 1;
+      if (systemFilter === 'manual') return dev.id.startsWith('manual_');
       return dev.systems.includes(systemFilter);
     };
 
@@ -406,6 +408,7 @@ export function DevicesRoomsTab({
       if (dev.systems.includes('somfy')) sysCounts.somfy += 1;
       if (dev.systems.includes('google_home')) sysCounts.google_home += 1;
       if (dev.systems.length > 1) sysCounts.multi += 1;
+      if (dev.id.startsWith('manual_')) sysCounts.manual += 1;
 
       if (!matchesSystem(dev) || !matchesSearch(dev)) continue;
 
@@ -1550,6 +1553,17 @@ export function DevicesRoomsTab({
             >
               <Link2 className="h-3 w-3" />
               Multi-systèmes ({systemCounts.multi})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSystemFilter('manual')}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition border ${systemFilter === 'manual'
+                ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-200'
+                : 'border-transparent bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+                }`}
+            >
+              <Pencil className="h-3 w-3" />
+              Manuels ({systemCounts.manual})
             </button>
           </div>
 

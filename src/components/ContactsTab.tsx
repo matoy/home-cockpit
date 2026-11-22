@@ -462,7 +462,13 @@ export function ContactsTab({ data, onNavigateTab }: ContactsTabProps) {
                         : 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
                     }`}
                   >
-                    {ev.isOpen ? 'OUVERT' : 'FERMÉ'}
+                    {ev.isTransition && ev.prevIsOpen !== null && ev.prevIsOpen !== undefined
+                      ? ev.prevIsOpen
+                        ? 'OUVERT → FERMÉ'
+                        : 'FERMÉ → OUVERT'
+                      : ev.isOpen
+                        ? 'OUVERT'
+                        : 'FERMÉ'}
                   </span>
                 </div>
               ))
