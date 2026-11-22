@@ -330,6 +330,21 @@ function findKv(
 }
 
 /**
+ * Extrait et formate l'adresse MAC Wi-Fi BSH depuis le `haId` Home Connect
+ * lorsque celui-ci se termine par `-<12 hex>` (ex: `SIEMENS-SN65ZX49CE-68A40E1A2B3C`).
+ */
+export function extractHomeConnectMacFromHaId(haId?: string | null): string | null {
+  if (!haId || typeof haId !== 'string') return null;
+  const trimmed = haId.trim();
+  const dashIdx = trimmed.lastIndexOf('-');
+  if (dashIdx < 0) return null;
+  const tail = trimmed.slice(dashIdx + 1).trim().toUpperCase();
+  if (!/^[0-9A-F]{12}$/.test(tail)) return null;
+  if (tail === '000000000000' || tail === 'FFFFFFFFFFFF') return null;
+  return tail.match(/.{1,2}/g)?.join(':') ?? null;
+}
+
+/**
  * Normalise un appareil Home Connect (100 % lecture seule) sans jamais renseigner
  * `tempC` / `contactOpen` / `powerW` pour éviter de polluer les onglets Climat et Ouvertures.
  */
@@ -343,6 +358,7 @@ export function normalizeHomeConnectAppliance(params: {
   const allKv = [...statusItems, ...settingItems, ...(activeProgram?.options ?? [])];
 
   const traits: RawDpStatus[] = [];
+  if (raw.haId) traits.push({ code: 'ha_id', value: raw.haId });
   if (raw.type) traits.push({ code: 'appliance_type', value: raw.type });
   if (raw.brand) traits.push({ code: 'brand', value: raw.brand });
   if (raw.vib) traits.push({ code: 'vib', value: raw.vib });
@@ -425,6 +441,7 @@ export function normalizeHomeConnectAppliance(params: {
   const manufacturer = raw.brand?.trim() || 'Siemens';
   const model = raw.enumber?.trim() || raw.vib?.trim() || raw.type?.trim() || null;
   const fallbackName = [manufacturer, raw.type].filter(Boolean).join(' ') || raw.haId;
+  const macAddress = extractHomeConnectMacFromHaId(raw.haId);
 
   return {
     externalId: raw.haId,
@@ -440,6 +457,8 @@ export function normalizeHomeConnectAppliance(params: {
     batteryPct: null,
     contactOpen: null,
     powerW: null,
+    macAddress,
+    ipAddress: null,
     rawTraits: traits,
   };
 }

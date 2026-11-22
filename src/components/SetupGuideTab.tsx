@@ -740,6 +740,13 @@ SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
                 la puissance en watts ; si votre appareil est sur une prise Tuya/Kasa, utilisez{' '}
                 <strong>Lier → Fusionner</strong> dans Appareils.
               </li>
+              <li>
+                <strong>IP / MAC Siemens :</strong> l&apos;adresse MAC est extraite automatiquement
+                du <code>haId</code> BSH lorsqu&apos;il se termine par les 12 chiffres hexadécimaux (ex.{' '}
+                <code>68:A4:0E:...</code>). L&apos;API cloud Home Connect n&apos;expose pas l&apos;IP
+                locale ; vous pouvez la saisir manuellement via le bouton <strong>DP</strong> dans{' '}
+                <strong>Appareils</strong> (en utilisant la MAC pour la repérer sur votre box/routeur), et elle sera conservée lors des synchronisations suivantes.
+              </li>
             </ul>
           </details>
 

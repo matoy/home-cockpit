@@ -2344,6 +2344,7 @@ export async function syncHomeConnectDevices(): Promise<{
       manufacturer: hc.manufacturer,
       model: hc.model,
       deviceType: hc.deviceType,
+      macAddress: hc.macAddress ?? null,
     };
 
     if (linkedDevice) {
@@ -2369,6 +2370,8 @@ export async function syncHomeConnectDevices(): Promise<{
             systems: nextSystems,
             tuyaCategory: hc.deviceType ?? 'home_connect',
             productName,
+            ipAddress: linkedDevice.ipAddress ?? hc.ipAddress ?? null,
+            macAddress: linkedDevice.macAddress ?? hc.macAddress ?? null,
             isOnline: hc.isOnline,
             lastRawStatus: hc.rawTraits,
             lastSeenAt: now,
@@ -2401,8 +2404,8 @@ export async function syncHomeConnectDevices(): Promise<{
           category: 'other',
           tuyaCategory: hc.deviceType ?? 'home_connect',
           productName,
-          ipAddress: null,
-          macAddress: null,
+          ipAddress: hc.ipAddress ?? null,
+          macAddress: hc.macAddress ?? null,
           isOnline: hc.isOnline,
           isMonitored: true,
           excludeFromTotals: false,
@@ -2945,6 +2948,7 @@ async function collectHomeConnectStatusInDb(
         isOnline: hc.isOnline,
         lastRawStatus: hc.rawTraits,
         lastSeenAt: now,
+        ...(!dev.macAddress && hc.macAddress ? { macAddress: hc.macAddress } : {}),
       })
       .where(eq(devices.id, dev.id));
     updatedCount++;

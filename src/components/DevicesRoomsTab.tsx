@@ -134,9 +134,11 @@ export function DevicesRoomsTab({
   const [dismissedDuplicates, setDismissedDuplicates] = useState<string[]>([]);
   const [mergingId, setMergingId] = useState<string | null>(null);
 
-  // Inspecteur DP
+  // Inspecteur DP & réseau local (IP / MAC)
   const [inspectDevice, setInspectDevice] = useState<DeviceRecord | null>(null);
   const [dpDraft, setDpDraft] = useState<DpConfig>({});
+  const [inspectorIp, setInspectorIp] = useState('');
+  const [inspectorMac, setInspectorMac] = useState('');
   const [savingDp, setSavingDp] = useState(false);
 
   // Modale Systèmes & Fusion
@@ -646,6 +648,8 @@ export function DevicesRoomsTab({
     updates: Partial<{
       customName: string | null;
       roomId: number | null;
+      ipAddress: string | null;
+      macAddress: string | null;
       isMonitored: boolean;
       excludeFromTotals: boolean;
       energyMode: EnergyMode;
@@ -663,13 +667,22 @@ export function DevicesRoomsTab({
   function openInspector(dev: DeviceRecord) {
     setInspectDevice(dev);
     setDpDraft(structuredClone(dev.dpConfig ?? {}));
+    setInspectorIp(dev.ipAddress ?? '');
+    setInspectorMac(dev.macAddress ?? '');
   }
 
   async function saveInspector() {
     if (!inspectDevice) return;
     setSavingDp(true);
     try {
-      await handleDeviceUpdate(inspectDevice.id, { dpConfig: dpDraft });
+      const updates: Parameters<typeof handleDeviceUpdate>[1] = {
+        ipAddress: inspectorIp.trim() || null,
+        macAddress: inspectorMac.trim() || null,
+      };
+      if (JSON.stringify(dpDraft) !== JSON.stringify(inspectDevice.dpConfig ?? {})) {
+        updates.dpConfig = dpDraft;
+      }
+      await handleDeviceUpdate(inspectDevice.id, updates);
       setInspectDevice(null);
     } finally {
       setSavingDp(false);
@@ -1508,14 +1521,18 @@ export function DevicesRoomsTab({
                             dev.ipAddress && somfyNet?.isGatewayNetwork
                               ? `Passerelle Somfy (${somfyNet.gatewayId || 'Kit de connectivité'}) : ${dev.ipAddress}`
                               : somfyNet && !dev.ipAddress
-                                ? 'IP passerelle non exposée par Overkiz Cloud — définissez SOMFY_GATEWAY_IP si besoin'
-                                : ipLabel;
+                                ? 'IP passerelle non exposée par Overkiz Cloud — définissez SOMFY_GATEWAY_IP ou cliquez sur DP pour la saisir'
+                                : dev.primaryVendor === 'home_connect' && !dev.ipAddress
+                                  ? 'IP locale non exposée par le cloud Siemens Home Connect — cliquez sur DP pour la saisir'
+                                  : ipLabel;
                           const macTitle =
                             dev.macAddress && somfyNet?.isGatewayNetwork
                               ? `MAC passerelle Somfy (${somfyNet.gatewayId || 'Kit de connectivité'}) : ${dev.macAddress}`
                               : somfyNet && !dev.macAddress
                                 ? 'MAC passerelle non exposée par Overkiz Cloud — définissez SOMFY_GATEWAY_MAC si besoin'
-                                : macLabel;
+                                : dev.primaryVendor === 'home_connect' && !dev.macAddress
+                                  ? 'MAC absente du haId — cliquez sur DP pour la saisir'
+                                  : macLabel;
                           return (
                             <>
                               <div className="text-slate-200 truncate" title={ipTitle}>
@@ -2047,6 +2064,45 @@ export function DevicesRoomsTab({
               </button>
             </div>
 
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 space-y-3 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="font-medium text-slate-200">Réseau local (IP / MAC)</div>
+                <span className="text-[11px] text-slate-400">
+                  Conservées lors des synchronisations cloud
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] text-slate-400 mb-1">
+                    Adresse IP locale
+                  </label>
+                  <input
+                    type="text"
+                    value={inspectorIp}
+                    onChange={(e) => setInspectorIp(e.target.value)}
+                    placeholder="ex: 192.168.1.54"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 font-mono text-xs text-white focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-400 mb-1">Adresse MAC</label>
+                  <input
+                    type="text"
+                    value={inspectorMac}
+                    onChange={(e) => setInspectorMac(e.target.value)}
+                    placeholder="ex: 68:A4:0E:12:34:56"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 font-mono text-xs text-white focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+              {inspectDevice.primaryVendor === 'home_connect' && (
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  L&apos;API cloud publique Siemens Home Connect n&apos;expose pas l&apos;IP locale
+                  (la MAC est extraite automatiquement du <code>haId</code> BSH si présent).
+                </p>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               {(
                 [
@@ -2131,7 +2187,7 @@ export function DevicesRoomsTab({
                 disabled={savingDp}
                 className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-medium text-white"
               >
-                {savingDp ? 'Enregistrement...' : 'Appliquer le mapping'}
+                {savingDp ? 'Enregistrement...' : 'Enregistrer'}
               </button>
             </div>
           </div>
