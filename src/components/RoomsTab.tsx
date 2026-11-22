@@ -312,11 +312,10 @@ export function RoomsTab({
                   {VENDOR_REGISTRY.tuya.label}
                 </span>
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    data.env.tuyaConfigured || data.env.mode === 'demo'
-                      ? 'bg-emerald-500/15 text-emerald-300'
-                      : 'bg-slate-800 text-slate-400'
-                  }`}
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.tuyaConfigured || data.env.mode === 'demo'
+                    ? 'bg-emerald-500/15 text-emerald-300'
+                    : 'bg-slate-800 text-slate-400'
+                    }`}
                 >
                   {data.env.mode === 'demo'
                     ? 'Mode Démo'
@@ -362,11 +361,10 @@ export function RoomsTab({
                     {VENDOR_REGISTRY.kasa.label}
                   </span>
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                      data.env.kasaConfigured || data.env.mode === 'demo'
-                        ? 'bg-emerald-500/15 text-emerald-300'
-                        : 'bg-slate-800 text-slate-400'
-                    }`}
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.kasaConfigured || data.env.mode === 'demo'
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-slate-800 text-slate-400'
+                      }`}
                   >
                     {data.env.mode === 'demo'
                       ? 'Mode Démo'
@@ -417,11 +415,10 @@ export function RoomsTab({
                       {VENDOR_REGISTRY.google_home.label}
                     </span>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                        isGhConnected
-                          ? 'bg-emerald-500/15 text-emerald-300'
-                          : 'bg-slate-800 text-slate-400'
-                      }`}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isGhConnected
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : 'bg-slate-800 text-slate-400'
+                        }`}
                     >
                       {data.env.mode === 'demo'
                         ? 'Mode Démo'
@@ -505,11 +502,10 @@ export function RoomsTab({
 
         {syncMessage && (
           <div
-            className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-xs ${
-              syncMessage.ok
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-            }`}
+            className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-xs ${syncMessage.ok
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+              : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+              }`}
           >
             {syncMessage.ok ? (
               <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -525,11 +521,10 @@ export function RoomsTab({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <form
           onSubmit={handleSubmitRoom}
-          className={`rounded-2xl border p-5 space-y-4 transition self-start ${
-            editingRoomId !== null
-              ? 'border-indigo-500/50 bg-slate-900/90 ring-1 ring-indigo-500/20'
-              : 'border-slate-800 bg-slate-900/70'
-          }`}
+          className={`rounded-2xl border p-5 space-y-4 transition self-start ${editingRoomId !== null
+            ? 'border-indigo-500/50 bg-slate-900/90 ring-1 ring-indigo-500/20'
+            : 'border-slate-800 bg-slate-900/70'
+            }`}
         >
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-white flex items-center gap-2">
@@ -578,9 +573,8 @@ export function RoomsTab({
                   key={c}
                   type="button"
                   onClick={() => setRoomColor(c)}
-                  className={`h-6 w-6 rounded-full border-2 transition ${
-                    roomColor === c ? 'border-white scale-110' : 'border-transparent'
-                  }`}
+                  className={`h-6 w-6 rounded-full border-2 transition ${roomColor === c ? 'border-white scale-110' : 'border-transparent'
+                    }`}
                   style={{ backgroundColor: c }}
                 />
               ))}
@@ -647,11 +641,10 @@ export function RoomsTab({
 
           {roomFeedback && (
             <div
-              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
-                roomFeedback.ok
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                  : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-              }`}
+              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${roomFeedback.ok
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                }`}
             >
               {roomFeedback.ok ? (
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
@@ -765,11 +758,10 @@ export function RoomsTab({
                         selectRoomForEdit(r);
                       }
                     }}
-                    className={`cursor-pointer rounded-xl border p-3.5 transition flex flex-col justify-between gap-3 ${
-                      isEditing
-                        ? 'border-indigo-500 bg-indigo-950/35 ring-1 ring-indigo-500/50'
-                        : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
-                    }`}
+                    className={`cursor-pointer rounded-xl border p-3.5 transition flex flex-col justify-between gap-3 ${isEditing
+                      ? 'border-indigo-500 bg-indigo-950/35 ring-1 ring-indigo-500/50'
+                      : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+                      }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-2.5 min-w-0">
@@ -799,9 +791,8 @@ export function RoomsTab({
 
                       {summary && (
                         <span
-                          className={`rounded-full border px-2 py-0.5 text-[10px] font-medium shrink-0 ${
-                            COMFORT_BADGE_CLASSES[summary.comfort.tone]
-                          }`}
+                          className={`rounded-full border px-2 py-0.5 text-[10px] font-medium shrink-0 ${COMFORT_BADGE_CLASSES[summary.comfort.tone]
+                            }`}
                         >
                           {summary.comfort.label}
                         </span>
