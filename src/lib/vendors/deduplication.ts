@@ -87,7 +87,9 @@ export function findDuplicateCandidates(
         d.primaryVendor === 'kasa' ||
         d.primaryVendor === 'home_connect' ||
         d.primaryVendor === 'somfy' ||
-        d.primaryVendor === 'daikin') &&
+        d.primaryVendor === 'daikin' ||
+        d.primaryVendor === 'xsense' ||
+        d.primaryVendor === 'xiaomi') &&
       !normalizeSystems(d.systems, d.primaryVendor).includes('google_home')
   );
 

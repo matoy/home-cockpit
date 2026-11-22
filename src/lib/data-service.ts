@@ -37,6 +37,20 @@ import {
   refreshDaikinAccessToken,
 } from './vendors/daikin-client';
 import {
+  fetchXSenseInventoryWithSession,
+  getXSenseConfig,
+  makeXSenseDeviceId,
+  type XSenseSession,
+} from './vendors/xsense-client';
+import {
+  fetchXiaomiInventory,
+  getXiaomiConfig,
+  makeXiaomiDeviceId,
+  normalizeXiaomiRegion,
+  type XiaomiRegion,
+  type XiaomiSession,
+} from './vendors/xiaomi-client';
+import {
   fetchHomeConnectInventory,
   getHomeConnectConfig,
   HomeConnectApiError,
@@ -108,13 +122,16 @@ const RANGE_HOURS: Record<Exclude<TimeRange, 'custom'>, number> = {
 export function getEnvStatus(
   googleHomeConnected = false,
   homeConnectConnected = false,
-  daikinConnected = false
+  daikinConnected = false,
+  xiaomiConnected = false
 ): EnvStatus {
   const tuya = getTuyaConfig();
   const kasa = getKasaConfig();
   const hc = getHomeConnectConfig();
   const somfy = getSomfyConfig();
   const daikin = getDaikinConfig();
+  const xsense = getXSenseConfig();
+  const xiaomi = getXiaomiConfig();
   const google = getGoogleHomeConfig();
   const databaseConfigured = isDatabaseConfigured();
   return {
@@ -132,6 +149,10 @@ export function getEnvStatus(
     somfyRegion: somfy.region,
     daikinConfigured: daikin.configured,
     daikinConnected: daikin.configured && daikinConnected,
+    xsenseConfigured: xsense.configured,
+    xiaomiConfigured: xiaomi.configured,
+    xiaomiConnected: Boolean(xiaomiConnected),
+    xiaomiRegion: xiaomi.region,
     appPasswordConfigured: isAppPasswordConfigured(),
     scheduleSecretConfigured: Boolean(process.env.SCHEDULE_SECRET?.trim()),
     googleHomeApiEnabled: google.apiEnabled,
@@ -612,6 +633,12 @@ function buildVendorConnectionSummaries(params: {
   daikinConnected: boolean;
   daikinLastSyncedAt: string | null;
   daikinLastError: string | null;
+  xsenseConnected: boolean;
+  xsenseLastSyncedAt: string | null;
+  xsenseLastError: string | null;
+  xiaomiConnected: boolean;
+  xiaomiLastSyncedAt: string | null;
+  xiaomiLastError: string | null;
   ghConnected: boolean;
   ghMode: GoogleHomeMode;
   ghLastSyncedAt: string | null;
@@ -622,6 +649,8 @@ function buildVendorConnectionSummaries(params: {
   const hcCfg = getHomeConnectConfig();
   const somfyCfg = getSomfyConfig();
   const daikinCfg = getDaikinConfig();
+  const xsenseCfg = getXSenseConfig();
+  const xiaomiCfg = getXiaomiConfig();
   const googleCfg = getGoogleHomeConfig();
 
   const countFor = (vendor: VendorId) =>
@@ -679,6 +708,26 @@ function buildVendorConnectionSummaries(params: {
       lastError: params.daikinLastError,
     },
     {
+      vendor: 'xsense',
+      label: VENDOR_REGISTRY.xsense.label,
+      mode: 'cloud_account',
+      configured: xsenseCfg.configured,
+      connected: params.xsenseConnected,
+      devicesCount: countFor('xsense'),
+      lastSyncedAt: params.xsenseLastSyncedAt,
+      lastError: params.xsenseLastError,
+    },
+    {
+      vendor: 'xiaomi',
+      label: VENDOR_REGISTRY.xiaomi.label,
+      mode: 'cloud_account',
+      configured: xiaomiCfg.configured || params.xiaomiConnected,
+      connected: params.xiaomiConnected,
+      devicesCount: countFor('xiaomi'),
+      lastSyncedAt: params.xiaomiLastSyncedAt,
+      lastError: params.xiaomiLastError,
+    },
+    {
       vendor: 'google_home',
       label: VENDOR_REGISTRY.google_home.label,
       mode: params.ghMode,
@@ -708,6 +757,8 @@ export async function getDashboardData(
     const hcState = state.vendorConnections.home_connect;
     const somfyState = state.vendorConnections.somfy;
     const daikinState = state.vendorConnections.daikin;
+    const xsenseState = state.vendorConnections.xsense;
+    const xiaomiState = state.vendorConnections.xiaomi;
     const hcEnv: HomeConnectEnv =
       hcState.mode === 'oauth_simulator'
         ? 'simulator'
@@ -715,7 +766,12 @@ export async function getDashboardData(
           ? 'cn'
           : getHomeConnectConfig().defaultEnv;
     const env = {
-      ...getEnvStatus(ghState.connected, hcState.connected, daikinState.connected),
+      ...getEnvStatus(
+        ghState.connected,
+        hcState.connected,
+        daikinState.connected,
+        xiaomiState.connected
+      ),
       googleHomeMode:
         ghState.mode === 'mcp' || ghState.mode === 'sdm'
           ? ghState.mode
@@ -746,6 +802,12 @@ export async function getDashboardData(
       daikinConnected: daikinState.connected,
       daikinLastSyncedAt: daikinState.lastSyncedAt,
       daikinLastError: daikinState.lastError,
+      xsenseConnected: xsenseState.connected,
+      xsenseLastSyncedAt: xsenseState.lastSyncedAt,
+      xsenseLastError: xsenseState.lastError,
+      xiaomiConnected: xiaomiState.connected,
+      xiaomiLastSyncedAt: xiaomiState.lastSyncedAt,
+      xiaomiLastError: xiaomiState.lastError,
       ghConnected: ghState.connected,
       ghMode: env.googleHomeMode,
       ghLastSyncedAt: ghState.lastSyncedAt,
@@ -816,6 +878,8 @@ export async function getDashboardData(
   const hcConn = connRows.find((c) => c.vendor === 'home_connect');
   const somfyConn = connRows.find((c) => c.vendor === 'somfy');
   const daikinConn = connRows.find((c) => c.vendor === 'daikin');
+  const xsenseConn = connRows.find((c) => c.vendor === 'xsense');
+  const xiaomiConn = connRows.find((c) => c.vendor === 'xiaomi');
   const ghConn = connRows.find((c) => c.vendor === 'google_home');
   const googleCfg = getGoogleHomeConfig();
   const tuyaCfg = getTuyaConfig();
@@ -823,6 +887,8 @@ export async function getDashboardData(
   const hcCfg = getHomeConnectConfig();
   const somfyCfg = getSomfyConfig();
   const daikinCfg = getDaikinConfig();
+  const xsenseCfg = getXSenseConfig();
+  const xiaomiCfg = getXiaomiConfig();
 
   const ghMode: GoogleHomeMode =
     ghConn?.mode === 'mcp' || ghConn?.mode === 'sdm' ? ghConn.mode : googleCfg.defaultMode;
@@ -854,9 +920,26 @@ export async function getDashboardData(
         daikinConn.status === 'connected' &&
         (daikinConn.accessToken || daikinConn.refreshToken)
     );
+  const xsenseConnected =
+    xsenseCfg.configured ||
+    xsenseConn?.status === 'connected' ||
+    mappedDevices.some((d) => d.systems.includes('xsense'));
+  const xiaomiEnvTokenReady = Boolean(
+    xiaomiCfg.userId && xiaomiCfg.ssecurity && xiaomiCfg.serviceToken
+  );
+  const xiaomiConnected = Boolean(
+    xiaomiEnvTokenReady ||
+      (xiaomiConn && xiaomiConn.status === 'connected' && Boolean(xiaomiConn.accessToken))
+  );
+  const xiaomiConnConfig = (xiaomiConn?.config ?? {}) as Record<string, unknown>;
+  const xiaomiRegion: XiaomiRegion =
+    typeof xiaomiConnConfig.region === 'string'
+      ? normalizeXiaomiRegion(xiaomiConnConfig.region)
+      : xiaomiCfg.region;
 
   const env: EnvStatus = {
-    ...getEnvStatus(ghConnected, hcConnected, daikinConnected),
+    ...getEnvStatus(ghConnected, hcConnected, daikinConnected, xiaomiConnected),
+    xiaomiRegion,
     googleHomeMode: ghMode,
     homeConnectEnv: hcEnv,
   };
@@ -879,6 +962,12 @@ export async function getDashboardData(
     daikinConnected,
     daikinLastSyncedAt: daikinConn?.lastSyncedAt ? daikinConn.lastSyncedAt.toISOString() : null,
     daikinLastError: daikinConn?.lastError ?? null,
+    xsenseConnected,
+    xsenseLastSyncedAt: xsenseConn?.lastSyncedAt ? xsenseConn.lastSyncedAt.toISOString() : null,
+    xsenseLastError: xsenseConn?.lastError ?? null,
+    xiaomiConnected,
+    xiaomiLastSyncedAt: xiaomiConn?.lastSyncedAt ? xiaomiConn.lastSyncedAt.toISOString() : null,
+    xiaomiLastError: xiaomiConn?.lastError ?? null,
     ghConnected,
     ghMode,
     ghLastSyncedAt: ghConn?.lastSyncedAt ? ghConn.lastSyncedAt.toISOString() : null,
@@ -4357,6 +4446,847 @@ async function collectDaikinReadingsInDb(
   return { updatedCount, readingsInserted: readingsToInsert.length };
 }
 
+async function loadCachedXSenseSession(db: AppDatabase): Promise<XSenseSession | null> {
+  const rows = await db
+    .select()
+    .from(vendorConnections)
+    .where(eq(vendorConnections.vendor, 'xsense'))
+    .limit(1);
+  const conn = rows[0];
+  if (!conn || !conn.accessToken) return null;
+  const decrypted = decryptSecret(conn.accessToken);
+  if (!decrypted) return null;
+  try {
+    const parsed = JSON.parse(decrypted) as unknown;
+    return parsed && typeof parsed === 'object' ? (parsed as XSenseSession) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function persistXSenseConnectionInDb(
+  db: AppDatabase,
+  params: {
+    status: 'connected' | 'error' | 'disconnected';
+    session?: XSenseSession | null;
+    lastSyncedAt?: Date;
+    lastError: string | null;
+  }
+): Promise<void> {
+  const now = new Date();
+  const encryptedSession = params.session
+    ? encryptSecret(JSON.stringify(params.session))
+    : undefined;
+  const encryptedRefresh = params.session?.refreshToken
+    ? encryptSecret(params.session.refreshToken)
+    : undefined;
+
+  await db
+    .insert(vendorConnections)
+    .values({
+      vendor: 'xsense',
+      mode: 'cloud_account',
+      status: params.status,
+      ...(encryptedSession ? { accessToken: encryptedSession } : {}),
+      ...(encryptedRefresh ? { refreshToken: encryptedRefresh } : {}),
+      config: {},
+      ...(params.lastSyncedAt ? { lastSyncedAt: params.lastSyncedAt } : {}),
+      lastError: params.lastError,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: vendorConnections.vendor,
+      set: {
+        mode: 'cloud_account',
+        status: params.status,
+        ...(encryptedSession ? { accessToken: encryptedSession } : {}),
+        ...(encryptedRefresh ? { refreshToken: encryptedRefresh } : {}),
+        ...(params.lastSyncedAt ? { lastSyncedAt: params.lastSyncedAt } : {}),
+        lastError: params.lastError,
+        updatedAt: now,
+      },
+    });
+}
+
+export async function syncXSenseDevices(): Promise<{
+  syncedCount: number;
+  newCount: number;
+  mode: 'live' | 'demo';
+  message: string;
+}> {
+  const db = getDb();
+  const xsenseCfg = getXSenseConfig();
+  const now = new Date();
+
+  if (!db) {
+    const state = getDemoState();
+    if (!xsenseCfg.configured) {
+      state.vendorConnections.xsense.connected = true;
+      state.vendorConnections.xsense.lastSyncedAt = now.toISOString();
+      state.vendorConnections.xsense.lastError = null;
+      const xsCount = state.devices.filter((d) => d.systems.includes('xsense')).length;
+      return {
+        syncedCount: xsCount,
+        newCount: 0,
+        mode: 'demo',
+        message: `Mode démo actif : ${xsCount} équipement(s) X-Sense Security simulé(s) synchronisé(s).`,
+      };
+    }
+
+    const { inventory } = await fetchXSenseInventoryWithSession(null);
+    const { roomNameToId } = ensureMissingRoomsInDemo(inventory.roomNames);
+    let newCount = 0;
+
+    for (const xs of inventory.devices) {
+      const mappedRoomId = xs.roomName
+        ? (roomNameToId.get(xs.roomName.trim().toLowerCase()) ?? null)
+        : null;
+      const existingLink = state.vendorLinks.find(
+        (l) => l.vendor === 'xsense' && l.externalId === xs.externalId
+      );
+      const existing = existingLink
+        ? state.devices.find((d) => d.id === existingLink.deviceId)
+        : undefined;
+
+      if (existing) {
+        existing.systems = mergeDeviceSystems(
+          normalizeSystems(existing.systems, existing.primaryVendor),
+          'xsense',
+          existing.primaryVendor
+        );
+        if (existing.primaryVendor !== 'tuya') {
+          existing.name = xs.name;
+          if (mappedRoomId !== null) existing.roomId = mappedRoomId;
+          existing.category = xs.category;
+          existing.tuyaCategory = xs.deviceType ?? 'xsense';
+          existing.productName =
+            [xs.manufacturer, xs.model].filter(Boolean).join(' · ') || existing.productName;
+          existing.ipAddress = xs.ipAddress ?? existing.ipAddress;
+          existing.macAddress = xs.macAddress ?? existing.macAddress;
+          existing.isOnline = xs.isOnline;
+          existing.lastRawStatus = xs.rawTraits;
+          existing.lastSeenAt = now.toISOString();
+          if (xs.tempC !== null) existing.lastTempC = xs.tempC;
+          if (xs.humidityPct !== null) existing.lastHumidityPct = xs.humidityPct;
+          if (xs.batteryPct !== null) existing.lastBatteryPct = xs.batteryPct;
+        }
+        if (existingLink) existingLink.externalName = xs.name;
+      } else {
+        let candidateId = makeXSenseDeviceId(xs.externalId);
+        if (state.devices.some((d) => d.id === candidateId)) {
+          candidateId = `${candidateId}_${now.getTime().toString(36).slice(-4)}`;
+        }
+        state.devices.push({
+          id: candidateId,
+          name: xs.name,
+          customName: null,
+          primaryVendor: 'xsense',
+          systems: ['xsense'],
+          roomId: mappedRoomId,
+          category: xs.category,
+          tuyaCategory: xs.deviceType ?? 'xsense',
+          productName: [xs.manufacturer, xs.model].filter(Boolean).join(' · ') || 'X-Sense',
+          ipAddress: xs.ipAddress ?? null,
+          macAddress: xs.macAddress ?? null,
+          isOnline: xs.isOnline,
+          isMonitored: true,
+          excludeFromTotals: false,
+          energyMode: 'hybrid',
+          dpConfig: {},
+          lastRawStatus: xs.rawTraits,
+          lastSeenAt: now.toISOString(),
+          lastPowerW: null,
+          lastVoltageV: null,
+          lastAddEleKwh: null,
+          lastTempC: xs.tempC,
+          lastHumidityPct: xs.humidityPct,
+          lastBatteryPct: xs.batteryPct,
+          lastContactOpen: null,
+        });
+        state.vendorLinks.push({
+          id: state.nextLinkId++,
+          deviceId: candidateId,
+          vendor: 'xsense',
+          externalId: xs.externalId,
+          externalName: xs.name,
+          isPrimaryTelemetry: true,
+          linkedAt: now.toISOString(),
+        });
+        newCount++;
+      }
+    }
+
+    state.vendorConnections.xsense = {
+      mode: 'cloud_account',
+      connected: true,
+      lastSyncedAt: now.toISOString(),
+      lastError: inventory.warning ?? null,
+    };
+    return {
+      syncedCount: inventory.devices.length,
+      newCount,
+      mode: 'demo',
+      message: `${inventory.devices.length} équipement(s) X-Sense synchronisé(s) (${newCount} nouveau(x)).`,
+    };
+  }
+
+  await seedDefaultDataIfEmpty(db);
+  if (!xsenseCfg.configured) {
+    throw new Error(
+      'Identifiants X-Sense manquants dans .env.local (XSENSE_EMAIL et XSENSE_PASSWORD).'
+    );
+  }
+
+  const cachedSession = await loadCachedXSenseSession(db);
+  let res;
+  try {
+    res = await fetchXSenseInventoryWithSession(cachedSession);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur synchronisation X-Sense Security';
+    await persistXSenseConnectionInDb(db, {
+      status: 'error',
+      lastError: msg,
+    });
+    throw err;
+  }
+
+  const { inventory } = res;
+  const { roomNameToId } = await ensureMissingRoomsInDb(db, inventory.roomNames);
+  const [existingDeviceRows, xsLinkRows] = await Promise.all([
+    db.select().from(devices),
+    db.select().from(deviceVendorLinks).where(eq(deviceVendorLinks.vendor, 'xsense')),
+  ]);
+
+  const deviceById = new Map(existingDeviceRows.map((d) => [d.id, d]));
+  const linkByExternalId = new Map(xsLinkRows.map((l) => [l.externalId, l]));
+  let newCount = 0;
+
+  for (const xs of inventory.devices) {
+    const mappedRoomId = xs.roomName
+      ? (roomNameToId.get(xs.roomName.trim().toLowerCase()) ?? null)
+      : null;
+    const existingLink = linkByExternalId.get(xs.externalId);
+    const linkedDevice = existingLink ? deviceById.get(existingLink.deviceId) : undefined;
+    const productName = [xs.manufacturer, xs.model].filter(Boolean).join(' · ') || 'X-Sense';
+    const vendorMetadata = {
+      manufacturer: xs.manufacturer,
+      model: xs.model,
+      deviceType: xs.deviceType,
+      roomName: xs.roomName,
+    };
+
+    if (linkedDevice) {
+      const primaryVendor: VendorId = isValidVendorId(linkedDevice.primaryVendor)
+        ? linkedDevice.primaryVendor
+        : 'xsense';
+      const nextSystems = mergeDeviceSystems(
+        normalizeSystems(linkedDevice.systems, primaryVendor),
+        'xsense',
+        primaryVendor
+      );
+
+      if (primaryVendor === 'tuya' || primaryVendor === 'kasa') {
+        await db
+          .update(devices)
+          .set({
+            systems: nextSystems,
+            ...(linkedDevice.roomId === null && mappedRoomId !== null
+              ? { roomId: mappedRoomId }
+              : {}),
+          })
+          .where(eq(devices.id, linkedDevice.id));
+      } else {
+        await db
+          .update(devices)
+          .set({
+            name: xs.name,
+            systems: nextSystems,
+            ...(linkedDevice.roomId === null && mappedRoomId !== null
+              ? { roomId: mappedRoomId }
+              : {}),
+            category: xs.category,
+            tuyaCategory: xs.deviceType ?? 'xsense',
+            productName,
+            ipAddress: linkedDevice.ipAddress ?? xs.ipAddress ?? null,
+            macAddress: linkedDevice.macAddress ?? xs.macAddress ?? null,
+            isOnline: xs.isOnline,
+            lastRawStatus: xs.rawTraits,
+            lastSeenAt: now,
+            ...(xs.tempC !== null ? { lastTempC: xs.tempC } : {}),
+            ...(xs.humidityPct !== null ? { lastHumidityPct: xs.humidityPct } : {}),
+            ...(xs.batteryPct !== null ? { lastBatteryPct: xs.batteryPct } : {}),
+          })
+          .where(eq(devices.id, linkedDevice.id));
+      }
+
+      await db
+        .update(deviceVendorLinks)
+        .set({ externalName: xs.name, vendorMetadata })
+        .where(eq(deviceVendorLinks.id, existingLink!.id));
+    } else {
+      let candidateId = makeXSenseDeviceId(xs.externalId);
+      if (deviceById.has(candidateId)) {
+        candidateId = `${candidateId}_${now.getTime().toString(36).slice(-4)}`;
+      }
+      const [inserted] = await db
+        .insert(devices)
+        .values({
+          id: candidateId,
+          name: xs.name,
+          customName: null,
+          primaryVendor: 'xsense',
+          systems: ['xsense'],
+          roomId: mappedRoomId,
+          category: xs.category,
+          tuyaCategory: xs.deviceType ?? 'xsense',
+          productName,
+          ipAddress: xs.ipAddress ?? null,
+          macAddress: xs.macAddress ?? null,
+          isOnline: xs.isOnline,
+          isMonitored: true,
+          excludeFromTotals: false,
+          energyMode: 'hybrid',
+          dpConfig: {},
+          lastRawStatus: xs.rawTraits,
+          lastSeenAt: now,
+          lastPowerW: null,
+          lastVoltageV: null,
+          lastAddEleKwh: null,
+          lastTempC: xs.tempC,
+          lastHumidityPct: xs.humidityPct,
+          lastBatteryPct: xs.batteryPct,
+          lastContactOpen: null,
+        })
+        .returning();
+
+      await db
+        .insert(deviceVendorLinks)
+        .values({
+          deviceId: candidateId,
+          vendor: 'xsense',
+          externalId: xs.externalId,
+          externalName: xs.name,
+          vendorMetadata,
+          isPrimaryTelemetry: true,
+          linkedAt: now,
+        })
+        .onConflictDoNothing();
+
+      deviceById.set(candidateId, inserted);
+      newCount++;
+    }
+  }
+
+  await persistXSenseConnectionInDb(db, {
+    status: 'connected',
+    session: res.sessionRenewed || !cachedSession ? res.session : undefined,
+    lastSyncedAt: now,
+    lastError: inventory.warning ?? null,
+  });
+
+  return {
+    syncedCount: inventory.devices.length,
+    newCount,
+    mode: 'live',
+    message: `${inventory.devices.length} équipement(s) X-Sense Security synchronisé(s) (${newCount} nouveau(x)).`,
+  };
+}
+
+async function collectXSenseReadingsInDb(
+  db: AppDatabase,
+  xsenseDevices: Array<typeof devices.$inferSelect>,
+  now: Date
+): Promise<{ updatedCount: number; readingsInserted: number }> {
+  const xsenseCfg = getXSenseConfig();
+  if (xsenseDevices.length === 0 || !xsenseCfg.configured) {
+    return { updatedCount: 0, readingsInserted: 0 };
+  }
+
+  const cachedSession = await loadCachedXSenseSession(db);
+  let res;
+  try {
+    res = await fetchXSenseInventoryWithSession(cachedSession);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur collecte X-Sense';
+    await persistXSenseConnectionInDb(db, {
+      status: 'error',
+      lastError: msg,
+    });
+    throw err;
+  }
+
+  await persistXSenseConnectionInDb(db, {
+    status: 'connected',
+    session: res.sessionRenewed || !cachedSession ? res.session : undefined,
+    lastSyncedAt: now,
+    lastError: res.inventory.warning ?? null,
+  });
+
+  const xsLinks = await db
+    .select()
+    .from(deviceVendorLinks)
+    .where(eq(deviceVendorLinks.vendor, 'xsense'));
+  const deviceIdByExternalId = new Map(xsLinks.map((l) => [l.externalId, l.deviceId]));
+  const deviceById = new Map(xsenseDevices.map((d) => [d.id, d]));
+  const readingsToInsert: Array<typeof metricReadings.$inferInsert> = [];
+  let updatedCount = 0;
+
+  for (const xs of res.inventory.devices) {
+    const devId = deviceIdByExternalId.get(xs.externalId) ?? makeXSenseDeviceId(xs.externalId);
+    const dev = deviceById.get(devId);
+    if (!dev || !dev.isMonitored) continue;
+
+    await db
+      .update(devices)
+      .set({
+        isOnline: xs.isOnline,
+        lastRawStatus: xs.rawTraits,
+        lastSeenAt: now,
+        ...(xs.ipAddress ? { ipAddress: xs.ipAddress } : {}),
+        ...(xs.macAddress ? { macAddress: xs.macAddress } : {}),
+        ...(xs.tempC !== null ? { lastTempC: xs.tempC } : {}),
+        ...(xs.humidityPct !== null ? { lastHumidityPct: xs.humidityPct } : {}),
+        ...(xs.batteryPct !== null ? { lastBatteryPct: xs.batteryPct } : {}),
+      })
+      .where(eq(devices.id, dev.id));
+    updatedCount++;
+
+    if (xs.tempC !== null || xs.humidityPct !== null) {
+      readingsToInsert.push({
+        deviceId: dev.id,
+        roomId: dev.roomId,
+        recordedAt: now,
+        powerW: null,
+        voltageV: null,
+        energyKwh: null,
+        energySource: null,
+        tempC: xs.tempC,
+        humidityPct: xs.humidityPct,
+        contactOpen: null,
+      });
+    }
+  }
+
+  if (readingsToInsert.length > 0) {
+    await db.insert(metricReadings).values(readingsToInsert);
+  }
+
+  return { updatedCount, readingsInserted: readingsToInsert.length };
+}
+
+async function loadCachedXiaomiSession(db: AppDatabase | null): Promise<XiaomiSession | null> {
+  const cfg = getXiaomiConfig();
+  if (db) {
+    const rows = await db
+      .select()
+      .from(vendorConnections)
+      .where(eq(vendorConnections.vendor, 'xiaomi'))
+      .limit(1);
+    const conn = rows[0];
+    if (conn && conn.status === 'connected' && conn.accessToken) {
+      const decrypted = decryptSecret(conn.accessToken);
+      if (decrypted) {
+        try {
+          const parsed = JSON.parse(decrypted) as unknown;
+          const rec = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+          if (
+            rec &&
+            typeof rec.userId === 'string' &&
+            typeof rec.ssecurity === 'string' &&
+            typeof rec.serviceToken === 'string'
+          ) {
+            return {
+              userId: rec.userId,
+              ssecurity: rec.ssecurity,
+              serviceToken: rec.serviceToken,
+              region: normalizeXiaomiRegion(rec.region ?? cfg.region),
+            };
+          }
+        } catch {
+          // Ignore malformed token
+        }
+      }
+    }
+  }
+
+  if (cfg.userId && cfg.ssecurity && cfg.serviceToken) {
+    return {
+      userId: cfg.userId,
+      ssecurity: cfg.ssecurity,
+      serviceToken: cfg.serviceToken,
+      region: cfg.region,
+    };
+  }
+  return null;
+}
+
+export async function saveXiaomiConnection(session: XiaomiSession): Promise<void> {
+  const db = getDb();
+  const now = new Date();
+
+  if (!db) {
+    const state = getDemoState();
+    state.vendorConnections.xiaomi = {
+      mode: 'cloud_account',
+      connected: true,
+      lastSyncedAt: now.toISOString(),
+      lastError: null,
+    };
+    return;
+  }
+
+  await ensureSchemaInitialized(db);
+  const encryptedSession = encryptSecret(JSON.stringify(session));
+
+  await db
+    .insert(vendorConnections)
+    .values({
+      vendor: 'xiaomi',
+      mode: 'cloud_account',
+      status: 'connected',
+      accessToken: encryptedSession,
+      refreshToken: null,
+      tokenExpiresAt: null,
+      config: { region: session.region },
+      lastError: null,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: vendorConnections.vendor,
+      set: {
+        mode: 'cloud_account',
+        status: 'connected',
+        accessToken: encryptedSession,
+        config: { region: session.region },
+        lastError: null,
+        updatedAt: now,
+      },
+    });
+}
+
+export async function disconnectXiaomi(): Promise<void> {
+  const db = getDb();
+  if (!db) {
+    const state = getDemoState();
+    state.vendorConnections.xiaomi.connected = false;
+    state.vendorConnections.xiaomi.lastError = null;
+    return;
+  }
+
+  await ensureSchemaInitialized(db);
+  await db
+    .update(vendorConnections)
+    .set({
+      status: 'disconnected',
+      accessToken: null,
+      refreshToken: null,
+      tokenExpiresAt: null,
+      lastError: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(vendorConnections.vendor, 'xiaomi'));
+}
+
+export async function syncXiaomiDevices(): Promise<{
+  syncedCount: number;
+  newCount: number;
+  mode: 'live' | 'demo';
+  message: string;
+}> {
+  const db = getDb();
+  const now = new Date();
+
+  if (!db) {
+    const state = getDemoState();
+    state.vendorConnections.xiaomi.connected = true;
+    state.vendorConnections.xiaomi.lastSyncedAt = now.toISOString();
+    state.vendorConnections.xiaomi.lastError = null;
+    const miCount = state.devices.filter((d) => d.systems.includes('xiaomi')).length;
+    return {
+      syncedCount: miCount,
+      newCount: 0,
+      mode: 'demo',
+      message: `Mode démo actif : ${miCount} appareil(s) Xiaomi Home simulé(s) synchronisé(s).`,
+    };
+  }
+
+  await seedDefaultDataIfEmpty(db);
+  const session = await loadCachedXiaomiSession(db);
+  if (!session) {
+    throw new Error(
+      'Xiaomi Home n’est pas encore connecté. Scannez le QR Code Xiaomi Home dans l’onglet Appareils ou connectez votre compte.'
+    );
+  }
+
+  let inventory;
+  try {
+    inventory = await fetchXiaomiInventory(session);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur synchronisation Xiaomi Home';
+    await db
+      .update(vendorConnections)
+      .set({ lastError: msg, updatedAt: now })
+      .where(eq(vendorConnections.vendor, 'xiaomi'));
+    throw err;
+  }
+
+  const { roomNameToId } = await ensureMissingRoomsInDb(db, inventory.roomNames);
+  const [existingDeviceRows, miLinkRows] = await Promise.all([
+    db.select().from(devices),
+    db.select().from(deviceVendorLinks).where(eq(deviceVendorLinks.vendor, 'xiaomi')),
+  ]);
+
+  const deviceById = new Map(existingDeviceRows.map((d) => [d.id, d]));
+  const linkByExternalId = new Map(miLinkRows.map((l) => [l.externalId, l]));
+  let newCount = 0;
+
+  for (const mi of inventory.devices) {
+    const mappedRoomId = mi.roomName
+      ? (roomNameToId.get(mi.roomName.trim().toLowerCase()) ?? null)
+      : null;
+    const existingLink = linkByExternalId.get(mi.externalId);
+    const linkedDevice = existingLink ? deviceById.get(existingLink.deviceId) : undefined;
+    const productName = [mi.manufacturer, mi.model].filter(Boolean).join(' · ') || 'Xiaomi Home';
+    const vendorMetadata = {
+      manufacturer: mi.manufacturer,
+      model: mi.model,
+      deviceType: mi.deviceType,
+      roomName: mi.roomName,
+    };
+
+    if (linkedDevice) {
+      const primaryVendor: VendorId = isValidVendorId(linkedDevice.primaryVendor)
+        ? linkedDevice.primaryVendor
+        : 'xiaomi';
+      const nextSystems = mergeDeviceSystems(
+        normalizeSystems(linkedDevice.systems, primaryVendor),
+        'xiaomi',
+        primaryVendor
+      );
+
+      if (primaryVendor === 'tuya' || primaryVendor === 'kasa') {
+        await db
+          .update(devices)
+          .set({
+            systems: nextSystems,
+            ...(linkedDevice.roomId === null && mappedRoomId !== null
+              ? { roomId: mappedRoomId }
+              : {}),
+          })
+          .where(eq(devices.id, linkedDevice.id));
+      } else {
+        await db
+          .update(devices)
+          .set({
+            name: mi.name,
+            systems: nextSystems,
+            ...(mappedRoomId !== null && linkedDevice.roomId === null
+              ? { roomId: mappedRoomId }
+              : {}),
+            category: mi.category,
+            tuyaCategory: mi.deviceType ?? 'xiaomi',
+            productName,
+            ipAddress: linkedDevice.ipAddress ?? mi.ipAddress ?? null,
+            macAddress: linkedDevice.macAddress ?? mi.macAddress ?? null,
+            isOnline: mi.isOnline,
+            lastRawStatus: mi.rawTraits,
+            lastSeenAt: now,
+            ...(mi.powerW !== null ? { lastPowerW: mi.powerW } : {}),
+            ...(mi.addEleKwh !== undefined && mi.addEleKwh !== null
+              ? { lastAddEleKwh: mi.addEleKwh }
+              : {}),
+            ...(mi.tempC !== null ? { lastTempC: mi.tempC } : {}),
+            ...(mi.humidityPct !== null ? { lastHumidityPct: mi.humidityPct } : {}),
+            ...(mi.batteryPct !== null ? { lastBatteryPct: mi.batteryPct } : {}),
+            ...(mi.contactOpen !== null ? { lastContactOpen: mi.contactOpen } : {}),
+          })
+          .where(eq(devices.id, linkedDevice.id));
+      }
+
+      await db
+        .update(deviceVendorLinks)
+        .set({ externalName: mi.name, vendorMetadata })
+        .where(eq(deviceVendorLinks.id, existingLink!.id));
+    } else {
+      let candidateId = makeXiaomiDeviceId(mi.externalId);
+      if (deviceById.has(candidateId)) {
+        candidateId = `${candidateId}_${now.getTime().toString(36).slice(-4)}`;
+      }
+      const [inserted] = await db
+        .insert(devices)
+        .values({
+          id: candidateId,
+          name: mi.name,
+          customName: null,
+          primaryVendor: 'xiaomi',
+          systems: ['xiaomi'],
+          roomId: mappedRoomId,
+          category: mi.category,
+          tuyaCategory: mi.deviceType ?? 'xiaomi',
+          productName,
+          ipAddress: mi.ipAddress ?? null,
+          macAddress: mi.macAddress ?? null,
+          isOnline: mi.isOnline,
+          isMonitored: true,
+          excludeFromTotals: false,
+          energyMode: 'hybrid',
+          dpConfig: {},
+          lastRawStatus: mi.rawTraits,
+          lastSeenAt: now,
+          lastPowerW: mi.powerW,
+          lastVoltageV: null,
+          lastAddEleKwh: mi.addEleKwh ?? null,
+          lastTempC: mi.tempC,
+          lastHumidityPct: mi.humidityPct,
+          lastBatteryPct: mi.batteryPct,
+          lastContactOpen: mi.contactOpen,
+        })
+        .returning();
+
+      await db
+        .insert(deviceVendorLinks)
+        .values({
+          deviceId: candidateId,
+          vendor: 'xiaomi',
+          externalId: mi.externalId,
+          externalName: mi.name,
+          vendorMetadata,
+          isPrimaryTelemetry: true,
+          linkedAt: now,
+        })
+        .onConflictDoNothing();
+
+      deviceById.set(candidateId, inserted);
+      newCount++;
+    }
+  }
+
+  await db
+    .update(vendorConnections)
+    .set({
+      status: 'connected',
+      lastSyncedAt: now,
+      lastError: inventory.warning ?? null,
+      updatedAt: now,
+    })
+    .where(eq(vendorConnections.vendor, 'xiaomi'));
+
+  return {
+    syncedCount: inventory.devices.length,
+    newCount,
+    mode: 'live',
+    message: `${inventory.devices.length} équipement(s) Xiaomi Home synchronisé(s) (${newCount} nouveau(x)).`,
+  };
+}
+
+async function collectXiaomiReadingsInDb(
+  db: AppDatabase,
+  xiaomiDevices: Array<typeof devices.$inferSelect>,
+  now: Date
+): Promise<{ updatedCount: number; readingsInserted: number }> {
+  if (xiaomiDevices.length === 0) {
+    return { updatedCount: 0, readingsInserted: 0 };
+  }
+
+  const session = await loadCachedXiaomiSession(db);
+  if (!session) {
+    return { updatedCount: 0, readingsInserted: 0 };
+  }
+
+  let inventory;
+  try {
+    inventory = await fetchXiaomiInventory(session);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur collecte Xiaomi Home';
+    await db
+      .update(vendorConnections)
+      .set({ lastError: msg, updatedAt: now })
+      .where(eq(vendorConnections.vendor, 'xiaomi'));
+    throw err;
+  }
+
+  await db
+    .update(vendorConnections)
+    .set({
+      lastSyncedAt: now,
+      lastError: inventory.warning ?? null,
+      updatedAt: now,
+    })
+    .where(eq(vendorConnections.vendor, 'xiaomi'));
+
+  const miLinks = await db
+    .select()
+    .from(deviceVendorLinks)
+    .where(eq(deviceVendorLinks.vendor, 'xiaomi'));
+  const deviceIdByExternalId = new Map(miLinks.map((l) => [l.externalId, l.deviceId]));
+  const deviceById = new Map(xiaomiDevices.map((d) => [d.id, d]));
+
+  const readingsToInsert: Array<typeof metricReadings.$inferInsert> = [];
+  let updatedCount = 0;
+
+  for (const mi of inventory.devices) {
+    const devId = deviceIdByExternalId.get(mi.externalId) ?? makeXiaomiDeviceId(mi.externalId);
+    const dev = deviceById.get(devId);
+    if (!dev || !dev.isMonitored) continue;
+
+    const hasPower = mi.powerW !== null || (mi.addEleKwh !== undefined && mi.addEleKwh !== null);
+    const hasClimate = mi.tempC !== null || mi.humidityPct !== null;
+    const hasContact = mi.contactOpen !== null;
+
+    const energyRes = hasPower
+      ? computeHybridEnergyKwh({
+          energyMode: (dev.energyMode as EnergyMode) || 'hybrid',
+          powerW: mi.powerW,
+          currentAddEleKwh: mi.addEleKwh ?? null,
+          previousAddEleKwh: dev.lastAddEleKwh,
+          previousSeenAt: dev.lastSeenAt,
+          now,
+        })
+      : null;
+
+    await db
+      .update(devices)
+      .set({
+        isOnline: mi.isOnline,
+        lastRawStatus: mi.rawTraits,
+        lastSeenAt: now,
+        ...(mi.ipAddress ? { ipAddress: mi.ipAddress } : {}),
+        ...(mi.macAddress ? { macAddress: mi.macAddress } : {}),
+        ...(mi.powerW !== null ? { lastPowerW: mi.powerW } : {}),
+        ...(mi.addEleKwh !== undefined && mi.addEleKwh !== null
+          ? { lastAddEleKwh: mi.addEleKwh }
+          : {}),
+        ...(mi.tempC !== null ? { lastTempC: mi.tempC } : {}),
+        ...(mi.humidityPct !== null ? { lastHumidityPct: mi.humidityPct } : {}),
+        ...(mi.batteryPct !== null ? { lastBatteryPct: mi.batteryPct } : {}),
+        ...(mi.contactOpen !== null ? { lastContactOpen: mi.contactOpen } : {}),
+      })
+      .where(eq(devices.id, dev.id));
+    updatedCount++;
+
+    if (hasPower || hasClimate || hasContact) {
+      readingsToInsert.push({
+        deviceId: dev.id,
+        roomId: dev.roomId,
+        recordedAt: now,
+        powerW: mi.powerW,
+        voltageV: null,
+        energyKwh: energyRes ? energyRes.energyKwh : null,
+        energySource: energyRes ? energyRes.source : null,
+        tempC: mi.tempC,
+        humidityPct: mi.humidityPct,
+        contactOpen: mi.contactOpen,
+      });
+    }
+  }
+
+  if (readingsToInsert.length > 0) {
+    await db.insert(metricReadings).values(readingsToInsert);
+  }
+
+  return { updatedCount, readingsInserted: readingsToInsert.length };
+}
+
 export async function runCollection(trigger: 'schedule' | 'manual'): Promise<CollectionLogRecord> {
   const db = getDb();
   const tuya = getTuyaConfig();
@@ -4364,6 +5294,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
   const hcCfg = getHomeConnectConfig();
   const somfyCfg = getSomfyConfig();
   const daikinCfg = getDaikinConfig();
+  const xsenseCfg = getXSenseConfig();
+  const xiaomiCfg = getXiaomiConfig();
   const ghCfg = getGoogleHomeConfig();
   const startedMs = Date.now();
 
@@ -4378,6 +5310,7 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       if (allDevices.length === 0) {
         if (kasa.configured) await syncKasaDevices();
         if (somfyCfg.configured) await syncSomfyDevices();
+        if (xsenseCfg.configured) await syncXSenseDevices();
         allDevices = await db.select().from(devices);
       }
 
@@ -4405,6 +5338,18 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           !d.id.startsWith('manual_') &&
           d.primaryVendor === 'daikin'
       );
+      const xsenseMonitored = allDevices.filter(
+        (d) =>
+          d.isMonitored &&
+          !d.id.startsWith('manual_') &&
+          d.primaryVendor === 'xsense'
+      );
+      const xiaomiMonitored = allDevices.filter(
+        (d) =>
+          d.isMonitored &&
+          !d.id.startsWith('manual_') &&
+          d.primaryVendor === 'xiaomi'
+      );
       const ghMonitored = allDevices.filter(
         (d) =>
           d.isMonitored &&
@@ -4416,6 +5361,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
         kasa.configured ||
         hcCfg.configured ||
         daikinCfg.configured ||
+        xsenseCfg.configured ||
+        xiaomiMonitored.length > 0 ||
         (ghCfg.apiEnabled && ghMonitored.length > 0);
       const kasaInserted = kasa.configured
         ? await collectKasaReadingsInDb(db, kasaMonitored, now)
@@ -4432,6 +5379,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
             !kasa.configured &&
             !somfyCfg.configured &&
             !hcCfg.configured &&
+            !xsenseCfg.configured &&
+            xiaomiMonitored.length === 0 &&
             (!ghCfg.apiEnabled || ghMonitored.length === 0)
           ) {
             throw err;
@@ -4439,12 +5388,45 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           return { updatedCount: 0, readingsInserted: 0 };
         })
         : { updatedCount: 0, readingsInserted: 0 };
+      const xsenseRes = xsenseCfg.configured
+        ? await collectXSenseReadingsInDb(db, xsenseMonitored, now).catch((err) => {
+          if (
+            !kasa.configured &&
+            !somfyCfg.configured &&
+            !daikinCfg.configured &&
+            !hcCfg.configured &&
+            xiaomiMonitored.length === 0 &&
+            (!ghCfg.apiEnabled || ghMonitored.length === 0)
+          ) {
+            throw err;
+          }
+          return { updatedCount: 0, readingsInserted: 0 };
+        })
+        : { updatedCount: 0, readingsInserted: 0 };
+      const xiaomiRes =
+        xiaomiCfg.configured || xiaomiMonitored.length > 0
+          ? await collectXiaomiReadingsInDb(db, xiaomiMonitored, now).catch((err) => {
+            if (
+              !kasa.configured &&
+              !somfyCfg.configured &&
+              !daikinCfg.configured &&
+              !hcCfg.configured &&
+              !xsenseCfg.configured &&
+              (!ghCfg.apiEnabled || ghMonitored.length === 0)
+            ) {
+              throw err;
+            }
+            return { updatedCount: 0, readingsInserted: 0 };
+          })
+          : { updatedCount: 0, readingsInserted: 0 };
       const hcUpdated = hcCfg.configured
         ? await collectHomeConnectStatusInDb(db, hcMonitored, now).catch((err) => {
           if (
             !kasa.configured &&
             !somfyCfg.configured &&
             !daikinCfg.configured &&
+            !xsenseCfg.configured &&
+            xiaomiMonitored.length === 0 &&
             (!ghCfg.apiEnabled || ghMonitored.length === 0)
           ) {
             throw err;
@@ -4458,6 +5440,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
             !kasa.configured &&
             !somfyCfg.configured &&
             !daikinCfg.configured &&
+            !xsenseCfg.configured &&
+            xiaomiMonitored.length === 0 &&
             hcMonitored.length === 0
           ) {
             throw err;
@@ -4473,6 +5457,11 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
         somfyMonitored.length > 0 ||
         daikinRes.updatedCount > 0 ||
         daikinMonitored.length > 0 ||
+        xsenseCfg.configured ||
+        xsenseRes.updatedCount > 0 ||
+        xsenseMonitored.length > 0 ||
+        xiaomiRes.updatedCount > 0 ||
+        xiaomiMonitored.length > 0 ||
         hcUpdated > 0 ||
         hcMonitored.length > 0 ||
         ghInserted > 0 ||
@@ -4486,12 +5475,16 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
               kasaMonitored.length +
               somfyMonitored.length +
               daikinMonitored.length +
+              xsenseMonitored.length +
+              xiaomiMonitored.length +
               hcMonitored.length +
               (ghCfg.apiEnabled ? ghMonitored.length : 0),
             readingsInserted:
               kasaInserted +
               somfyRes.readingsInserted +
               daikinRes.readingsInserted +
+              xsenseRes.readingsInserted +
+              xiaomiRes.readingsInserted +
               ghInserted,
             status: 'success',
             errorMessage: null,
@@ -4734,6 +5727,18 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
         !d.id.startsWith('manual_') &&
         d.primaryVendor === 'daikin'
     );
+    const xsenseMonitored = allDevices.filter(
+      (d) =>
+        d.isMonitored &&
+        !d.id.startsWith('manual_') &&
+        d.primaryVendor === 'xsense'
+    );
+    const xiaomiMonitored = allDevices.filter(
+      (d) =>
+        d.isMonitored &&
+        !d.id.startsWith('manual_') &&
+        d.primaryVendor === 'xiaomi'
+    );
     const googleMonitored = allDevices.filter(
       (d) =>
         d.isMonitored &&
@@ -4850,13 +5855,21 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       await db.insert(metricReadings).values(readingsToInsert);
     }
 
-    const [kasaInserted, somfyRes, daikinRes, ghInserted] = await Promise.all([
+    const [kasaInserted, somfyRes, daikinRes, xsenseRes, xiaomiRes, ghInserted] = await Promise.all([
       collectKasaReadingsInDb(db, kasaMonitored, now).catch(() => 0),
       collectSomfyReadingsInDb(db, somfyMonitored, now).catch(() => ({
         updatedCount: 0,
         readingsInserted: 0,
       })),
       collectDaikinReadingsInDb(db, daikinMonitored, now).catch(() => ({
+        updatedCount: 0,
+        readingsInserted: 0,
+      })),
+      collectXSenseReadingsInDb(db, xsenseMonitored, now).catch(() => ({
+        updatedCount: 0,
+        readingsInserted: 0,
+      })),
+      collectXiaomiReadingsInDb(db, xiaomiMonitored, now).catch(() => ({
         updatedCount: 0,
         readingsInserted: 0,
       })),
@@ -4873,6 +5886,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           kasaMonitored.length +
           somfyMonitored.length +
           daikinMonitored.length +
+          xsenseMonitored.length +
+          xiaomiMonitored.length +
           hcMonitored.length +
           (ghCfg.apiEnabled ? googleMonitored.length : 0),
         readingsInserted:
@@ -4880,6 +5895,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           kasaInserted +
           somfyRes.readingsInserted +
           daikinRes.readingsInserted +
+          xsenseRes.readingsInserted +
+          xiaomiRes.readingsInserted +
           ghInserted,
         status: 'success',
         errorMessage: null,
@@ -4999,7 +6016,7 @@ export async function deleteRoom(id: number): Promise<void> {
 }
 
 export interface RoomVendorSyncResult {
-  vendor: 'tuya' | 'kasa' | 'somfy' | 'google_home' | 'all';
+  vendor: 'tuya' | 'kasa' | 'somfy' | 'xiaomi' | 'google_home' | 'all';
   roomsFound: number;
   createdCount: number;
   assignedDevicesCount: number;
@@ -5558,12 +6575,109 @@ async function syncRoomsFromSomfy(): Promise<RoomVendorSyncResult> {
   };
 }
 
+async function syncRoomsFromXiaomi(): Promise<RoomVendorSyncResult> {
+  const db = getDb();
+  const now = new Date();
+
+  if (!db) {
+    const state = getDemoState();
+    state.vendorConnections.xiaomi.lastSyncedAt = now.toISOString();
+    state.vendorConnections.xiaomi.lastError = null;
+    return {
+      vendor: 'xiaomi',
+      roomsFound: state.rooms.length,
+      createdCount: 0,
+      assignedDevicesCount: 0,
+      mode: 'demo',
+      message: `Mode démo actif : ${state.rooms.length} pièce(s) Xiaomi Home simulée(s) déjà disponible(s).`,
+    };
+  }
+
+  await seedDefaultDataIfEmpty(db);
+  const session = await loadCachedXiaomiSession(db);
+  if (!session) {
+    throw new Error(
+      'Xiaomi Home n’est pas connecté. Scannez d’abord le QR Code Xiaomi Home dans l’onglet Appareils.'
+    );
+  }
+
+  const inventory = await fetchXiaomiInventory(session);
+  const { roomNameToId, createdCount } = await ensureMissingRoomsInDb(db, inventory.roomNames);
+  const [existingDeviceRows, miLinkRows] = await Promise.all([
+    db
+      .select({
+        id: devices.id,
+        primaryVendor: devices.primaryVendor,
+        roomId: devices.roomId,
+      })
+      .from(devices),
+    db.select().from(deviceVendorLinks).where(eq(deviceVendorLinks.vendor, 'xiaomi')),
+  ]);
+
+  const deviceById = new Map(existingDeviceRows.map((d) => [d.id, d]));
+  const linkByExternalId = new Map(miLinkRows.map((l) => [l.externalId, l]));
+
+  let assignedDevicesCount = 0;
+  const updatedDeviceIds = new Set<string>();
+
+  for (const mi of inventory.devices) {
+    if (!mi.roomName) continue;
+    const mappedRoomId = roomNameToId.get(mi.roomName.trim().toLowerCase()) ?? null;
+    if (mappedRoomId === null) continue;
+
+    const existingLink = linkByExternalId.get(mi.externalId);
+    const linkedDevice = existingLink ? deviceById.get(existingLink.deviceId) : undefined;
+    if (!linkedDevice || updatedDeviceIds.has(linkedDevice.id)) continue;
+
+    const primaryVendor: VendorId = isValidVendorId(linkedDevice.primaryVendor)
+      ? linkedDevice.primaryVendor
+      : 'xiaomi';
+    const shouldUpdate =
+      primaryVendor === 'tuya'
+        ? linkedDevice.roomId === null
+        : linkedDevice.roomId !== mappedRoomId;
+
+    if (shouldUpdate) {
+      await db
+        .update(devices)
+        .set({ roomId: mappedRoomId })
+        .where(eq(devices.id, linkedDevice.id));
+      await db
+        .update(metricReadings)
+        .set({ roomId: mappedRoomId })
+        .where(and(eq(metricReadings.deviceId, linkedDevice.id), isNull(metricReadings.roomId)));
+      updatedDeviceIds.add(linkedDevice.id);
+      assignedDevicesCount++;
+    }
+  }
+
+  await db
+    .update(vendorConnections)
+    .set({
+      status: 'connected',
+      lastSyncedAt: now,
+      lastError: null,
+      updatedAt: now,
+    })
+    .where(eq(vendorConnections.vendor, 'xiaomi'));
+
+  return {
+    vendor: 'xiaomi',
+    roomsFound: inventory.roomNames.length,
+    createdCount,
+    assignedDevicesCount,
+    mode: 'live',
+    message: `Xiaomi Home : ${inventory.roomNames.length} pièce(s) détectée(s) (${createdCount} créée(s), ${assignedDevicesCount} équipement(s) rattaché(s)).`,
+  };
+}
+
 export async function syncRoomsFromVendor(
-  vendor: 'tuya' | 'kasa' | 'somfy' | 'google_home' | 'all' = 'all'
+  vendor: 'tuya' | 'kasa' | 'somfy' | 'xiaomi' | 'google_home' | 'all' = 'all'
 ): Promise<RoomVendorSyncResult> {
   if (vendor === 'tuya') return syncRoomsFromTuya();
   if (vendor === 'kasa') return syncRoomsFromKasa();
   if (vendor === 'somfy') return syncRoomsFromSomfy();
+  if (vendor === 'xiaomi') return syncRoomsFromXiaomi();
   if (vendor === 'google_home') return syncRoomsFromGoogleHome();
 
   const db = getDb();
@@ -5574,6 +6688,7 @@ export async function syncRoomsFromVendor(
     tasks.push({ label: 'Tuya', run: syncRoomsFromTuya });
     tasks.push({ label: 'Kasa', run: syncRoomsFromKasa });
     tasks.push({ label: 'Somfy', run: syncRoomsFromSomfy });
+    tasks.push({ label: 'Xiaomi Home', run: syncRoomsFromXiaomi });
     if (googleApiEnabled) {
       tasks.push({ label: 'Google Home', run: syncRoomsFromGoogleHome });
     }
@@ -5586,6 +6701,10 @@ export async function syncRoomsFromVendor(
     }
     if (getSomfyConfig().configured) {
       tasks.push({ label: 'Somfy', run: syncRoomsFromSomfy });
+    }
+    const xiaomiSession = await loadCachedXiaomiSession(db);
+    if (xiaomiSession) {
+      tasks.push({ label: 'Xiaomi Home', run: syncRoomsFromXiaomi });
     }
     if (googleApiEnabled) {
       const ghRows = await db
@@ -5605,8 +6724,8 @@ export async function syncRoomsFromVendor(
     if (tasks.length === 0) {
       throw new Error(
         googleApiEnabled
-          ? 'Aucun système configuré ou connecté pour synchroniser les pièces (configurez Tuya, Kasa, Somfy ou connectez Google Home).'
-          : 'Aucun système configuré pour synchroniser les pièces (configurez Tuya, Kasa ou Somfy).'
+          ? 'Aucun système configuré ou connecté pour synchroniser les pièces (configurez Tuya, Kasa, Somfy ou connectez Xiaomi Home / Google Home).'
+          : 'Aucun système configuré ou connecté pour synchroniser les pièces (configurez Tuya, Kasa, Somfy ou connectez Xiaomi Home).'
       );
     }
   }

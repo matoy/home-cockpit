@@ -6,6 +6,8 @@ export const VENDOR_IDS: readonly VendorId[] = [
   'home_connect',
   'somfy',
   'daikin',
+  'xsense',
+  'xiaomi',
   'google_home',
 ];
 
@@ -70,6 +72,26 @@ export const VENDOR_REGISTRY: Record<VendorId, VendorMeta> = {
     description:
       'Climatisation & PAC Daikin Onecta Cloud OAuth (100 % lecture seule : °C int./ext., consigne, mode, kWh)',
   },
+  xsense: {
+    id: 'xsense',
+    label: 'X-Sense Security',
+    shortLabel: 'XS',
+    accentColor: '#f43f5e',
+    badgeClass: 'border-rose-500/40 bg-rose-500/15 text-rose-300',
+    dotClass: 'bg-rose-400',
+    description:
+      'Sécurité X-Sense Cloud (100 % lecture seule : fumée, CO ppm, fuite d’eau, stations SBS50, thermo-hygromètres)',
+  },
+  xiaomi: {
+    id: 'xiaomi',
+    label: 'Xiaomi Home',
+    shortLabel: 'MI',
+    accentColor: '#fb923c',
+    badgeClass: 'border-orange-500/40 bg-orange-500/15 text-orange-300',
+    dotClass: 'bg-orange-400',
+    description:
+      'Xiaomi Home / Mi Cloud (100 % lecture seule via QR Code ou compte : capteurs, prises, purificateurs, robots)',
+  },
   google_home: {
     id: 'google_home',
     label: 'Google Home',
@@ -121,6 +143,8 @@ export function isValidVendorId(value: unknown): value is VendorId {
     value === 'home_connect' ||
     value === 'somfy' ||
     value === 'daikin' ||
+    value === 'xsense' ||
+    value === 'xiaomi' ||
     value === 'google_home'
   );
 }

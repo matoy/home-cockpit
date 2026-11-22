@@ -20,6 +20,7 @@ import {
   Home,
   Blinds,
   Wind,
+  ShieldAlert,
 } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
 import { EnergyTab } from './EnergyTab';
@@ -27,8 +28,11 @@ import { ClimateTab } from './ClimateTab';
 import { ContactsTab } from './ContactsTab';
 import { CoversTab } from './CoversTab';
 import { HvacTab } from './HvacTab';
+import { SecurityTab } from './SecurityTab';
 import { extractCoverSummary } from '@/lib/covers-utils';
 import { extractDaikinSummary, isDaikinHvacDevice } from '@/lib/vendors/daikin-display';
+import { extractXSenseSummary, isXSenseSecurityDevice } from '@/lib/vendors/xsense-display';
+import { extractXiaomiSummary, isXiaomiSecurityOrHomeDevice } from '@/lib/vendors/xiaomi-display';
 import { AutomationsTab } from './AutomationsTab';
 import { TariffsTab } from './TariffsTab';
 import { DevicesRoomsTab } from './DevicesRoomsTab';
@@ -294,6 +298,28 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     }, 60);
   }
 
+  function handleOpenXSenseGuide() {
+    setActiveTab('guide');
+    setTimeout(() => {
+      const detailsEl = document.getElementById('setup-xsense-details');
+      if (detailsEl instanceof HTMLDetailsElement) detailsEl.open = true;
+      document
+        .getElementById('setup-xsense')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  }
+
+  function handleOpenXiaomiGuide() {
+    setActiveTab('guide');
+    setTimeout(() => {
+      const detailsEl = document.getElementById('setup-xiaomi-details');
+      if (detailsEl instanceof HTMLDetailsElement) detailsEl.open = true;
+      document
+        .getElementById('setup-xiaomi')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  }
+
   function handleOpenRoomDevices(targetRoomId: string) {
     setDevicesRoomFilter(targetRoomId);
     setActiveTab('devices');
@@ -332,6 +358,18 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     const summary = extractDaikinSummary(d.lastRawStatus);
     return Boolean(summary?.isOn);
   }).length;
+  const activeSecurityAlertsCount = data.devices.filter((d) => {
+    if (data.selectedSystem !== 'all' && !d.systems.includes(data.selectedSystem)) {
+      return false;
+    }
+    if (data.selectedRoomId !== 'all' && String(d.roomId) !== data.selectedRoomId) {
+      return false;
+    }
+    if (!isXSenseSecurityDevice(d) && !isXiaomiSecurityOrHomeDevice(d)) return false;
+    const xs = extractXSenseSummary(d.lastRawStatus);
+    const mi = extractXiaomiSummary(d.lastRawStatus);
+    return Boolean(xs?.isAlert || mi?.isAlert);
+  }).length;
 
   const tabs: Array<{
     id: TabId;
@@ -360,6 +398,12 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
       label: 'Clim & PAC',
       icon: Wind,
       badge: activeHvacCount > 0 ? activeHvacCount : undefined,
+    },
+    {
+      id: 'security',
+      label: 'Sécurité & Détecteurs',
+      icon: ShieldAlert,
+      badge: activeSecurityAlertsCount > 0 ? activeSecurityAlertsCount : undefined,
     },
     {
       id: 'automations',
@@ -465,6 +509,19 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
                   if (v.vendor === 'daikin') {
                     return (
                       data.env.daikinConfigured ||
+                      (data.env.mode === 'live' && v.devicesCount > 0)
+                    );
+                  }
+                  if (v.vendor === 'xsense') {
+                    return (
+                      data.env.xsenseConfigured ||
+                      (data.env.mode === 'live' && v.devicesCount > 0)
+                    );
+                  }
+                  if (v.vendor === 'xiaomi') {
+                    return (
+                      data.env.xiaomiConfigured ||
+                      data.env.xiaomiConnected ||
                       (data.env.mode === 'live' && v.devicesCount > 0)
                     );
                   }
@@ -670,6 +727,13 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             onResetGlobalFilters={() => void handleResetGlobalFilters()}
           />
         )}
+        {activeTab === 'security' && (
+          <SecurityTab
+            data={data}
+            onNavigateTab={setActiveTab}
+            onResetGlobalFilters={() => void handleResetGlobalFilters()}
+          />
+        )}
         {activeTab === 'automations' && (
           <AutomationsTab data={data} onRefresh={() => fetchDashboard(range, roomId)} />
         )}
@@ -685,6 +749,8 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             }
             onOpenSomfyGuide={data.env.somfyConfigured ? handleOpenSomfyGuide : undefined}
             onOpenDaikinGuide={data.env.daikinConfigured ? handleOpenDaikinGuide : undefined}
+            onOpenXSenseGuide={handleOpenXSenseGuide}
+            onOpenXiaomiGuide={handleOpenXiaomiGuide}
           />
         )}
         {activeTab === 'rooms' && (

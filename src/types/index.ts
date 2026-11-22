@@ -1,6 +1,14 @@
 export type DeviceCategory = 'power' | 'climate' | 'contact' | 'hybrid' | 'other';
 
-export type VendorId = 'tuya' | 'kasa' | 'home_connect' | 'somfy' | 'daikin' | 'google_home';
+export type VendorId =
+  | 'tuya'
+  | 'kasa'
+  | 'home_connect'
+  | 'somfy'
+  | 'daikin'
+  | 'xsense'
+  | 'xiaomi'
+  | 'google_home';
 
 export type SystemFilter = 'all' | VendorId;
 
@@ -23,6 +31,7 @@ export type TabId =
   | 'contacts'
   | 'covers'
   | 'hvac'
+  | 'security'
   | 'automations'
   | 'devices'
   | 'rooms'
@@ -237,6 +246,10 @@ export interface EnvStatus {
   somfyRegion: string;
   daikinConfigured: boolean;
   daikinConnected: boolean;
+  xsenseConfigured: boolean;
+  xiaomiConfigured: boolean;
+  xiaomiConnected: boolean;
+  xiaomiRegion: string;
   appPasswordConfigured: boolean;
   scheduleSecretConfigured: boolean;
   googleHomeApiEnabled: boolean;

@@ -53,6 +53,8 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
   const showHomeConnect = env.homeConnectConfigured;
   const showSomfy = env.somfyConfigured;
   const showDaikin = env.daikinConfigured;
+  const showXSense = env.xsenseConfigured;
+  const showXiaomi = env.xiaomiConfigured || env.xiaomiConnected;
   const showGoogleHomeApi = env.googleHomeApiEnabled;
 
   const googleOAuthDetail = env.googleHomeConfigured
@@ -123,6 +125,26 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
           label: 'Daikin Onecta Cloud (DAIKIN_CLIENT_ID & SECRET)',
           ok: env.daikinConfigured,
           detail: env.daikinConnected ? 'OAuth connecté' : 'Prêt pour connexion OAuth',
+        },
+      ]
+      : []),
+    ...(showXSense
+      ? [
+        {
+          label: 'X-Sense Security (XSENSE_EMAIL & PASSWORD)',
+          ok: env.xsenseConfigured,
+          detail: 'Cloud 100 % lecture seule · compte invité conseillé',
+        },
+      ]
+      : []),
+    ...(showXiaomi
+      ? [
+        {
+          label: 'Xiaomi Home / Mi Cloud',
+          ok: env.xiaomiConnected || env.xiaomiConfigured,
+          detail: env.xiaomiConnected
+            ? `Connecté (${env.xiaomiRegion.toUpperCase()})`
+            : `Serveur ${env.xiaomiRegion.toUpperCase()} · QR Code ou compte + 2FA`,
         },
       ]
       : []),
@@ -1129,6 +1151,244 @@ DAIKIN_CLIENT_SECRET="votre_client_secret_daikin"
                 >
                   Ouvrir Clim &amp; PAC
                   <ArrowRight className="h-3.5 w-3.5 text-blue-400" />
+                </button>
+              </div>
+            )}
+          </div>
+        </details>
+      </div>
+
+      {/* Étape X-Sense Home Security (repliable) */}
+      <div
+        id="setup-xsense"
+        className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-5 scroll-mt-24"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-xl bg-rose-500/15 p-2 text-rose-400">
+              <Cloud className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-white">
+                X-Sense Home Security — Fumée, CO, Fuite d&apos;eau &amp; Stations (100 % lecture seule)
+              </h3>
+              <p className="text-xs text-slate-400">
+                Authentification AWS Cognito (<code>api.x-sense-iot.com</code>) · Aucune commande envoyée
+              </p>
+            </div>
+          </div>
+
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+              env.xsenseConfigured
+                ? 'bg-emerald-500/15 text-emerald-300'
+                : 'bg-slate-800 text-slate-400'
+            }`}
+          >
+            {env.xsenseConfigured ? 'Configuré (.env)' : 'Optionnel'}
+          </span>
+        </div>
+
+        <details
+          id="setup-xsense-details"
+          open={showXSense}
+          className="group rounded-xl border border-slate-800 bg-slate-950/60"
+        >
+          <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between text-xs font-medium text-slate-300 hover:text-white select-none">
+            <span>Déroulé pas-à-pas X-Sense Security &amp; création d&apos;un compte invité (recommandé)</span>
+            <span className="text-[11px] text-slate-500 group-open:hidden">Afficher ▾</span>
+            <span className="text-[11px] text-slate-500 hidden group-open:inline">Masquer ▴</span>
+          </summary>
+
+          <div className="px-4 pb-4 pt-1 border-t border-slate-800/80 space-y-4">
+            <ol className="list-decimal list-inside space-y-2 text-xs text-slate-300 leading-relaxed">
+              <li>
+                <strong>Important :</strong> X-Sense autorise une seule session active par compte.
+                Créez un <strong>second compte e-mail gratuit</strong> dans l&apos;app X-Sense, puis
+                partagez votre maison depuis votre compte principal (<em>Paramètres Maison → Membres</em>)
+                afin de ne jamais déconnecter votre smartphone.
+              </li>
+              <li>
+                Renseignez <code>XSENSE_EMAIL</code> et <code>XSENSE_PASSWORD</code> dans{' '}
+                <code>.env.local</code> / Vercel, puis cliquez sur{' '}
+                <strong>Synchroniser X-Sense</strong> dans <strong>Appareils</strong>.
+              </li>
+            </ol>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/90 p-3.5 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium text-slate-400">
+                  Variables X-Sense Security (.env.local / Vercel)
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    copyText(
+                      'xsense-env',
+                      'XSENSE_EMAIL="compte-invite@exemple.com"\nXSENSE_PASSWORD="votre_mot_de_passe"'
+                    )
+                  }
+                  className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-white transition"
+                >
+                  {copiedKey === 'xsense-env' ? (
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" />
+                      Copié
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" />
+                      Copier
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="font-mono text-[11px] text-rose-300 overflow-x-auto leading-relaxed">
+                {`XSENSE_EMAIL="compte-invite@exemple.com"
+XSENSE_PASSWORD="votre_mot_de_passe"`}
+              </pre>
+            </div>
+
+            {onNavigateTab && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('devices')}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 px-3 py-1.5 text-xs font-medium text-white transition"
+                >
+                  Synchroniser X-Sense dans Appareils
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('security')}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
+                >
+                  Ouvrir Sécurité &amp; Détecteurs
+                  <ArrowRight className="h-3.5 w-3.5 text-rose-400" />
+                </button>
+              </div>
+            )}
+          </div>
+        </details>
+      </div>
+
+      {/* Étape Xiaomi Home / Mi Cloud (repliable) */}
+      <div
+        id="setup-xiaomi"
+        className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-5 scroll-mt-24"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-xl bg-orange-500/15 p-2 text-orange-400">
+              <Cloud className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-white">
+                Xiaomi Home / Mi Cloud — Capteurs, Prises, Purificateurs &amp; Pièces (lecture seule)
+              </h3>
+              <p className="text-xs text-slate-400">
+                Connexion par QR Code Xiaomi Home (sans mot de passe) ou compte .env + 2FA · Serveur{' '}
+                <code>{env.xiaomiRegion.toUpperCase()}</code>
+              </p>
+            </div>
+          </div>
+
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+              env.xiaomiConnected
+                ? 'bg-emerald-500/15 text-emerald-300'
+                : env.xiaomiConfigured
+                  ? 'bg-amber-500/15 text-amber-300'
+                  : 'bg-slate-800 text-slate-400'
+            }`}
+          >
+            {env.xiaomiConnected
+              ? `Connecté (${env.xiaomiRegion.toUpperCase()})`
+              : env.xiaomiConfigured
+                ? 'Configuré (.env)'
+                : 'QR Code dispo'}
+          </span>
+        </div>
+
+        <details
+          id="setup-xiaomi-details"
+          open={showXiaomi}
+          className="group rounded-xl border border-slate-800 bg-slate-950/60"
+        >
+          <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between text-xs font-medium text-slate-300 hover:text-white select-none">
+            <span>Déroulé pas-à-pas Xiaomi Home (QR Code recommandé ou .env.local + 2FA)</span>
+            <span className="text-[11px] text-slate-500 group-open:hidden">Afficher ▾</span>
+            <span className="text-[11px] text-slate-500 hidden group-open:inline">Masquer ▴</span>
+          </summary>
+
+          <div className="px-4 pb-4 pt-1 border-t border-slate-800/80 space-y-4">
+            <ol className="list-decimal list-inside space-y-2 text-xs text-slate-300 leading-relaxed">
+              <li>
+                <strong>Méthode la plus simple (QR Code) :</strong> dans l&apos;onglet{' '}
+                <strong>Appareils</strong>, sélectionnez votre région (<code>de</code> pour Europe),
+                cliquez sur <strong>Scanner QR Code Xiaomi</strong> et scannez le QR depuis l&apos;app
+                mobile Xiaomi Home (<em>Profil → Scanner</em>). Les jetons sont chiffrés en base.
+              </li>
+              <li>
+                <strong>Méthode alternative (.env + 2FA) :</strong> vous pouvez aussi renseigner{' '}
+                <code>XIAOMI_USERNAME</code>, <code>XIAOMI_PASSWORD</code> et{' '}
+                <code>XIAOMI_REGION=de</code> ci-dessous puis saisir le code 2FA si Xiaomi le demande.
+              </li>
+            </ol>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/90 p-3.5 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium text-slate-400">
+                  Variables optionnelles Xiaomi Home (.env.local / Vercel)
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    copyText(
+                      'xiaomi-env',
+                      'XIAOMI_USERNAME="votre-email@exemple.com"\nXIAOMI_PASSWORD="votre_mot_de_passe"\nXIAOMI_REGION="de"'
+                    )
+                  }
+                  className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-white transition"
+                >
+                  {copiedKey === 'xiaomi-env' ? (
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" />
+                      Copié
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" />
+                      Copier
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="font-mono text-[11px] text-orange-300 overflow-x-auto leading-relaxed">
+                {`XIAOMI_USERNAME="votre-email@exemple.com"
+XIAOMI_PASSWORD="votre_mot_de_passe"
+XIAOMI_REGION="de" # de (Europe), cn, us, sg, ru ou i2`}
+              </pre>
+            </div>
+
+            {onNavigateTab && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('devices')}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 px-3 py-1.5 text-xs font-medium text-white transition"
+                >
+                  Connecter Xiaomi Home dans Appareils
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('security')}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
+                >
+                  Ouvrir Sécurité &amp; Détecteurs
+                  <ArrowRight className="h-3.5 w-3.5 text-orange-400" />
                 </button>
               </div>
             )}

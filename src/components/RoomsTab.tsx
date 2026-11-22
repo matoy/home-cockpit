@@ -59,7 +59,7 @@ export function RoomsTab({
   onOpenGoogleGuide,
 }: RoomsTabProps) {
   // Synchronisation par système
-  const [syncingTarget, setSyncingTarget] = useState<'tuya' | 'kasa' | 'somfy' | 'google_home' | 'all' | null>(null);
+  const [syncingTarget, setSyncingTarget] = useState<'tuya' | 'kasa' | 'somfy' | 'xiaomi' | 'google_home' | 'all' | null>(null);
   const [selectedGoogleMode, setSelectedGoogleMode] = useState<GoogleHomeMode>(
     data.env.googleHomeMode ?? 'mcp'
   );
@@ -81,9 +81,11 @@ export function RoomsTab({
 
   const showKasa = data.env.kasaConfigured;
   const showSomfy = data.env.somfyConfigured;
+  const showXiaomi =
+    data.env.xiaomiConfigured || data.env.xiaomiConnected || data.env.mode === 'demo';
   const showGoogleHomeApi = data.env.googleHomeApiEnabled;
   const visibleRoomSyncCards =
-    1 + (showKasa ? 1 : 0) + (showSomfy ? 1 : 0) + (showGoogleHomeApi ? 1 : 0);
+    1 + (showKasa ? 1 : 0) + (showSomfy ? 1 : 0) + (showXiaomi ? 1 : 0) + (showGoogleHomeApi ? 1 : 0);
   const roomsSyncGridClass =
     visibleRoomSyncCards === 1
       ? 'grid grid-cols-1 gap-4'
@@ -95,6 +97,7 @@ export function RoomsTab({
   const tuyaVendor = data.vendors.find((v) => v.vendor === 'tuya');
   const kasaVendor = data.vendors.find((v) => v.vendor === 'kasa');
   const somfyVendor = data.vendors.find((v) => v.vendor === 'somfy');
+  const xiaomiVendor = data.vendors.find((v) => v.vendor === 'xiaomi');
   const ghVendor = data.vendors.find((v) => v.vendor === 'google_home');
   const isGhConnected = Boolean(ghVendor?.connected);
 
@@ -135,7 +138,7 @@ export function RoomsTab({
     };
   }, [data.devices, data.rooms, data.roomSummaries, searchQuery]);
 
-  async function handleSyncRooms(target: 'tuya' | 'kasa' | 'somfy' | 'google_home' | 'all') {
+  async function handleSyncRooms(target: 'tuya' | 'kasa' | 'somfy' | 'xiaomi' | 'google_home' | 'all') {
     setSyncingTarget(target);
     setSyncMessage(null);
     try {
@@ -293,7 +296,7 @@ export function RoomsTab({
               des appareils sans écraser vos couleurs ni vos cibles °C / %.
             </p>
           </div>
-          {(showKasa || showSomfy || showGoogleHomeApi) && (
+          {(showKasa || showSomfy || showXiaomi || showGoogleHomeApi) && (
             <button
               type="button"
               onClick={() => void handleSyncRooms('all')}
@@ -456,6 +459,60 @@ export function RoomsTab({
                     className={`h-3.5 w-3.5 ${syncingTarget === 'somfy' ? 'animate-spin' : ''}`}
                   />
                   {syncingTarget === 'somfy' ? 'Synchronisation...' : 'Synchroniser pièces Somfy'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Xiaomi Home (Mi Cloud) */}
+          {showXiaomi && (
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 flex flex-col justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.xiaomi.badgeClass}`}
+                  >
+                    {VENDOR_REGISTRY.xiaomi.label}
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      data.env.xiaomiConnected || data.env.mode === 'demo'
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {data.env.mode === 'demo'
+                      ? 'Mode Démo'
+                      : data.env.xiaomiConnected
+                        ? `Connecté (${data.env.xiaomiRegion.toUpperCase()})`
+                        : 'Connexion QR / 2FA requise'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-2">
+                  Importe les pièces configurées dans Xiaomi Home ({data.env.xiaomiRegion.toUpperCase()})
+                  en lecture seule et rattache vos capteurs / appareils Mi Home.
+                </p>
+                {xiaomiVendor?.lastError && (
+                  <p className="text-[11px] text-amber-300 mt-1">{xiaomiVendor.lastError}</p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <span className="text-[11px] text-slate-500">
+                  {xiaomiVendor?.lastSyncedAt
+                    ? `Synchro : ${new Date(xiaomiVendor.lastSyncedAt).toLocaleString('fr-FR')}`
+                    : '100 % cloud · zéro commande envoyée'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleSyncRooms('xiaomi')}
+                  disabled={syncingTarget !== null}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-50 px-3 py-1.5 text-xs font-medium text-white transition"
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${syncingTarget === 'xiaomi' ? 'animate-spin' : ''}`}
+                  />
+                  {syncingTarget === 'xiaomi' ? 'Synchronisation...' : 'Synchroniser pièces Xiaomi'}
                 </button>
               </div>
             </div>

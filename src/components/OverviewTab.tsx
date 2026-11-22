@@ -16,6 +16,8 @@ import { hasValidHumidityMeasurement, hasValidTempMeasurement } from '@/lib/devi
 import { extractDaikinSummary } from '@/lib/vendors/daikin-display';
 import { extractHomeConnectSummary } from '@/lib/vendors/home-connect-display';
 import { extractSomfyDisplaySummary } from '@/lib/vendors/somfy-display';
+import { extractXSenseSummary } from '@/lib/vendors/xsense-display';
+import { extractXiaomiSummary } from '@/lib/vendors/xiaomi-display';
 import { VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import type { ComfortStatus, DashboardPayload, TabId } from '@/types';
 
@@ -265,6 +267,8 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                         const dkSummary = extractDaikinSummary(dev.lastRawStatus);
                         const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
                         const somfySummary = extractSomfyDisplaySummary(dev);
+                        const xsSummary = extractXSenseSummary(dev.lastRawStatus);
+                        const miSummary = extractXiaomiSummary(dev.lastRawStatus);
                         return (
                           <div
                             key={dev.id}
@@ -374,6 +378,38 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                                   {dkSummary.outdoorTempC !== null ? ` · Ext ${dkSummary.outdoorTempC}°C` : ''}
                                 </span>
                               )}
+                              {xsSummary && (
+                                <span
+                                  title={xsSummary.compactText}
+                                  className={
+                                    xsSummary.isAlert
+                                      ? 'text-rose-300 font-semibold'
+                                      : xsSummary.alarmTone === 'amber'
+                                        ? 'text-amber-300'
+                                        : 'text-emerald-300'
+                                  }
+                                >
+                                  {xsSummary.alarmLabel}
+                                  {xsSummary.coPpm !== null ? ` · ${xsSummary.coPpm} ppm` : ''}
+                                </span>
+                              )}
+                              {miSummary &&
+                                (miSummary.pm25 !== null ||
+                                  miSummary.vacuumState ||
+                                  miSummary.alertLabel) && (
+                                  <span
+                                    title={miSummary.compactText}
+                                    className={
+                                      miSummary.isAlert ? 'text-rose-300 font-semibold' : 'text-orange-300'
+                                    }
+                                  >
+                                    {miSummary.alertLabel
+                                      ? miSummary.alertLabel
+                                      : miSummary.pm25 !== null
+                                        ? `PM2.5 ${miSummary.pm25}`
+                                        : miSummary.vacuumState}
+                                  </span>
+                                )}
                             </div>
                           </div>
                         );

@@ -181,3 +181,57 @@ export function verifyDaikinOAuthState(
   }
   return null;
 }
+
+export interface SignedXiaomiAuthState {
+  nonce: string;
+  region: string;
+  flow: 'qr' | '2fa';
+  longPollingUrl?: string;
+  notificationUrl?: string;
+  identitySessionCookie?: string;
+  username?: string;
+  issuedAt: number;
+}
+
+/**
+ * Signe un état temporaire d'authentification Xiaomi Home (QR Code / 2FA) par HMAC-SHA256.
+ */
+export function signXiaomiAuthState(payload: SignedXiaomiAuthState): string {
+  return signHmacPayload(payload);
+}
+
+/**
+ * Vérifie et décode un état temporaire Xiaomi Home signé (valide 15 minutes).
+ */
+export function verifyXiaomiAuthState(
+  token: string | null | undefined,
+  maxAgeMs = 15 * 60 * 1000
+): SignedXiaomiAuthState | null {
+  const parsed = verifyHmacPayload(token);
+  if (!parsed) return null;
+  if (
+    typeof parsed.nonce === 'string' &&
+    parsed.nonce.length >= 6 &&
+    typeof parsed.region === 'string' &&
+    (parsed.flow === 'qr' || parsed.flow === '2fa') &&
+    typeof parsed.issuedAt === 'number' &&
+    Date.now() - parsed.issuedAt <= maxAgeMs
+  ) {
+    return {
+      nonce: parsed.nonce,
+      region: parsed.region,
+      flow: parsed.flow,
+      longPollingUrl:
+        typeof parsed.longPollingUrl === 'string' ? parsed.longPollingUrl : undefined,
+      notificationUrl:
+        typeof parsed.notificationUrl === 'string' ? parsed.notificationUrl : undefined,
+      identitySessionCookie:
+        typeof parsed.identitySessionCookie === 'string'
+          ? parsed.identitySessionCookie
+          : undefined,
+      username: typeof parsed.username === 'string' ? parsed.username : undefined,
+      issuedAt: parsed.issuedAt,
+    };
+  }
+  return null;
+}

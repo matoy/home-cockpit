@@ -916,6 +916,356 @@ function createInitialDemoState(): DemoState {
       lastBatteryPct: null,
       lastContactOpen: null,
     },
+    {
+      id: 'xsense_demo_sbs50_entree',
+      name: 'Station SBS50 Entrée',
+      customName: null,
+      primaryVendor: 'xsense',
+      systems: ['xsense'],
+      roomId: 3,
+      category: 'other',
+      tuyaCategory: 'baseStation',
+      productName: 'X-Sense · SBS50',
+      ipAddress: '192.168.1.54',
+      macAddress: '48:E7:29:14:A0:01',
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'xsense:unitType', value: 'baseStation' },
+        { code: 'xsense:model', value: 'SBS50' },
+        { code: 'xsense:alarmStatus', value: 'normal' },
+        { code: 'xsense:smokeDetected', value: false },
+        { code: 'xsense:coDetected', value: false },
+        { code: 'xsense:waterLeakDetected', value: false },
+        { code: 'xsense:isMuted', value: false },
+        { code: 'xsense:wifiRssi', value: -49 },
+        { code: 'xsense:wifiSsid', value: 'MaisonWiFi' },
+        { code: 'xsense:houseName', value: 'Maison Principale' },
+        { code: 'xsense:firmware', value: 'v2.4.18' },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
+    {
+      id: 'xsense_demo_sc07_salon',
+      name: 'Détecteur Fumée & CO Salon',
+      customName: null,
+      primaryVendor: 'xsense',
+      systems: ['xsense'],
+      roomId: 1,
+      category: 'other',
+      tuyaCategory: 'smokeCoDetector',
+      productName: 'X-Sense · SC07-WX',
+      ipAddress: '192.168.1.55',
+      macAddress: '48:E7:29:14:A0:02',
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'xsense:unitType', value: 'smokeCoDetector' },
+        { code: 'xsense:model', value: 'SC07-WX' },
+        { code: 'xsense:alarmStatus', value: 'normal' },
+        { code: 'xsense:smokeDetected', value: false },
+        { code: 'xsense:coDetected', value: false },
+        { code: 'xsense:coPpm', value: 0 },
+        { code: 'xsense:waterLeakDetected', value: false },
+        { code: 'xsense:isMuted', value: false },
+        { code: 'xsense:wifiRssi', value: -55 },
+        { code: 'xsense:houseName', value: 'Maison Principale' },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: 96,
+      lastContactOpen: null,
+    },
+    {
+      id: 'xsense_demo_xs01_chambre',
+      name: 'Détecteur Fumée Chambre',
+      customName: null,
+      primaryVendor: 'xsense',
+      systems: ['xsense'],
+      roomId: 4,
+      category: 'other',
+      tuyaCategory: 'smokeCoDetector',
+      productName: 'X-Sense · XS01-M',
+      ipAddress: null,
+      macAddress: null,
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'xsense:unitType', value: 'smokeCoDetector' },
+        { code: 'xsense:model', value: 'XS01-M' },
+        { code: 'xsense:alarmStatus', value: 'normal' },
+        { code: 'xsense:smokeDetected', value: false },
+        { code: 'xsense:coDetected', value: false },
+        { code: 'xsense:waterLeakDetected', value: false },
+        { code: 'xsense:isMuted', value: false },
+        { code: 'xsense:rfLevel', value: 3 },
+        { code: 'xsense:stationName', value: 'Station SBS50 Entrée' },
+        { code: 'xsense:houseName', value: 'Maison Principale' },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: 88,
+      lastContactOpen: null,
+    },
+    {
+      id: 'xsense_demo_sws51_cuisine',
+      name: 'Capteur Fuite d’eau Cuisine',
+      customName: null,
+      primaryVendor: 'xsense',
+      systems: ['xsense'],
+      roomId: 2,
+      category: 'other',
+      tuyaCategory: 'waterLeakSensor',
+      productName: 'X-Sense · SWS51',
+      ipAddress: null,
+      macAddress: null,
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'xsense:unitType', value: 'waterLeakSensor' },
+        { code: 'xsense:model', value: 'SWS51' },
+        { code: 'xsense:alarmStatus', value: 'normal' },
+        { code: 'xsense:smokeDetected', value: false },
+        { code: 'xsense:coDetected', value: false },
+        { code: 'xsense:waterLeakDetected', value: false },
+        { code: 'xsense:isMuted', value: false },
+        { code: 'xsense:rfLevel', value: 2 },
+        { code: 'xsense:stationName', value: 'Station SBS50 Entrée' },
+        { code: 'xsense:houseName', value: 'Maison Principale' },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: 92,
+      lastContactOpen: null,
+    },
+    {
+      id: 'xsense_demo_sth51_bureau',
+      name: 'Thermo-hygromètre X-Sense Bureau',
+      customName: null,
+      primaryVendor: 'xsense',
+      systems: ['xsense'],
+      roomId: 5,
+      category: 'climate',
+      tuyaCategory: 'thermoHygrometer',
+      productName: 'X-Sense · STH51',
+      ipAddress: null,
+      macAddress: null,
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'xsense:unitType', value: 'thermoHygrometer' },
+        { code: 'xsense:model', value: 'STH51' },
+        { code: 'xsense:alarmStatus', value: 'normal' },
+        { code: 'xsense:rfLevel', value: 3 },
+        { code: 'xsense:stationName', value: 'Station SBS50 Entrée' },
+        { code: 'xsense:tempC', value: 20.6 },
+        { code: 'xsense:humidityPct', value: 48 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: 20.6,
+      lastHumidityPct: 48,
+      lastBatteryPct: 91,
+      lastContactOpen: null,
+    },
+    {
+      id: 'xiaomi_demo_thermo_chambre',
+      name: 'Mi Temp & Humidity Monitor 2',
+      customName: 'Capteur Mi Chambre',
+      primaryVendor: 'xiaomi',
+      systems: ['xiaomi'],
+      roomId: 4,
+      category: 'climate',
+      tuyaCategory: 'climateSensor',
+      productName: 'Xiaomi · LYWSD03MMC',
+      ipAddress: null,
+      macAddress: 'A4:C1:38:52:90:14',
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'xiaomi:unitType', value: 'climateSensor' },
+        { code: 'xiaomi:model', value: 'miaomiaoce.sensor_ht.t2' },
+        { code: 'xiaomi:firmware', value: '2.1.1_0159' },
+        { code: 'xiaomi:rssi', value: -58 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: 19.1,
+      lastHumidityPct: 50,
+      lastBatteryPct: 84,
+      lastContactOpen: null,
+    },
+    {
+      id: 'xiaomi_demo_plug_bureau',
+      name: 'Mi Smart Plug Wi-Fi Bureau',
+      customName: 'Prise Xiaomi Écran',
+      primaryVendor: 'xiaomi',
+      systems: ['xiaomi'],
+      roomId: 5,
+      category: 'power',
+      tuyaCategory: 'smartPlug',
+      productName: 'Xiaomi · chuangmi.plug.v3',
+      ipAddress: '192.168.1.62',
+      macAddress: '7C:49:EB:81:2C:10',
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'xiaomi:unitType', value: 'smartPlug' },
+        { code: 'xiaomi:model', value: 'chuangmi.plug.v3' },
+        { code: 'xiaomi:firmware', value: '1.3.0_0028' },
+        { code: 'xiaomi:rssi', value: -52 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: 42,
+      lastVoltageV: 231,
+      lastAddEleKwh: 38.4,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
+    {
+      id: 'xiaomi_demo_door_entree',
+      name: 'Capteur Porte Xiaomi Entrée',
+      customName: null,
+      primaryVendor: 'xiaomi',
+      systems: ['xiaomi'],
+      roomId: 3,
+      category: 'contact',
+      tuyaCategory: 'contactSensor',
+      productName: 'Xiaomi · MCCGQ02HL',
+      ipAddress: null,
+      macAddress: '54:48:E6:71:11:09',
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'xiaomi:unitType', value: 'contactSensor' },
+        { code: 'xiaomi:model', value: 'isa.magnet.dw2hl' },
+        { code: 'xiaomi:rssi', value: -61 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: 79,
+      lastContactOpen: false,
+    },
+    {
+      id: 'xiaomi_demo_purifier_salon',
+      name: 'Xiaomi Smart Air Purifier 4',
+      customName: 'Purificateur d’Air Salon',
+      primaryVendor: 'xiaomi',
+      systems: ['xiaomi'],
+      roomId: 1,
+      category: 'climate',
+      tuyaCategory: 'airPurifier',
+      productName: 'Xiaomi · zhimi.airp.mb5',
+      ipAddress: '192.168.1.64',
+      macAddress: '64:90:C1:44:8E:20',
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'xiaomi:unitType', value: 'airPurifier' },
+        { code: 'xiaomi:model', value: 'zhimi.airp.mb5' },
+        { code: 'xiaomi:pm25', value: 8 },
+        { code: 'xiaomi:mode', value: 'auto' },
+        { code: 'xiaomi:filterLifePct', value: 78 },
+        { code: 'xiaomi:firmware', value: '2.1.4_0015' },
+        { code: 'xiaomi:rssi', value: -47 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: 21.5,
+      lastHumidityPct: 46,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
+    {
+      id: 'xiaomi_demo_wleak_sdb',
+      name: 'Capteur Fuite d’eau Xiaomi SDB',
+      customName: null,
+      primaryVendor: 'xiaomi',
+      systems: ['xiaomi'],
+      roomId: 2,
+      category: 'other',
+      tuyaCategory: 'waterLeakSensor',
+      productName: 'Xiaomi · lumi.sensor_wleak.aq1',
+      ipAddress: null,
+      macAddress: null,
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'hybrid',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'xiaomi:unitType', value: 'waterLeakSensor' },
+        { code: 'xiaomi:model', value: 'lumi.sensor_wleak.aq1' },
+        { code: 'xiaomi:waterLeak', value: false },
+        { code: 'xiaomi:rssi', value: -64 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: null,
+      lastTempC: null,
+      lastHumidityPct: null,
+      lastBatteryPct: 94,
+      lastContactOpen: null,
+    },
   ];
 
   // Deux périodes tarifaires (2025 -> 2026) pour illustrer la gestion multi-périodes
@@ -960,6 +1310,7 @@ function createInitialDemoState(): DemoState {
     ['bf81a2c9bureaudesk1', 20.0],
     ['bf81a2c9cuisinefrigo', 28.0],
     ['kasa_demo_hs110_lavelinge', 14.0],
+    ['xiaomi_demo_plug_bureau', 16.0],
   ]);
 
   for (let step = totalSteps; step >= 0; step--) {
@@ -1344,6 +1695,119 @@ function createInitialDemoState(): DemoState {
         contactOpen: null,
       });
     }
+
+    // 17. X-Sense STH51 Bureau (Thermo-hygromètre)
+    {
+      const noise = pseudoNoise(step * 7.7);
+      const tempC =
+        step === 0
+          ? 20.6
+          : Math.round((20.2 + dayPhase * 0.7 + (noise - 0.5) * 0.3) * 10) / 10;
+      const humidityPct = step === 0 ? 48 : Math.round(48 + (noise - 0.5) * 4);
+      readings.push({
+        id: nextReadingId++,
+        deviceId: 'xsense_demo_sth51_bureau',
+        roomId: 5,
+        recordedAt: ts.toISOString(),
+        powerW: null,
+        voltageV: null,
+        energyKwh: null,
+        energySource: null,
+        tempC,
+        humidityPct,
+        contactOpen: null,
+      });
+    }
+
+    // 18. Xiaomi Mi Temp & Humidity Monitor 2 Chambre
+    {
+      const noise = pseudoNoise(step * 8.1);
+      const tempC =
+        step === 0
+          ? 19.1
+          : Math.round((18.8 + dayPhase * 0.5 + (noise - 0.5) * 0.3) * 10) / 10;
+      const humidityPct = step === 0 ? 50 : Math.round(50 + (noise - 0.5) * 4);
+      readings.push({
+        id: nextReadingId++,
+        deviceId: 'xiaomi_demo_thermo_chambre',
+        roomId: 4,
+        recordedAt: ts.toISOString(),
+        powerW: null,
+        voltageV: null,
+        energyKwh: null,
+        energySource: null,
+        tempC,
+        humidityPct,
+        contactOpen: null,
+      });
+    }
+
+    // 19. Xiaomi Smart Plug Wi-Fi Bureau (Consommation)
+    {
+      const noise = pseudoNoise(step * 8.5);
+      const isWorkHours = hour >= 8.5 && hour <= 19;
+      const powerW = isWorkHours
+        ? Math.round((38 + noise * 22) * 10) / 10
+        : Math.round((4 + noise * 3) * 10) / 10;
+      const kwh = Math.round((powerW / 1000) * 0.5 * 10000) / 10000;
+      const prevAdd = cumulativeAddEle.get('xiaomi_demo_plug_bureau') ?? 16;
+      cumulativeAddEle.set('xiaomi_demo_plug_bureau', prevAdd + kwh);
+      readings.push({
+        id: nextReadingId++,
+        deviceId: 'xiaomi_demo_plug_bureau',
+        roomId: 5,
+        recordedAt: ts.toISOString(),
+        powerW,
+        voltageV: 231,
+        energyKwh: kwh,
+        energySource: 'add_ele',
+        tempC: null,
+        humidityPct: null,
+        contactOpen: null,
+      });
+    }
+
+    // 20. Xiaomi Capteur Porte Entrée (Ouvertures)
+    {
+      const daySlot = step % 48;
+      const isOpen = step > 0 && (daySlot === 16 || daySlot === 35);
+      readings.push({
+        id: nextReadingId++,
+        deviceId: 'xiaomi_demo_door_entree',
+        roomId: 3,
+        recordedAt: ts.toISOString(),
+        powerW: null,
+        voltageV: null,
+        energyKwh: null,
+        energySource: null,
+        tempC: null,
+        humidityPct: null,
+        contactOpen: isOpen,
+      });
+    }
+
+    // 21. Xiaomi Smart Air Purifier 4 Salon (Température & Humidité)
+    {
+      const noise = pseudoNoise(step * 8.9);
+      const tempC =
+        step === 0
+          ? 21.5
+          : Math.round((21.1 + dayPhase * 0.7 + (noise - 0.5) * 0.3) * 10) / 10;
+      const humidityPct = step === 0 ? 46 : Math.round(46 + (noise - 0.5) * 3);
+      readings.push({
+        id: nextReadingId++,
+        deviceId: 'xiaomi_demo_purifier_salon',
+        roomId: 1,
+        recordedAt: ts.toISOString(),
+        powerW: null,
+        voltageV: null,
+        energyKwh: null,
+        energySource: null,
+        tempC,
+        humidityPct,
+        contactOpen: null,
+      });
+    }
   }
 
   // Synchroniser les dernières valeurs des appareils avec la fin de la série générée
@@ -1634,7 +2098,11 @@ function createInitialDemoState(): DemoState {
                 ? d.id.replace(/^somfy_/, '')
                 : d.primaryVendor === 'daikin'
                   ? d.id.replace(/^daikin_/, '')
-                  : d.id,
+                  : d.primaryVendor === 'xsense'
+                    ? d.id.replace(/^xsense_/, '')
+                    : d.primaryVendor === 'xiaomi'
+                      ? d.id.replace(/^xiaomi_/, '')
+                      : d.id,
       externalName: d.name,
       isPrimaryTelemetry: true,
       linkedAt: syncedIso,
@@ -1644,7 +2112,9 @@ function createInitialDemoState(): DemoState {
         d.primaryVendor === 'kasa' ||
         d.primaryVendor === 'home_connect' ||
         d.primaryVendor === 'somfy' ||
-        d.primaryVendor === 'daikin') &&
+        d.primaryVendor === 'daikin' ||
+        d.primaryVendor === 'xsense' ||
+        d.primaryVendor === 'xiaomi') &&
       d.systems.includes('google_home')
     ) {
       vendorLinks.push({
@@ -1687,6 +2157,18 @@ function createInitialDemoState(): DemoState {
     },
     daikin: {
       mode: 'oauth_prod',
+      connected: true,
+      lastSyncedAt: syncedIso,
+      lastError: null,
+    },
+    xsense: {
+      mode: 'cloud_account',
+      connected: true,
+      lastSyncedAt: syncedIso,
+      lastError: null,
+    },
+    xiaomi: {
+      mode: 'cloud_account',
       connected: true,
       lastSyncedAt: syncedIso,
       lastError: null,
