@@ -129,20 +129,16 @@ export function rc4TransformXiaomi(keyBuf: Buffer, dataBuf: Buffer): Buffer {
 function generateXiaomiSignature(
   uriPath: string,
   signedNonceBase64: string,
-  nonceBase64: string,
+  _nonceBase64: string,
   params: Record<string, string>
 ): string {
-  const parts = [`POST`, uriPath];
-  const sortedKeys = Object.keys(params).sort();
-  for (const key of sortedKeys) {
-    parts.push(`${key}=${params[key]}`);
+  const parts = ['POST', uriPath];
+  for (const [key, value] of Object.entries(params)) {
+    parts.push(`${key}=${value}`);
   }
   parts.push(signedNonceBase64);
   const strToSign = parts.join('&');
-  return crypto
-    .createHmac('sha256', Buffer.from(signedNonceBase64, 'base64'))
-    .update(strToSign, 'utf8')
-    .digest('base64');
+  return crypto.createHash('sha1').update(strToSign, 'utf8').digest('base64');
 }
 
 export function signXiaomiRequestParams(
@@ -242,22 +238,46 @@ function extractSetCookies(res: Response): Record<string, string> {
 async function exchangeLocationForServiceToken(
   locationUrl: string,
   region: XiaomiRegion
-): Promise<{ serviceToken: string }> {
-  const res = await fetch(locationUrl, {
-    method: 'GET',
-    headers: { 'User-Agent': XIAOMI_USER_AGENT },
-    redirect: 'manual',
-    cache: 'no-store',
-    signal: AbortSignal.timeout(12000),
-  });
-  const cookies = extractSetCookies(res);
-  const serviceToken = cookies.serviceToken;
+): Promise<{ serviceToken: string; userId?: string }> {
+  let currentUrl = locationUrl;
+  const collectedCookies: Record<string, string> = {};
+
+  for (let hop = 0; hop < 5; hop++) {
+    const res = await fetch(currentUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': XIAOMI_USER_AGENT,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      redirect: 'manual',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(12000),
+    });
+    Object.assign(collectedCookies, extractSetCookies(res));
+    if (collectedCookies.serviceToken) {
+      return {
+        serviceToken: collectedCookies.serviceToken,
+        userId: collectedCookies.userId ?? collectedCookies.cUserId,
+      };
+    }
+    const nextLoc = res.headers.get('location');
+    if (res.status >= 300 && res.status < 400 && nextLoc) {
+      currentUrl = new URL(nextLoc, currentUrl).toString();
+      continue;
+    }
+    break;
+  }
+
+  const serviceToken = collectedCookies.serviceToken;
   if (!serviceToken) {
     throw new Error(
       `Jeton serviceToken introuvable après redirection Xiaomi (${region.toUpperCase()}).`
     );
   }
-  return { serviceToken };
+  return {
+    serviceToken,
+    userId: collectedCookies.userId ?? collectedCookies.cUserId,
+  };
 }
 
 // ---------- Authentification Xiaomi Home (QR Code & .env + 2FA) ----------
@@ -565,15 +585,17 @@ async function callXiaomiCloudEndpoint(params: {
   );
 
   const bodyParams = new URLSearchParams({
-    _nonce: formParams._nonce,
     data: formParams.data,
     rc4_hash__: formParams.rc4_hash__,
     signature: formParams.signature,
+    ssecurity: formParams.ssecurity,
+    _nonce: formParams._nonce,
   });
 
   const res = await fetch(fullUrl, {
     method: 'POST',
     headers: {
+      'Accept-Encoding': 'identity',
       'Content-Type': 'application/x-www-form-urlencoded',
       'User-Agent': XIAOMI_USER_AGENT,
       'x-xiaomi-protocal-flag-cli': 'PROTOCAL-HTTP2',
@@ -582,8 +604,11 @@ async function callXiaomiCloudEndpoint(params: {
         `userId=${params.session.userId}`,
         `yetAnotherServiceToken=${params.session.serviceToken}`,
         `serviceToken=${params.session.serviceToken}`,
-        'locale=fr_FR',
-        'timezone=Europe/Paris',
+        'locale=en_GB',
+        'timezone=GMT+02:00',
+        'is_daylight=1',
+        'dst_offset=3600000',
+        'channel=MI_APP_STORE',
       ].join('; '),
     },
     body: bodyParams.toString(),
@@ -593,7 +618,10 @@ async function callXiaomiCloudEndpoint(params: {
 
   const rawText = await res.text();
   if (!res.ok) {
-    throw new Error(`Erreur Mi Cloud (${res.status}) sur ${params.uriPath}.`);
+    const snippet = rawText.trim().slice(0, 140);
+    throw new Error(
+      `Erreur Mi Cloud (${res.status}) sur ${params.uriPath}${snippet ? ` : ${snippet}` : '.'}`
+    );
   }
 
   let parsedJson: unknown;
@@ -693,11 +721,13 @@ export function normalizeXiaomiCloudPayload(params: {
   }
 
   const devRoot = asRecord(params.devicesResult) ?? {};
-  const devList = Array.isArray(devRoot.list)
-    ? devRoot.list
-    : Array.isArray(params.devicesResult)
-      ? params.devicesResult
-      : [];
+  const devList = Array.isArray(devRoot.device_info)
+    ? devRoot.device_info
+    : Array.isArray(devRoot.list)
+      ? devRoot.list
+      : Array.isArray(params.devicesResult)
+        ? params.devicesResult
+        : [];
 
   const devices: NormalizedVendorDevice[] = [];
   for (const dRaw of devList) {
@@ -822,18 +852,107 @@ export function normalizeXiaomiCloudPayload(params: {
 export async function fetchXiaomiInventory(
   session: XiaomiSession
 ): Promise<VendorInventoryResult> {
-  const [homesResult, devicesResult] = await Promise.all([
+  const [homesResult, devCntResult] = await Promise.all([
     callXiaomiCloudEndpoint({
       session,
-      uriPath: '/homeroom/gethome',
+      uriPath: '/v2/homeroom/gethome',
       dataObj: { fg: true, fetch_share: true, fetch_share_dev: true, limit: 300, app_ver: 7 },
-    }).catch(() => ({ homelist: [] })),
+    }),
     callXiaomiCloudEndpoint({
       session,
-      uriPath: '/home/device_list',
-      dataObj: { getVirtualModel: false, getHuamiDevices: 0, get_split_device: true, support_smart_home: true },
-    }),
+      uriPath: '/v2/user/get_device_cnt',
+      dataObj: { fetch_own: true, fetch_share: true },
+    }).catch(() => null),
   ]);
 
-  return normalizeXiaomiCloudPayload({ homesResult, devicesResult });
+  const homesRoot = asRecord(homesResult) ?? {};
+  const homesList = Array.isArray(homesRoot.homelist) ? homesRoot.homelist : [];
+
+  const homeTargets: Array<{ homeId: string; ownerId: string }> = [];
+  const seenHomeKeys = new Set<string>();
+
+  for (const hRaw of homesList) {
+    const h = asRecord(hRaw);
+    const homeId = toStr(h?.id);
+    if (!homeId) continue;
+    const ownerId = toStr(h?.uid) ?? session.userId;
+    const key = `${homeId}:${ownerId}`;
+    if (!seenHomeKeys.has(key)) {
+      seenHomeKeys.add(key);
+      homeTargets.push({ homeId, ownerId });
+    }
+  }
+
+  const shareFamily = asRecord(asRecord(devCntResult)?.share)?.share_family;
+  if (Array.isArray(shareFamily)) {
+    for (const shRaw of shareFamily) {
+      const sh = asRecord(shRaw);
+      const homeId = toStr(sh?.home_id);
+      const ownerId = toStr(sh?.home_owner);
+      if (!homeId || !ownerId) continue;
+      const key = `${homeId}:${ownerId}`;
+      if (!seenHomeKeys.has(key)) {
+        seenHomeKeys.add(key);
+        homeTargets.push({ homeId, ownerId });
+      }
+    }
+  }
+
+  const allRawDevices: unknown[] = [];
+  const seenDids = new Set<string>();
+
+  if (homeTargets.length > 0) {
+    for (const target of homeTargets) {
+      const numericHomeId = Number(target.homeId);
+      const numericOwnerId = Number(target.ownerId);
+      const homeRes = await callXiaomiCloudEndpoint({
+        session,
+        uriPath: '/v2/home/home_device_list',
+        dataObj: {
+          home_owner: Number.isFinite(numericOwnerId) ? numericOwnerId : target.ownerId,
+          home_id: Number.isFinite(numericHomeId) ? numericHomeId : target.homeId,
+          limit: 200,
+          get_split_device: true,
+          support_smart_home: true,
+        },
+      });
+      const homeObj = asRecord(homeRes) ?? {};
+      const items = Array.isArray(homeObj.device_info)
+        ? homeObj.device_info
+        : Array.isArray(homeObj.list)
+          ? homeObj.list
+          : [];
+      for (const item of items) {
+        const rec = asRecord(item);
+        const did = toStr(rec?.did);
+        if (did && !seenDids.has(did)) {
+          seenDids.add(did);
+          allRawDevices.push(item);
+        }
+      }
+    }
+  } else {
+    const legacyRes = await callXiaomiCloudEndpoint({
+      session,
+      uriPath: '/home/device_list',
+      dataObj: {
+        getVirtualModel: false,
+        getHuamiDevices: 0,
+        get_split_device: true,
+        support_smart_home: true,
+      },
+    });
+    const legacyObj = asRecord(legacyRes) ?? {};
+    const items = Array.isArray(legacyObj.list)
+      ? legacyObj.list
+      : Array.isArray(legacyObj.device_info)
+        ? legacyObj.device_info
+        : [];
+    allRawDevices.push(...items);
+  }
+
+  return normalizeXiaomiCloudPayload({
+    homesResult,
+    devicesResult: { device_info: allRawDevices },
+  });
 }
