@@ -155,7 +155,7 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
           <div>
             <h2 className="text-base font-semibold text-white">Synthèse par Pièce</h2>
             <p className="text-xs text-slate-400">
-              Cliquez sur une pièce pour filtrer les graphiques ou ajustez vos seuils dans Appareils &amp; Pièces.
+              Cliquez sur une pièce pour filtrer les graphiques ou ajustez vos seuils dans l&apos;onglet Pièces.
             </p>
           </div>
           {data.selectedRoomId !== 'all' && (
@@ -172,10 +172,10 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
           <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-10 text-center">
             <p className="text-sm text-slate-300">Aucune pièce configurée pour l&apos;instant.</p>
             <button
-              onClick={() => onNavigateTab('devices')}
+              onClick={() => onNavigateTab('rooms')}
               className="mt-3 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-500"
             >
-              Créer des pièces &amp; synchroniser Tuya
+              Créer ou synchroniser les pièces
             </button>
           </div>
         ) : (
@@ -337,7 +337,7 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
           <div className="flex items-center gap-2.5 text-sm text-amber-200">
             <Cpu className="h-4 w-4 text-amber-400 shrink-0" />
             <span>
-              {data.devices.filter((d) => d.roomId === null).length} appareil(s) Tuya ne sont encore
+              {data.devices.filter((d) => d.roomId === null).length} appareil(s) ne sont encore
               affectés à aucune pièce.
             </span>
           </div>

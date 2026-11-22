@@ -11,9 +11,13 @@ function getPublicOrigin(request: Request): string {
   return new URL(request.url).origin;
 }
 
-function redirectWithError(origin: string, message: string): NextResponse {
+function redirectWithError(
+  origin: string,
+  message: string,
+  returnTab: 'devices' | 'rooms' = 'devices'
+): NextResponse {
   const url = new URL('/', origin);
-  url.searchParams.set('tab', 'devices');
+  url.searchParams.set('tab', returnTab);
   url.searchParams.set('gh_error', message);
   const response = NextResponse.redirect(url);
   response.cookies.delete('gh_oauth_nonce');
@@ -26,21 +30,27 @@ export async function GET(request: Request) {
   const oauthError = searchParams.get('error');
   const code = searchParams.get('code');
   const stateParam = searchParams.get('state');
+  const decodedState = verifyOAuthState(stateParam);
+  const returnTab: 'devices' | 'rooms' =
+    decodedState?.returnTab === 'rooms' ? 'rooms' : 'devices';
 
   if (oauthError) {
-    return redirectWithError(origin, `Autorisation Google annulée ou refusée (${oauthError}).`);
+    return redirectWithError(
+      origin,
+      `Autorisation Google annulée ou refusée (${oauthError}).`,
+      returnTab
+    );
   }
 
   if (!code || !stateParam) {
-    return redirectWithError(origin, 'Paramètres OAuth Google manquants.');
+    return redirectWithError(origin, 'Paramètres OAuth Google manquants.', returnTab);
   }
 
-  const decodedState = verifyOAuthState(stateParam);
   const cookieStore = await cookies();
   const expectedNonce = cookieStore.get('gh_oauth_nonce')?.value;
 
   if (!decodedState || !expectedNonce || decodedState.nonce !== expectedNonce) {
-    return redirectWithError(origin, 'Jeton de sécurité OAuth invalide ou expiré.');
+    return redirectWithError(origin, 'Jeton de sécurité OAuth invalide ou expiré.', returnTab);
   }
 
   try {
@@ -56,7 +66,7 @@ export async function GET(request: Request) {
     });
 
     const okUrl = new URL('/', origin);
-    okUrl.searchParams.set('tab', 'devices');
+    okUrl.searchParams.set('tab', returnTab);
     okUrl.searchParams.set('gh', 'connected');
     okUrl.searchParams.set('gh_mode', decodedState.mode);
 
@@ -65,6 +75,6 @@ export async function GET(request: Request) {
     return response;
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Échec de connexion Google Home';
-    return redirectWithError(origin, message);
+    return redirectWithError(origin, message, returnTab);
   }
 }

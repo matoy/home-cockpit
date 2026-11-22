@@ -759,14 +759,14 @@ TOKEN_ENCRYPTION_KEY="" # optionnel : clé AES-256 64 car. hex`}
                   onClick={() => onNavigateTab('devices')}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 px-2.5 py-1 text-[11px] font-medium text-sky-200 transition"
                 >
-                  Ouvrir « Appareils &amp; Pièces »
+                  Ouvrir « Appareils »
                   <ArrowRight className="h-3 w-3" />
                 </button>
               )}
             </div>
             <ol className="list-decimal list-inside space-y-1.5 text-xs text-slate-300 leading-relaxed">
               <li>
-                Rendez-vous dans l&apos;onglet <strong>Appareils &amp; Pièces</strong>, carte{' '}
+                Rendez-vous dans l&apos;onglet <strong>Appareils</strong>, carte{' '}
                 <strong>Google Home</strong>.
               </li>
               <li>

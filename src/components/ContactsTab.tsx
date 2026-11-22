@@ -76,7 +76,7 @@ export function ContactsTab({ data, onNavigateTab }: ContactsTabProps) {
           onClick={() => onNavigateTab('devices')}
           className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-medium text-white transition"
         >
-          Ouvrir Appareils &amp; Pièces
+          Ouvrir Appareils
         </button>
       </div>
     );

@@ -54,6 +54,7 @@ export function decryptSecret(encoded: string | null | undefined): string | null
 export interface SignedOAuthState {
   nonce: string;
   mode: GoogleHomeMode;
+  returnTab?: 'devices' | 'rooms';
 }
 
 /**
@@ -90,13 +91,18 @@ export function verifyOAuthState(token: string | null | undefined): SignedOAuthS
     const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as {
       nonce?: unknown;
       mode?: unknown;
+      returnTab?: unknown;
     };
     if (
       typeof parsed.nonce === 'string' &&
       parsed.nonce.length >= 8 &&
       (parsed.mode === 'mcp' || parsed.mode === 'sdm')
     ) {
-      return { nonce: parsed.nonce, mode: parsed.mode };
+      return {
+        nonce: parsed.nonce,
+        mode: parsed.mode,
+        returnTab: parsed.returnTab === 'rooms' ? 'rooms' : 'devices',
+      };
     }
     return null;
   } catch {

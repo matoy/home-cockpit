@@ -1,17 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   RefreshCw,
-  Plus,
-  Trash2,
   Sliders,
   CheckCircle2,
   AlertCircle,
   X,
   Home,
-  Pencil,
-  Save,
   Wifi,
   WifiOff,
   Clock,
@@ -22,6 +18,7 @@ import {
   ExternalLink,
   Search,
   BookOpen,
+  ArrowRight,
 } from 'lucide-react';
 import { VENDOR_IDS, VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import type {
@@ -30,7 +27,6 @@ import type {
   DpConfig,
   EnergyMode,
   GoogleHomeMode,
-  RoomRecord,
   SystemFilter,
   VendorId,
 } from '@/types';
@@ -38,10 +34,10 @@ import type {
 interface DevicesRoomsTabProps {
   data: DashboardPayload;
   onRefresh: () => Promise<void>;
+  initialRoomFilter?: string | null;
+  onOpenRoomsTab?: () => void;
   onOpenGoogleGuide?: () => void;
 }
-
-const ROOM_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f43f5e'];
 
 const SCALE_OPTIONS = [
   { label: '× 1 (brut)', value: 1 },
@@ -91,7 +87,13 @@ function buildDeviceSearchHaystack(dev: DeviceRecord, roomName?: string): string
   return normalizeSearchText(parts.filter((p) => p !== null && p !== undefined && p !== '').join(' '));
 }
 
-export function DevicesRoomsTab({ data, onRefresh, onOpenGoogleGuide }: DevicesRoomsTabProps) {
+export function DevicesRoomsTab({
+  data,
+  onRefresh,
+  initialRoomFilter,
+  onOpenRoomsTab,
+  onOpenGoogleGuide,
+}: DevicesRoomsTabProps) {
   const [syncingTuya, setSyncingTuya] = useState(false);
   const [syncingGoogle, setSyncingGoogle] = useState(false);
   const [disconnectingGoogle, setDisconnectingGoogle] = useState(false);
@@ -101,17 +103,6 @@ export function DevicesRoomsTab({ data, onRefresh, onOpenGoogleGuide }: DevicesR
   const [syncMessage, setSyncMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [dismissedDuplicates, setDismissedDuplicates] = useState<string[]>([]);
   const [mergingId, setMergingId] = useState<string | null>(null);
-
-  // Création / édition de pièce
-  const [editingRoomId, setEditingRoomId] = useState<number | null>(null);
-  const [roomName, setRoomName] = useState('');
-  const [roomColor, setRoomColor] = useState(ROOM_COLORS[0]);
-  const [tempMin, setTempMin] = useState('19');
-  const [tempMax, setTempMax] = useState('22');
-  const [humMin, setHumMin] = useState('40');
-  const [humMax, setHumMax] = useState('60');
-  const [savingRoom, setSavingRoom] = useState(false);
-  const [roomFeedback, setRoomFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Inspecteur DP
   const [inspectDevice, setInspectDevice] = useState<DeviceRecord | null>(null);
@@ -128,12 +119,18 @@ export function DevicesRoomsTab({ data, onRefresh, onOpenGoogleGuide }: DevicesR
   const [systemFilter, setSystemFilter] = useState<SystemFilter | 'multi'>(
     data.selectedSystem ?? 'all'
   );
-  const [roomFilter, setRoomFilter] = useState<string>('all');
+  const [roomFilter, setRoomFilter] = useState<string>(initialRoomFilter ?? 'all');
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     setSystemFilter(data.selectedSystem ?? 'all');
   }, [data.selectedSystem]);
+
+  useEffect(() => {
+    if (initialRoomFilter) {
+      setRoomFilter(initialRoomFilter);
+    }
+  }, [initialRoomFilter]);
 
   const manageSystemsDevice = useMemo(
     () =>
@@ -356,122 +353,6 @@ export function DevicesRoomsTab({ data, onRefresh, onOpenGoogleGuide }: DevicesR
     setManageSystemsDeviceId(dev.id);
     setMergeSourceId('');
     setLinkFeedback(null);
-  }
-
-  function resetRoomForm() {
-    setEditingRoomId(null);
-    setRoomName('');
-    setRoomColor(ROOM_COLORS[0]);
-    setTempMin('19');
-    setTempMax('22');
-    setHumMin('40');
-    setHumMax('60');
-    setRoomFeedback(null);
-  }
-
-  function selectRoomForEdit(room: RoomRecord) {
-    setEditingRoomId(room.id);
-    setRoomName(room.name);
-    setRoomColor(room.color || ROOM_COLORS[0]);
-    setTempMin(String(room.targetTempMin));
-    setTempMax(String(room.targetTempMax));
-    setHumMin(String(room.targetHumidityMin));
-    setHumMax(String(room.targetHumidityMax));
-    setRoomFeedback(null);
-  }
-
-  async function handleSubmitRoom(e: FormEvent) {
-    e.preventDefault();
-    const trimmedName = roomName.trim();
-    if (!trimmedName) {
-      setRoomFeedback({ ok: false, text: 'Le nom de la pièce est requis.' });
-      return;
-    }
-
-    const parsedTempMin = tempMin.trim() === '' ? 19 : Number(tempMin);
-    const parsedTempMax = tempMax.trim() === '' ? 22 : Number(tempMax);
-    const parsedHumMin = humMin.trim() === '' ? 40 : Number(humMin);
-    const parsedHumMax = humMax.trim() === '' ? 60 : Number(humMax);
-
-    if (
-      !Number.isFinite(parsedTempMin) ||
-      !Number.isFinite(parsedTempMax) ||
-      !Number.isFinite(parsedHumMin) ||
-      !Number.isFinite(parsedHumMax)
-    ) {
-      setRoomFeedback({ ok: false, text: 'Veuillez saisir des valeurs numériques valides.' });
-      return;
-    }
-
-    if (parsedTempMin > parsedTempMax) {
-      setRoomFeedback({
-        ok: false,
-        text: 'La température min doit être inférieure ou égale à la température max.',
-      });
-      return;
-    }
-
-    if (parsedHumMin < 0 || parsedHumMax > 100 || parsedHumMin > parsedHumMax) {
-      setRoomFeedback({
-        ok: false,
-        text: "L'humidité cible doit être comprise entre 0 et 100 % (min ≤ max).",
-      });
-      return;
-    }
-
-    setSavingRoom(true);
-    setRoomFeedback(null);
-    try {
-      const isEditing = editingRoomId !== null;
-      const res = await fetch('/api/rooms', {
-        method: isEditing ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...(isEditing ? { id: editingRoomId } : {}),
-          name: trimmedName,
-          color: roomColor,
-          targetTempMin: parsedTempMin,
-          targetTempMax: parsedTempMax,
-          targetHumidityMin: parsedHumMin,
-          targetHumidityMax: parsedHumMax,
-        }),
-      });
-      const json = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        throw new Error(json.error || "Échec de l'enregistrement de la pièce.");
-      }
-
-      await onRefresh();
-      if (isEditing) {
-        setRoomFeedback({ ok: true, text: `Pièce « ${trimmedName} » mise à jour.` });
-      } else {
-        resetRoomForm();
-        setRoomFeedback({ ok: true, text: `Pièce « ${trimmedName} » créée.` });
-      }
-    } catch (err) {
-      setRoomFeedback({
-        ok: false,
-        text: err instanceof Error ? err.message : "Erreur lors de l'enregistrement.",
-      });
-    } finally {
-      setSavingRoom(false);
-    }
-  }
-
-  async function handleDeleteRoom(id: number) {
-    const res = await fetch(`/api/rooms?id=${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      setRoomFeedback({
-        ok: false,
-        text: json.error || 'Échec de la suppression de la pièce.',
-      });
-      return;
-    }
-    if (editingRoomId === id) {
-      resetRoomForm();
-    }
-    await onRefresh();
   }
 
   async function handleDeviceUpdate(
@@ -761,254 +642,6 @@ export function DevicesRoomsTab({ data, onRefresh, onOpenGoogleGuide }: DevicesR
         </div>
       )}
 
-      {/* Gestion des pièces */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <form
-          onSubmit={handleSubmitRoom}
-          className={`rounded-2xl border p-5 space-y-4 transition ${
-            editingRoomId !== null
-              ? 'border-indigo-500/50 bg-slate-900/90 ring-1 ring-indigo-500/20'
-              : 'border-slate-800 bg-slate-900/70'
-          }`}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-              {editingRoomId !== null ? (
-                <>
-                  <Pencil className="h-4 w-4 text-indigo-400" />
-                  Modifier la pièce
-                </>
-              ) : (
-                <>
-                  <Home className="h-4 w-4 text-indigo-400" />
-                  Ajouter une pièce
-                </>
-              )}
-            </h3>
-            {editingRoomId !== null && (
-              <button
-                type="button"
-                onClick={resetRoomForm}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2 py-1 text-[11px] text-slate-300 transition"
-                title="Revenir au mode ajout"
-              >
-                <X className="h-3.5 w-3.5" />
-                Annuler
-              </button>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Nom de la pièce</label>
-            <input
-              type="text"
-              required
-              placeholder="ex: Buanderie, Garage..."
-              value={roomName}
-              onChange={(e) => setRoomName(e.target.value)}
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-400 mb-1.5">Couleur sur les graphiques</label>
-            <div className="flex flex-wrap items-center gap-2">
-              {(ROOM_COLORS.includes(roomColor) ? ROOM_COLORS : [...ROOM_COLORS, roomColor]).map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setRoomColor(c)}
-                  className={`h-6 w-6 rounded-full border-2 transition ${
-                    roomColor === c ? 'border-white scale-110' : 'border-transparent'
-                  }`}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-              <label
-                title="Couleur personnalisée"
-                className="relative inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-dashed border-slate-500 bg-slate-950 text-[11px] font-semibold text-slate-300 hover:border-white transition overflow-hidden"
-              >
-                <span>+</span>
-                <input
-                  type="color"
-                  value={/^#[0-9a-fA-F]{6}$/.test(roomColor) ? roomColor : '#3b82f6'}
-                  onChange={(e) => setRoomColor(e.target.value)}
-                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                  aria-label="Couleur personnalisée"
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div>
-              <label className="block text-slate-400 mb-1">Temp. cible min (°C)</label>
-              <input
-                type="number"
-                step="0.5"
-                value={tempMin}
-                onChange={(e) => setTempMin(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-slate-400 mb-1">Temp. cible max (°C)</label>
-              <input
-                type="number"
-                step="0.5"
-                value={tempMax}
-                onChange={(e) => setTempMax(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-slate-400 mb-1">Humidité min (%)</label>
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={humMin}
-                onChange={(e) => setHumMin(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-slate-400 mb-1">Humidité max (%)</label>
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={humMax}
-                onChange={(e) => setHumMax(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-white"
-              />
-            </div>
-          </div>
-
-          {roomFeedback && (
-            <div
-              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
-                roomFeedback.ok
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                  : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-              }`}
-            >
-              {roomFeedback.ok ? (
-                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-              ) : (
-                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-              )}
-              <span>{roomFeedback.text}</span>
-            </div>
-          )}
-
-          {editingRoomId !== null ? (
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                disabled={savingRoom}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 text-xs font-medium text-white transition"
-              >
-                <Save className="h-4 w-4" />
-                {savingRoom ? 'Enregistrement...' : 'Enregistrer'}
-              </button>
-              <button
-                type="button"
-                onClick={resetRoomForm}
-                disabled={savingRoom}
-                className="rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-slate-300 transition"
-              >
-                Annuler
-              </button>
-            </div>
-          ) : (
-            <button
-              type="submit"
-              disabled={savingRoom}
-              className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-4 py-2 text-xs font-medium text-white transition"
-            >
-              <Plus className="h-4 w-4" />
-              {savingRoom ? 'Création...' : 'Créer la pièce'}
-            </button>
-          )}
-        </form>
-
-        <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-white">Pièces configurées ({data.rooms.length})</h3>
-            <span className="text-[11px] text-slate-400">
-              Cliquez sur une pièce pour la modifier et filtrer ses appareils
-            </span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {data.rooms.map((r) => {
-              const isEditing = editingRoomId === r.id;
-              const isFiltered = roomFilter === String(r.id);
-              const count = roomDeviceCounts.get(r.id) ?? 0;
-              return (
-                <div
-                  key={r.id}
-                  onClick={() => {
-                    if (isEditing) {
-                      resetRoomForm();
-                      if (isFiltered) setRoomFilter('all');
-                    } else {
-                      selectRoomForEdit(r);
-                      setRoomFilter(String(r.id));
-                    }
-                  }}
-                  className={`cursor-pointer flex items-center justify-between rounded-xl border px-3.5 py-2.5 transition ${
-                    isEditing
-                      ? 'border-indigo-500 bg-indigo-950/35 ring-1 ring-indigo-500/50'
-                      : isFiltered
-                        ? 'border-indigo-500/40 bg-indigo-950/15'
-                        : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span
-                      className="h-3.5 w-3.5 rounded-full shrink-0"
-                      style={{ backgroundColor: r.color }}
-                    />
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold text-white flex flex-wrap items-center gap-2">
-                        <span className="truncate">{r.name}</span>
-                        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-normal text-slate-300">
-                          {count}
-                        </span>
-                        {isEditing && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 px-2 py-0.5 text-[10px] font-medium text-indigo-300">
-                            <Pencil className="h-2.5 w-2.5" />
-                            En édition
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-slate-400">
-                        Cibles : {r.targetTempMin}–{r.targetTempMax}°C · {r.targetHumidityMin}–
-                        {r.targetHumidityMax}%
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (isEditing) resetRoomForm();
-                      if (isFiltered) setRoomFilter('all');
-                      void handleDeleteRoom(r.id);
-                    }}
-                    className="rounded-lg p-1.5 text-slate-500 hover:bg-rose-500/15 hover:text-rose-400 shrink-0"
-                    title="Supprimer la pièce"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
       {/* Liste des appareils */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-800 space-y-3">
@@ -1155,39 +788,50 @@ export function DevicesRoomsTab({ data, onRefresh, onOpenGoogleGuide }: DevicesR
                 </button>
               );
             })}
+
+            {onOpenRoomsTab && (
+              <button
+                type="button"
+                onClick={onOpenRoomsTab}
+                className="ml-auto inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1.5 text-[11px] font-medium text-slate-200 transition"
+              >
+                Gérer les pièces
+                <ArrowRight className="h-3 w-3 text-indigo-400" />
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider">
+        {/* Vue Desktop sans scrollbar horizontale (table-fixed 100 %) */}
+        <div className="hidden lg:block">
+          <table className="w-full table-fixed text-left text-xs">
+            <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider text-[10.5px]">
               <tr>
-                <th className="px-4 py-3">Appareil</th>
-                <th className="px-4 py-3">Système</th>
-                <th className="px-4 py-3">Nom affiché</th>
-                <th className="px-4 py-3">IP / MAC Address</th>
-                <th className="px-4 py-3">Pièce</th>
-                <th className="px-4 py-3">Calcul kWh</th>
-                <th className="px-4 py-3">Dernières valeurs</th>
+                <th className="w-[22%] px-2.5 py-2.5">Appareil / Nom affiché</th>
+                <th className="w-[13%] px-2.5 py-2.5">Système</th>
+                <th className="w-[12%] px-2.5 py-2.5">IP / MAC</th>
+                <th className="w-[13%] px-2.5 py-2.5">Pièce</th>
+                <th className="w-[12%] px-2.5 py-2.5">Calcul kWh</th>
+                <th className="w-[11%] px-2.5 py-2.5">Valeurs</th>
                 <th
-                  className="px-4 py-3"
+                  className="w-[5%] px-2 py-2.5 text-center"
                   title="Décocher pour ignorer complètement cet appareil lors des collectes et dans le dashboard"
                 >
                   Suivi
                 </th>
                 <th
-                  className="px-4 py-3"
-                  title="Cocher pour exclure l'appareil des totaux électriques (prises en cascade) et des mesures/compteurs de la page Climat (ex. pilotes de radiateurs)"
+                  className="w-[6%] px-2 py-2.5 text-center"
+                  title="Exclure (Cascade / Climat) : cocher pour exclure l'appareil des totaux électriques (prises en cascade) et des mesures/compteurs de la page Climat (ex. pilotes de radiateurs)"
                 >
-                  Exclure (Cascade / Climat)
+                  Exclure
                 </th>
-                <th className="px-4 py-3 text-right">Data Points</th>
+                <th className="w-[6%] px-2.5 py-2.5 text-right">DP</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80">
               {filteredDevices.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-xs text-slate-500">
+                  <td colSpan={9} className="px-4 py-8 text-center text-xs text-slate-500">
                     <div>Aucun appareil ne correspond aux filtres actifs.</div>
                     {(roomFilter !== 'all' || systemFilter !== 'all' || searchQuery.trim() !== '') && (
                       <button
@@ -1206,57 +850,274 @@ export function DevicesRoomsTab({ data, onRefresh, onOpenGoogleGuide }: DevicesR
                 </tr>
               ) : (
                 filteredDevices.map((dev) => (
-                <tr key={dev.id} className="hover:bg-slate-800/30">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      {dev.isOnline ? (
-                        <Wifi className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                      ) : (
-                        <WifiOff className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-                      )}
-                      <div>
-                        <div className="font-medium text-white">{dev.name}</div>
-                        <div className="text-[10px] text-slate-500 font-mono">
-                          {dev.productName || dev.tuyaCategory || dev.id}
+                  <tr key={dev.id} className="hover:bg-slate-800/30 align-top">
+                    <td className="px-2.5 py-2.5 min-w-0">
+                      <div className="flex items-start gap-1.5 min-w-0">
+                        {dev.isOnline ? (
+                          <Wifi className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                        ) : (
+                          <WifiOff className="h-3.5 w-3.5 text-slate-500 shrink-0 mt-0.5" />
+                        )}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="font-medium text-white truncate" title={dev.name}>
+                            {dev.name}
+                          </div>
+                          <div
+                            className="text-[10px] text-slate-500 font-mono truncate"
+                            title={dev.productName || dev.tuyaCategory || dev.id}
+                          >
+                            {dev.productName || dev.tuyaCategory || dev.id}
+                          </div>
+                          <input
+                            key={`name-${dev.id}-${dev.customName ?? ''}`}
+                            type="text"
+                            defaultValue={dev.customName ?? ''}
+                            placeholder="Nom affiché (personnaliser…)"
+                            aria-label={`Nom affiché pour ${dev.name}`}
+                            onBlur={(e) => {
+                              const val = e.target.value.trim();
+                              if (val !== (dev.customName ?? '')) {
+                                void handleDeviceUpdate(dev.id, { customName: val || null });
+                              }
+                            }}
+                            className="w-full min-w-0 rounded-md border border-slate-700/80 bg-slate-950 px-2 py-1 text-[11px] text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+                          />
                         </div>
                       </div>
-                    </div>
-                  </td>
+                    </td>
 
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-1">
-                      {dev.systems.map((sys) => {
-                        const meta = VENDOR_REGISTRY[sys];
-                        const isPrimary = sys === dev.primaryVendor;
-                        return (
+                    <td className="px-2.5 py-2.5 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1">
+                        {dev.systems.map((sys) => {
+                          const meta = VENDOR_REGISTRY[sys];
+                          const isPrimary = sys === dev.primaryVendor;
+                          return (
+                            <span
+                              key={sys}
+                              title={
+                                isPrimary
+                                  ? `${meta.label} — Source principale de mesure`
+                                  : `${meta.label} — Lié sans doublon`
+                              }
+                              className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${meta.badgeClass}`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${meta.dotClass}`} />
+                              {meta.label}
+                            </span>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          onClick={() => openManageSystems(dev)}
+                          title="Gérer les systèmes liés (déclarer Google Home / fusionner un doublon)"
+                          className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/80 hover:border-slate-500 hover:bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300 transition"
+                        >
+                          <Link2 className="h-2.5 w-2.5" />
+                          Lier
+                        </button>
+                      </div>
+                    </td>
+
+                    <td className="px-2.5 py-2.5 font-mono text-[10.5px] leading-tight min-w-0">
+                      <div className="text-slate-200 truncate" title={dev.ipAddress || '—'}>
+                        {dev.ipAddress || '—'}
+                      </div>
+                      <div
+                        className="text-[10px] text-slate-400 mt-0.5 truncate"
+                        title={dev.macAddress || '—'}
+                      >
+                        {dev.macAddress || '—'}
+                      </div>
+                    </td>
+
+                    <td className="px-2.5 py-2.5 min-w-0">
+                      <select
+                        value={dev.roomId ?? ''}
+                        aria-label={`Pièce de ${dev.name}`}
+                        onChange={(e) =>
+                          void handleDeviceUpdate(dev.id, {
+                            roomId: e.target.value ? Number(e.target.value) : null,
+                          })
+                        }
+                        className="w-full min-w-0 truncate rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="">Non assignée</option>
+                        {data.rooms.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+
+                    <td className="px-2.5 py-2.5 min-w-0">
+                      <select
+                        value={dev.energyMode}
+                        aria-label={`Calcul kWh de ${dev.name}`}
+                        onChange={(e) =>
+                          void handleDeviceUpdate(dev.id, {
+                            energyMode: e.target.value as EnergyMode,
+                          })
+                        }
+                        className="w-full min-w-0 truncate rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="hybrid">Hybride Auto</option>
+                        <option value="add_ele">Compteur (add_ele)</option>
+                        <option value="integration">Intégration (W×0.5h)</option>
+                      </select>
+                    </td>
+
+                    <td className="px-2.5 py-2.5 font-mono text-[11px] text-slate-300 min-w-0">
+                      <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                        {dev.lastPowerW !== null && (
+                          <span className="text-indigo-300">{dev.lastPowerW} W</span>
+                        )}
+                        {dev.lastTempC !== null && (
+                          <span className="text-emerald-300">{dev.lastTempC} °C</span>
+                        )}
+                        {dev.lastHumidityPct !== null && (
+                          <span className="text-sky-300">{dev.lastHumidityPct} %</span>
+                        )}
+                        {dev.lastContactOpen !== null && (
                           <span
-                            key={sys}
-                            title={
-                              isPrimary
-                                ? `${meta.label} — Source principale de mesure`
-                                : `${meta.label} — Lié sans doublon`
+                            className={
+                              dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'
                             }
-                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${meta.badgeClass}`}
                           >
-                            <span className={`h-1.5 w-1.5 rounded-full ${meta.dotClass}`} />
-                            {meta.label}
+                            {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
                           </span>
-                        );
-                      })}
+                        )}
+                      </div>
+                    </td>
+
+                    <td className="px-2 py-2.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={dev.isMonitored}
+                        aria-label={`Suivi de ${dev.name}`}
+                        onChange={(e) =>
+                          void handleDeviceUpdate(dev.id, { isMonitored: e.target.checked })
+                        }
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-indigo-600 focus:ring-indigo-500"
+                      />
+                    </td>
+
+                    <td className="px-2 py-2.5 text-center">
+                      <label
+                        className="inline-flex flex-col items-center gap-0.5 cursor-pointer"
+                        title="Si coché, cet appareil est exclu des totaux électriques (prises en cascade) et des mesures/compteurs de la page Climat"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={dev.excludeFromTotals}
+                          aria-label={`Exclure ${dev.name}`}
+                          onChange={(e) =>
+                            void handleDeviceUpdate(dev.id, {
+                              excludeFromTotals: e.target.checked,
+                            })
+                          }
+                          className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-amber-500 focus:ring-amber-500"
+                        />
+                        {dev.excludeFromTotals && (
+                          <span className="rounded bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 text-[9.5px] leading-tight text-amber-300">
+                            Exclu
+                          </span>
+                        )}
+                      </label>
+                    </td>
+
+                    <td className="px-2.5 py-2.5 text-right">
                       <button
                         type="button"
-                        onClick={() => openManageSystems(dev)}
-                        title="Gérer les systèmes liés (déclarer Google Home / fusionner un doublon)"
-                        className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/80 hover:border-slate-500 hover:bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300 transition"
+                        onClick={() => openInspector(dev)}
+                        title="Ouvrir l'Inspecteur Data Points"
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1 text-[11px] text-slate-200 transition"
                       >
-                        <Link2 className="h-2.5 w-2.5" />
-                        Lier
+                        <Sliders className="h-3 w-3" />
+                        DP
                       </button>
-                    </div>
-                  </td>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
-                  <td className="px-4 py-3">
+        {/* Vue Mobile / Tablette (< 1024px) empilée sans scrollbar */}
+        <div className="lg:hidden divide-y divide-slate-800/80">
+          {filteredDevices.length === 0 ? (
+            <div className="px-4 py-8 text-center text-xs text-slate-500">
+              <div>Aucun appareil ne correspond aux filtres actifs.</div>
+              {(roomFilter !== 'all' || systemFilter !== 'all' || searchQuery.trim() !== '') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setRoomFilter('all');
+                    setSystemFilter('all');
+                  }}
+                  className="mt-2.5 inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1 text-[11px] text-slate-200 transition"
+                >
+                  Réinitialiser les filtres
+                </button>
+              )}
+            </div>
+          ) : (
+            filteredDevices.map((dev) => (
+              <div key={dev.id} className="p-4 space-y-3 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2 min-w-0">
+                    {dev.isOnline ? (
+                      <Wifi className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                    ) : (
+                      <WifiOff className="h-3.5 w-3.5 text-slate-500 shrink-0 mt-0.5" />
+                    )}
+                    <div className="min-w-0">
+                      <div className="font-medium text-white truncate">{dev.name}</div>
+                      <div className="text-[10px] text-slate-500 font-mono truncate">
+                        {dev.productName || dev.tuyaCategory || dev.id}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openInspector(dev)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2.5 py-1 text-[11px] text-slate-200 shrink-0"
+                  >
+                    <Sliders className="h-3 w-3" />
+                    Inspecteur DP
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {dev.systems.map((sys) => {
+                    const meta = VENDOR_REGISTRY[sys];
+                    return (
+                      <span
+                        key={sys}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${meta.badgeClass}`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${meta.dotClass}`} />
+                        {meta.label}
+                      </span>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => openManageSystems(dev)}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300"
+                  >
+                    <Link2 className="h-2.5 w-2.5" />
+                    Lier
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Nom affiché</label>
                     <input
+                      key={`mob-name-${dev.id}-${dev.customName ?? ''}`}
                       type="text"
                       defaultValue={dev.customName ?? ''}
                       placeholder={dev.name}
@@ -1266,18 +1127,17 @@ export function DevicesRoomsTab({ data, onRefresh, onOpenGoogleGuide }: DevicesR
                           void handleDeviceUpdate(dev.id, { customName: val || null });
                         }
                       }}
-                      className="w-40 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
                     />
-                  </td>
-
-                  <td className="px-4 py-3 font-mono text-[11px] leading-tight whitespace-nowrap">
-                    <div className="text-slate-200">{dev.ipAddress || '—'}</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">
-                      {dev.macAddress || '—'}
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">IP / MAC</label>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-2.5 py-1.5 font-mono text-[11px] text-slate-300 truncate">
+                      {dev.ipAddress || '—'} · {dev.macAddress || '—'}
                     </div>
-                  </td>
-
-                  <td className="px-4 py-3">
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Pièce</label>
                     <select
                       value={dev.roomId ?? ''}
                       onChange={(e) =>
@@ -1285,7 +1145,7 @@ export function DevicesRoomsTab({ data, onRefresh, onOpenGoogleGuide }: DevicesR
                           roomId: e.target.value ? Number(e.target.value) : null,
                         })
                       }
-                      className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
                     >
                       <option value="">Non assignée</option>
                       {data.rooms.map((r) => (
@@ -1294,9 +1154,9 @@ export function DevicesRoomsTab({ data, onRefresh, onOpenGoogleGuide }: DevicesR
                         </option>
                       ))}
                     </select>
-                  </td>
-
-                  <td className="px-4 py-3">
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Calcul kWh</label>
                     <select
                       value={dev.energyMode}
                       onChange={(e) =>
@@ -1304,53 +1164,46 @@ export function DevicesRoomsTab({ data, onRefresh, onOpenGoogleGuide }: DevicesR
                           energyMode: e.target.value as EnergyMode,
                         })
                       }
-                      className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
                     >
-                      <option value="hybrid">Hybride Auto (add_ele + W×Δt)</option>
-                      <option value="add_ele">Compteur Tuya (add_ele)</option>
-                      <option value="integration">Intégration (W × 0.5h)</option>
+                      <option value="hybrid">Hybride Auto</option>
+                      <option value="add_ele">Compteur (add_ele)</option>
+                      <option value="integration">Intégration (W×0.5h)</option>
                     </select>
-                  </td>
+                  </div>
+                </div>
 
-                  <td className="px-4 py-3 font-mono text-[11px] text-slate-300">
-                    <div className="flex flex-wrap gap-2">
-                      {dev.lastPowerW !== null && (
-                        <span className="text-indigo-300">{dev.lastPowerW} W</span>
-                      )}
-                      {dev.lastTempC !== null && (
-                        <span className="text-emerald-300">{dev.lastTempC} °C</span>
-                      )}
-                      {dev.lastHumidityPct !== null && (
-                        <span className="text-sky-300">{dev.lastHumidityPct} %</span>
-                      )}
-                      {dev.lastContactOpen !== null && (
-                        <span
-                          className={
-                            dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'
-                          }
-                        >
-                          {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
-                        </span>
-                      )}
-                    </div>
-                  </td>
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <div className="flex flex-wrap gap-2 font-mono text-[11px] text-slate-300">
+                    {dev.lastPowerW !== null && (
+                      <span className="text-indigo-300">{dev.lastPowerW} W</span>
+                    )}
+                    {dev.lastTempC !== null && (
+                      <span className="text-emerald-300">{dev.lastTempC} °C</span>
+                    )}
+                    {dev.lastHumidityPct !== null && (
+                      <span className="text-sky-300">{dev.lastHumidityPct} %</span>
+                    )}
+                    {dev.lastContactOpen !== null && (
+                      <span className={dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'}>
+                        {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
+                      </span>
+                    )}
+                  </div>
 
-                  <td className="px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={dev.isMonitored}
-                      onChange={(e) =>
-                        void handleDeviceUpdate(dev.id, { isMonitored: e.target.checked })
-                      }
-                      className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-indigo-600 focus:ring-indigo-500"
-                    />
-                  </td>
-
-                  <td className="px-4 py-3">
-                    <label
-                      className="inline-flex items-center gap-1.5 cursor-pointer"
-                      title="Si coché, cet appareil est exclu des totaux électriques (prises en cascade) et des mesures/compteurs de la page Climat"
-                    >
+                  <div className="flex items-center gap-4 text-[11px] text-slate-300">
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={dev.isMonitored}
+                        onChange={(e) =>
+                          void handleDeviceUpdate(dev.id, { isMonitored: e.target.checked })
+                        }
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-indigo-600"
+                      />
+                      Suivi
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={dev.excludeFromTotals}
@@ -1359,30 +1212,15 @@ export function DevicesRoomsTab({ data, onRefresh, onOpenGoogleGuide }: DevicesR
                             excludeFromTotals: e.target.checked,
                           })
                         }
-                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-amber-500 focus:ring-amber-500"
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-amber-500"
                       />
-                      {dev.excludeFromTotals && (
-                        <span className="rounded bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[10px] text-amber-300">
-                          Exclu
-                        </span>
-                      )}
+                      Exclure
                     </label>
-                  </td>
-
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => openInspector(dev)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2.5 py-1 text-[11px] text-slate-200"
-                    >
-                      <Sliders className="h-3 w-3" />
-                      Inspecteur DP
-                    </button>
-                  </td>
-                </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 

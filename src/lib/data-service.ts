@@ -723,6 +723,7 @@ async function ensureMissingRoomsInDb(
   existingRoomsRows: Array<typeof rooms.$inferSelect>;
   roomNameToId: Map<string, number>;
   processedCount: number;
+  createdCount: number;
 }> {
   const existingRoomsRows = await db.select().from(rooms).orderBy(asc(rooms.id));
   const roomNameToId = new Map<string, number>();
@@ -731,6 +732,7 @@ async function ensureMissingRoomsInDb(
   }
 
   let processedCount = 0;
+  let createdCount = 0;
   let styleIndex = existingRoomsRows.length;
   for (const rawRoomName of roomNames) {
     const trimmed = rawRoomName.trim();
@@ -751,16 +753,18 @@ async function ensureMissingRoomsInDb(
         })
         .returning();
       roomNameToId.set(key, insertedRoom.id);
+      createdCount++;
     }
     processedCount++;
   }
 
-  return { existingRoomsRows, roomNameToId, processedCount };
+  return { existingRoomsRows, roomNameToId, processedCount, createdCount };
 }
 
 function ensureMissingRoomsInDemo(roomNames: string[]): {
   roomNameToId: Map<string, number>;
   processedCount: number;
+  createdCount: number;
 } {
   const state = getDemoState();
   const nowIso = new Date().toISOString();
@@ -770,6 +774,7 @@ function ensureMissingRoomsInDemo(roomNames: string[]): {
   }
 
   let processedCount = 0;
+  let createdCount = 0;
   for (const rawRoomName of roomNames) {
     const trimmed = rawRoomName.trim();
     if (!trimmed) continue;
@@ -789,11 +794,40 @@ function ensureMissingRoomsInDemo(roomNames: string[]): {
       };
       state.rooms.push(created);
       roomNameToId.set(key, created.id);
+      createdCount++;
     }
     processedCount++;
   }
 
-  return { roomNameToId, processedCount };
+  return { roomNameToId, processedCount, createdCount };
+}
+
+async function cleanupDefaultSeededRoomsInDb(
+  db: AppDatabase,
+  roomNames: string[],
+  existingRoomsRows: Array<typeof rooms.$inferSelect>
+): Promise<void> {
+  if (roomNames.length === 0) return;
+
+  const importedNamesLower = new Set(roomNames.map((n) => n.trim().toLowerCase()));
+  const allAssignedDevices = await db.select({ roomId: devices.roomId }).from(devices);
+  const usedRoomIds = new Set(
+    allAssignedDevices.map((d) => d.roomId).filter((id): id is number => id !== null)
+  );
+  const DEFAULT_SEEDED_NAMES = new Set(['salon', 'bureau', 'cuisine', 'chambre']);
+  for (const r of existingRoomsRows) {
+    const lower = r.name.trim().toLowerCase();
+    if (DEFAULT_SEEDED_NAMES.has(lower) && !importedNamesLower.has(lower) && !usedRoomIds.has(r.id)) {
+      const refReadings = await db
+        .select({ id: metricReadings.id })
+        .from(metricReadings)
+        .where(eq(metricReadings.roomId, r.id))
+        .limit(1);
+      if (refReadings.length === 0) {
+        await db.delete(rooms).where(eq(rooms.id, r.id));
+      }
+    }
+  }
 }
 
 export async function syncTuyaDevices(): Promise<{
@@ -1112,27 +1146,7 @@ export async function syncTuyaDevices(): Promise<{
     });
 
   // Nettoie d'éventuelles pièces par défaut vides qui n'existent pas dans Tuya
-  if (roomMapping.roomNames.length > 0) {
-    const tuyaNamesLower = new Set(roomMapping.roomNames.map((n) => n.trim().toLowerCase()));
-    const allAssignedDevices = await db.select({ roomId: devices.roomId }).from(devices);
-    const usedRoomIds = new Set(
-      allAssignedDevices.map((d) => d.roomId).filter((id): id is number => id !== null)
-    );
-    const DEFAULT_SEEDED_NAMES = new Set(['salon', 'bureau', 'cuisine', 'chambre']);
-    for (const r of existingRoomsRows) {
-      const lower = r.name.trim().toLowerCase();
-      if (DEFAULT_SEEDED_NAMES.has(lower) && !tuyaNamesLower.has(lower) && !usedRoomIds.has(r.id)) {
-        const refReadings = await db
-          .select({ id: metricReadings.id })
-          .from(metricReadings)
-          .where(eq(metricReadings.roomId, r.id))
-          .limit(1);
-        if (refReadings.length === 0) {
-          await db.delete(rooms).where(eq(rooms.id, r.id));
-        }
-      }
-    }
-  }
+  await cleanupDefaultSeededRoomsInDb(db, roomMapping.roomNames, existingRoomsRows);
 
   // Synchronise les scénarios en arrière-plan lors de la synchro globale sans bloquer
   await syncTuyaAutomations(rawDevices).catch(() => null);
@@ -2263,6 +2277,317 @@ export async function deleteRoom(id: number): Promise<void> {
 
   await ensureSchemaInitialized(db);
   await db.delete(rooms).where(eq(rooms.id, id));
+}
+
+export interface RoomVendorSyncResult {
+  vendor: 'tuya' | 'google_home' | 'all';
+  roomsFound: number;
+  createdCount: number;
+  assignedDevicesCount: number;
+  mode: 'live' | 'demo';
+  message: string;
+}
+
+async function syncRoomsFromTuya(): Promise<RoomVendorSyncResult> {
+  const db = getDb();
+  const tuya = getTuyaConfig();
+  const now = new Date();
+
+  if (!tuya.configured) {
+    if (!db) {
+      const state = getDemoState();
+      state.vendorConnections.tuya.lastSyncedAt = now.toISOString();
+      return {
+        vendor: 'tuya',
+        roomsFound: state.rooms.length,
+        createdCount: 0,
+        assignedDevicesCount: 0,
+        mode: 'demo',
+        message: `Mode démo actif : ${state.rooms.length} pièce(s) Tuya simulée(s) déjà disponible(s).`,
+      };
+    }
+    throw new Error(
+      'Identifiants Tuya manquants. Configurez TUYA_ACCESS_ID et TUYA_ACCESS_SECRET dans Vercel / .env.local.'
+    );
+  }
+
+  const rawDevices = await fetchTuyaDevices();
+  const roomMapping = await fetchTuyaRoomMapping(rawDevices);
+
+  if (!db) {
+    const state = getDemoState();
+    const { roomNameToId, createdCount } = ensureMissingRoomsInDemo(roomMapping.roomNames);
+    let assignedDevicesCount = 0;
+
+    for (const [deviceId, tuyaRoomName] of roomMapping.deviceRoomMap.entries()) {
+      const existing = state.devices.find((d) => d.id === deviceId);
+      const mappedRoomId = roomNameToId.get(tuyaRoomName.trim().toLowerCase()) ?? null;
+      if (existing && mappedRoomId !== null && existing.roomId !== mappedRoomId) {
+        existing.roomId = mappedRoomId;
+        assignedDevicesCount++;
+      }
+    }
+
+    state.vendorConnections.tuya.connected = true;
+    state.vendorConnections.tuya.lastSyncedAt = now.toISOString();
+    state.vendorConnections.tuya.lastError = null;
+
+    const baseMsg = `Tuya : ${roomMapping.roomNames.length} pièce(s) détectée(s) (${createdCount} créée(s), ${assignedDevicesCount} appareil(s) rattaché(s)).`;
+    return {
+      vendor: 'tuya',
+      roomsFound: roomMapping.roomNames.length,
+      createdCount,
+      assignedDevicesCount,
+      mode: 'demo',
+      message: roomMapping.warning ? `${baseMsg} (${roomMapping.warning})` : baseMsg,
+    };
+  }
+
+  await seedDefaultDataIfEmpty(db);
+
+  const { existingRoomsRows, roomNameToId, createdCount } = await ensureMissingRoomsInDb(
+    db,
+    roomMapping.roomNames
+  );
+
+  const existingDeviceRows = await db
+    .select({ id: devices.id, roomId: devices.roomId })
+    .from(devices);
+  const deviceById = new Map(existingDeviceRows.map((d) => [d.id, d]));
+
+  let assignedDevicesCount = 0;
+  for (const [deviceId, tuyaRoomName] of roomMapping.deviceRoomMap.entries()) {
+    const existing = deviceById.get(deviceId);
+    const tuyaRoomId = roomNameToId.get(tuyaRoomName.trim().toLowerCase()) ?? null;
+    if (existing && tuyaRoomId !== null && existing.roomId !== tuyaRoomId) {
+      await db.update(devices).set({ roomId: tuyaRoomId }).where(eq(devices.id, deviceId));
+      await db
+        .update(metricReadings)
+        .set({ roomId: tuyaRoomId })
+        .where(and(eq(metricReadings.deviceId, deviceId), isNull(metricReadings.roomId)));
+      assignedDevicesCount++;
+    }
+  }
+
+  await cleanupDefaultSeededRoomsInDb(db, roomMapping.roomNames, existingRoomsRows);
+
+  await db
+    .insert(vendorConnections)
+    .values({
+      vendor: 'tuya',
+      mode: 'cloud_key',
+      status: 'connected',
+      lastSyncedAt: now,
+      lastError: null,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: vendorConnections.vendor,
+      set: {
+        status: 'connected',
+        lastSyncedAt: now,
+        lastError: null,
+        updatedAt: now,
+      },
+    });
+
+  const baseMsg = `Tuya : ${roomMapping.roomNames.length} pièce(s) détectée(s) (${createdCount} créée(s), ${assignedDevicesCount} appareil(s) rattaché(s)).`;
+  return {
+    vendor: 'tuya',
+    roomsFound: roomMapping.roomNames.length,
+    createdCount,
+    assignedDevicesCount,
+    mode: 'live',
+    message: roomMapping.warning ? `${baseMsg} (${roomMapping.warning})` : baseMsg,
+  };
+}
+
+async function syncRoomsFromGoogleHome(): Promise<RoomVendorSyncResult> {
+  const db = getDb();
+  const now = new Date();
+
+  if (!db) {
+    const state = getDemoState();
+    state.vendorConnections.google_home.lastSyncedAt = now.toISOString();
+    return {
+      vendor: 'google_home',
+      roomsFound: state.rooms.length,
+      createdCount: 0,
+      assignedDevicesCount: 0,
+      mode: 'demo',
+      message: `Mode démo actif : ${state.rooms.length} pièce(s) Google Home simulée(s) déjà disponible(s).`,
+    };
+  }
+
+  await seedDefaultDataIfEmpty(db);
+  const connRows = await db
+    .select()
+    .from(vendorConnections)
+    .where(eq(vendorConnections.vendor, 'google_home'))
+    .limit(1);
+
+  const conn = connRows[0];
+  if (!conn || conn.status !== 'connected' || (!conn.accessToken && !conn.refreshToken)) {
+    throw new Error(
+      "Google Home n'est pas connecté. Cliquez d'abord sur « Connecter Google Home »."
+    );
+  }
+
+  const mode: GoogleHomeMode =
+    conn.mode === 'sdm' || conn.mode === 'mcp' ? conn.mode : getGoogleHomeConfig().defaultMode;
+
+  let inventory;
+  try {
+    const accessToken = await ensureValidGoogleAccessToken(db, conn);
+    inventory = await fetchGoogleHomeInventory({
+      accessToken,
+      mode,
+      projectId: getGoogleHomeConfig().sdmProjectId,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur synchronisation pièces Google Home';
+    await db
+      .update(vendorConnections)
+      .set({ lastError: msg, updatedAt: now })
+      .where(eq(vendorConnections.vendor, 'google_home'));
+    throw err;
+  }
+
+  const { roomNameToId, createdCount } = await ensureMissingRoomsInDb(db, inventory.roomNames);
+
+  const [existingDeviceRows, ghLinkRows] = await Promise.all([
+    db
+      .select({
+        id: devices.id,
+        primaryVendor: devices.primaryVendor,
+        roomId: devices.roomId,
+      })
+      .from(devices),
+    db.select().from(deviceVendorLinks).where(eq(deviceVendorLinks.vendor, 'google_home')),
+  ]);
+
+  const deviceById = new Map(existingDeviceRows.map((d) => [d.id, d]));
+  const linkByExternalId = new Map(ghLinkRows.map((l) => [l.externalId, l]));
+
+  let assignedDevicesCount = 0;
+  const updatedDeviceIds = new Set<string>();
+
+  for (const gh of inventory.devices) {
+    if (!gh.roomName) continue;
+    const mappedRoomId = roomNameToId.get(gh.roomName.trim().toLowerCase()) ?? null;
+    if (mappedRoomId === null) continue;
+
+    const existingLink = linkByExternalId.get(gh.externalId);
+    const linkedDevice = existingLink ? deviceById.get(existingLink.deviceId) : undefined;
+    if (!linkedDevice || updatedDeviceIds.has(linkedDevice.id)) continue;
+
+    const primaryVendor: VendorId = isValidVendorId(linkedDevice.primaryVendor)
+      ? linkedDevice.primaryVendor
+      : 'tuya';
+
+    const shouldUpdate =
+      primaryVendor === 'tuya'
+        ? linkedDevice.roomId === null
+        : linkedDevice.roomId !== mappedRoomId;
+
+    if (shouldUpdate) {
+      await db
+        .update(devices)
+        .set({ roomId: mappedRoomId })
+        .where(eq(devices.id, linkedDevice.id));
+      updatedDeviceIds.add(linkedDevice.id);
+      assignedDevicesCount++;
+    }
+  }
+
+  await db
+    .update(vendorConnections)
+    .set({
+      status: 'connected',
+      lastSyncedAt: now,
+      lastError: null,
+      updatedAt: now,
+    })
+    .where(eq(vendorConnections.vendor, 'google_home'));
+
+  return {
+    vendor: 'google_home',
+    roomsFound: inventory.roomNames.length,
+    createdCount,
+    assignedDevicesCount,
+    mode: 'live',
+    message: `Google Home (${mode.toUpperCase()}) : ${inventory.roomNames.length} pièce(s) détectée(s) (${createdCount} créée(s), ${assignedDevicesCount} appareil(s) rattaché(s)).`,
+  };
+}
+
+export async function syncRoomsFromVendor(
+  vendor: 'tuya' | 'google_home' | 'all' = 'all'
+): Promise<RoomVendorSyncResult> {
+  if (vendor === 'tuya') return syncRoomsFromTuya();
+  if (vendor === 'google_home') return syncRoomsFromGoogleHome();
+
+  const db = getDb();
+  const tasks: Array<{ label: string; run: () => Promise<RoomVendorSyncResult> }> = [];
+
+  if (!db) {
+    tasks.push({ label: 'Tuya', run: syncRoomsFromTuya });
+    tasks.push({ label: 'Google Home', run: syncRoomsFromGoogleHome });
+  } else {
+    if (getTuyaConfig().configured) {
+      tasks.push({ label: 'Tuya', run: syncRoomsFromTuya });
+    }
+    const ghRows = await db
+      .select({
+        status: vendorConnections.status,
+        accessToken: vendorConnections.accessToken,
+        refreshToken: vendorConnections.refreshToken,
+      })
+      .from(vendorConnections)
+      .where(eq(vendorConnections.vendor, 'google_home'))
+      .limit(1);
+    const ghConn = ghRows[0];
+    if (ghConn && ghConn.status === 'connected' && (ghConn.accessToken || ghConn.refreshToken)) {
+      tasks.push({ label: 'Google Home', run: syncRoomsFromGoogleHome });
+    }
+    if (tasks.length === 0) {
+      throw new Error(
+        'Aucun système configuré ou connecté pour synchroniser les pièces (configurez Tuya ou connectez Google Home).'
+      );
+    }
+  }
+
+  const results: RoomVendorSyncResult[] = [];
+  const errors: string[] = [];
+
+  for (const task of tasks) {
+    try {
+      results.push(await task.run());
+    } catch (err) {
+      errors.push(`${task.label} : ${err instanceof Error ? err.message : 'Erreur inconnue'}`);
+    }
+  }
+
+  if (results.length === 0) {
+    throw new Error(errors.join(' | ') || 'Échec de synchronisation des pièces.');
+  }
+
+  const roomsFound = results.reduce((sum, r) => sum + r.roomsFound, 0);
+  const createdCount = results.reduce((sum, r) => sum + r.createdCount, 0);
+  const assignedDevicesCount = results.reduce((sum, r) => sum + r.assignedDevicesCount, 0);
+  const mode = results.some((r) => r.mode === 'live') ? 'live' : 'demo';
+
+  const summaryMsg = results.map((r) => r.message).join(' · ');
+  const fullMessage =
+    errors.length > 0 ? `${summaryMsg} · Avertissement : ${errors.join(' | ')}` : summaryMsg;
+
+  return {
+    vendor: 'all',
+    roomsFound,
+    createdCount,
+    assignedDevicesCount,
+    mode,
+    message: fullMessage,
+  };
 }
 
 function computeDeviceMetricsForDpConfig(

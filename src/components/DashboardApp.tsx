@@ -17,6 +17,7 @@ import {
   DoorOpen,
   CalendarRange,
   Workflow,
+  Home,
 } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
 import { EnergyTab } from './EnergyTab';
@@ -25,6 +26,7 @@ import { ContactsTab } from './ContactsTab';
 import { AutomationsTab } from './AutomationsTab';
 import { TariffsTab } from './TariffsTab';
 import { DevicesRoomsTab } from './DevicesRoomsTab';
+import { RoomsTab } from './RoomsTab';
 import { SetupGuideTab } from './SetupGuideTab';
 import type { DashboardPayload, SystemFilter, TabId, TimeRange } from '@/types';
 
@@ -64,6 +66,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
       : null
   );
   const [roomId, setRoomId] = useState<string>(initialData.selectedRoomId);
+  const [devicesRoomFilter, setDevicesRoomFilter] = useState<string | null>(null);
   const [systemFilter, setSystemFilter] = useState<SystemFilter>(
     initialData.selectedSystem ?? 'all'
   );
@@ -81,10 +84,13 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
 
     if (tabParam === 'devices') {
       setActiveTab('devices');
+    } else if (tabParam === 'rooms') {
+      setActiveTab('rooms');
     }
     if (ghStatus === 'connected') {
+      const targetLabel = tabParam === 'rooms' ? 'Pièces' : 'Appareils';
       setToast(
-        `Google Home connecté (${(ghMode || 'mcp').toUpperCase()}). Cliquez sur « Synchroniser » dans Appareils & Pièces.`
+        `Google Home connecté (${(ghMode || 'mcp').toUpperCase()}). Cliquez sur « Synchroniser » dans ${targetLabel}.`
       );
       setTimeout(() => setToast(null), 6000);
     } else if (ghError) {
@@ -222,6 +228,11 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     }, 60);
   }
 
+  function handleOpenRoomDevices(targetRoomId: string) {
+    setDevicesRoomFilter(targetRoomId);
+    setActiveTab('devices');
+  }
+
   const lastLog = data.logs[0];
 
   const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutGrid; badge?: number }> = [
@@ -240,7 +251,8 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
       icon: Workflow,
       badge: data.automations.summary.warningCount,
     },
-    { id: 'devices', label: 'Appareils & Pièces', icon: Cpu },
+    { id: 'devices', label: 'Appareils', icon: Cpu },
+    { id: 'rooms', label: 'Pièces', icon: Home },
     { id: 'tariffs', label: 'Tarifs kWh', icon: Euro },
     { id: 'guide', label: 'Guide Setup', icon: BookOpen },
   ];
@@ -502,6 +514,16 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
           <DevicesRoomsTab
             data={data}
             onRefresh={() => fetchDashboard(range, roomId)}
+            initialRoomFilter={devicesRoomFilter}
+            onOpenRoomsTab={() => setActiveTab('rooms')}
+            onOpenGoogleGuide={handleOpenGoogleGuide}
+          />
+        )}
+        {activeTab === 'rooms' && (
+          <RoomsTab
+            data={data}
+            onRefresh={() => fetchDashboard(range, roomId)}
+            onOpenRoomDevices={handleOpenRoomDevices}
             onOpenGoogleGuide={handleOpenGoogleGuide}
           />
         )}

@@ -21,6 +21,7 @@ export type TabId =
   | 'contacts'
   | 'automations'
   | 'devices'
+  | 'rooms'
   | 'tariffs'
   | 'guide';
 
