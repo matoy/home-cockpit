@@ -150,3 +150,34 @@ export function verifyHomeConnectOAuthState(
   }
   return null;
 }
+
+export interface SignedDaikinOAuthState {
+  nonce: string;
+  returnTab?: 'devices' | 'rooms';
+  redirectUri?: string;
+}
+
+/**
+ * Signe un paramètre OAuth `state` Daikin Onecta anti-CSRF par HMAC-SHA256.
+ */
+export function signDaikinOAuthState(payload: SignedDaikinOAuthState): string {
+  return signHmacPayload(payload);
+}
+
+/**
+ * Vérifie et décode un paramètre OAuth `state` Daikin Onecta signé.
+ */
+export function verifyDaikinOAuthState(
+  token: string | null | undefined
+): SignedDaikinOAuthState | null {
+  const parsed = verifyHmacPayload(token);
+  if (!parsed) return null;
+  if (typeof parsed.nonce === 'string' && parsed.nonce.length >= 8) {
+    return {
+      nonce: parsed.nonce,
+      returnTab: parsed.returnTab === 'rooms' ? 'rooms' : 'devices',
+      redirectUri: typeof parsed.redirectUri === 'string' ? parsed.redirectUri : undefined,
+    };
+  }
+  return null;
+}

@@ -13,6 +13,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { hasValidHumidityMeasurement, hasValidTempMeasurement } from '@/lib/device-utils';
+import { extractDaikinSummary } from '@/lib/vendors/daikin-display';
 import { extractHomeConnectSummary } from '@/lib/vendors/home-connect-display';
 import { extractSomfyDisplaySummary } from '@/lib/vendors/somfy-display';
 import { VENDOR_REGISTRY } from '@/lib/vendors/registry';
@@ -261,6 +262,7 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                   {rs.devices.length > 0 && (
                     <div className="mt-3 space-y-1.5">
                       {rs.devices.map((dev) => {
+                        const dkSummary = extractDaikinSummary(dev.lastRawStatus);
                         const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
                         const somfySummary = extractSomfyDisplaySummary(dev);
                         return (
@@ -352,6 +354,24 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                                   {hcSummary.doorOpen
                                     ? `${hcSummary.compactText ? ' · ' : ''}Porte ouverte`
                                     : ''}
+                                </span>
+                              )}
+                              {dkSummary && (
+                                <span
+                                  title={dkSummary.compactText}
+                                  className={
+                                    dkSummary.modeTone === 'amber'
+                                      ? 'text-amber-300'
+                                      : dkSummary.modeTone === 'sky'
+                                        ? 'text-sky-300'
+                                        : dkSummary.modeTone === 'indigo'
+                                          ? 'text-indigo-300'
+                                          : 'text-slate-400'
+                                  }
+                                >
+                                  {dkSummary.modeLabel}
+                                  {dkSummary.targetTempC !== null ? ` (${dkSummary.targetTempC}°C)` : ''}
+                                  {dkSummary.outdoorTempC !== null ? ` · Ext ${dkSummary.outdoorTempC}°C` : ''}
                                 </span>
                               )}
                             </div>

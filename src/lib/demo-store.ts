@@ -821,6 +821,101 @@ function createInitialDemoState(): DemoState {
       lastBatteryPct: null,
       lastContactOpen: null,
     },
+    {
+      id: 'daikin_demo_stylish_salon',
+      name: 'Clim Daikin Stylish Salon',
+      customName: 'Split Daikin Salon',
+      primaryVendor: 'daikin',
+      systems: ['daikin', 'google_home'],
+      roomId: 1,
+      category: 'hybrid',
+      tuyaCategory: 'climateControl',
+      productName: 'Daikin · FTXA35AW (Stylish)',
+      ipAddress: '192.168.1.64',
+      macAddress: 'D0:C5:D3:44:12:8A',
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'add_ele',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'daikin:unitType', value: 'climateControl' },
+        { code: 'daikin:model', value: 'FTXA35AW' },
+        { code: 'daikin:onOff', value: 'on' },
+        { code: 'daikin:operationMode', value: 'heating' },
+        { code: 'daikin:roomTempC', value: 21.3 },
+        { code: 'daikin:roomHumidityPct', value: 47 },
+        { code: 'daikin:targetTempC', value: 21.5 },
+        { code: 'daikin:outdoorTempC', value: 9.2 },
+        { code: 'daikin:fanSpeed', value: 'auto' },
+        { code: 'daikin:swingVertical', value: 'swing' },
+        { code: 'daikin:econo', value: true },
+        { code: 'daikin:powerful', value: false },
+        { code: 'daikin:streamer', value: true },
+        { code: 'daikin:todayKwh', value: 2.8 },
+        { code: 'daikin:todayHeatingKwh', value: 2.8 },
+        { code: 'daikin:todayCoolingKwh', value: 0 },
+        { code: 'daikin:weekKwh', value: 18.4 },
+        { code: 'daikin:yearKwh', value: 312.4 },
+        { code: 'daikin:wifiSsid', value: 'MaisonWiFi' },
+        { code: 'daikin:wifiRssiDbm', value: -54 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: 312.4,
+      lastTempC: 21.3,
+      lastHumidityPct: 47,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
+    {
+      id: 'daikin_demo_perfera_chambre',
+      name: 'Clim Daikin Perfera Chambre',
+      customName: 'Split Daikin Chambre',
+      primaryVendor: 'daikin',
+      systems: ['daikin'],
+      roomId: 4,
+      category: 'hybrid',
+      tuyaCategory: 'climateControl',
+      productName: 'Daikin · FTXM25R (Perfera)',
+      ipAddress: '192.168.1.65',
+      macAddress: 'D0:C5:D3:44:12:9B',
+      isOnline: true,
+      isMonitored: true,
+      excludeFromTotals: false,
+      energyMode: 'add_ele',
+      dpConfig: {},
+      lastRawStatus: [
+        { code: 'daikin:unitType', value: 'climateControl' },
+        { code: 'daikin:model', value: 'FTXM25R' },
+        { code: 'daikin:onOff', value: 'off' },
+        { code: 'daikin:operationMode', value: 'heating' },
+        { code: 'daikin:roomTempC', value: 18.9 },
+        { code: 'daikin:roomHumidityPct', value: 51 },
+        { code: 'daikin:targetTempC', value: 19 },
+        { code: 'daikin:outdoorTempC', value: 9.2 },
+        { code: 'daikin:fanSpeed', value: 'quiet' },
+        { code: 'daikin:econo', value: false },
+        { code: 'daikin:powerful', value: false },
+        { code: 'daikin:streamer', value: true },
+        { code: 'daikin:todayKwh', value: 1.1 },
+        { code: 'daikin:todayHeatingKwh', value: 1.1 },
+        { code: 'daikin:todayCoolingKwh', value: 0 },
+        { code: 'daikin:weekKwh', value: 8.6 },
+        { code: 'daikin:yearKwh', value: 184.2 },
+        { code: 'daikin:wifiSsid', value: 'MaisonWiFi' },
+        { code: 'daikin:wifiRssiDbm', value: -61 },
+      ],
+      lastSeenAt: alignedNow.toISOString(),
+      lastPowerW: null,
+      lastVoltageV: null,
+      lastAddEleKwh: 184.2,
+      lastTempC: 18.9,
+      lastHumidityPct: 51,
+      lastBatteryPct: null,
+      lastContactOpen: null,
+    },
   ];
 
   // Deux périodes tarifaires (2025 -> 2026) pour illustrer la gestion multi-périodes
@@ -1191,6 +1286,64 @@ function createInitialDemoState(): DemoState {
         coverOpenPct,
       });
     }
+
+    // 15. Daikin Stylish Salon (Température, Humidité & consommation kWh)
+    {
+      const noise = pseudoNoise(step * 6.9);
+      const isHeatingWindow = (hour >= 6.5 && hour <= 9.5) || (hour >= 17.5 && hour <= 23);
+      const kwh = isHeatingWindow
+        ? Math.round((0.14 + noise * 0.22) * 1000) / 1000
+        : Math.round((0.02 + noise * 0.03) * 1000) / 1000;
+      const tempC =
+        step === 0
+          ? 21.3
+          : Math.round((20.8 + dayPhase * 0.8 + (isHeatingWindow ? 0.5 : 0) + (noise - 0.5) * 0.3) * 10) / 10;
+      const humidityPct = step === 0 ? 47 : Math.round(47 + (noise - 0.5) * 4);
+      const prevAdd = cumulativeAddEle.get('daikin_demo_stylish_salon') ?? 240;
+      cumulativeAddEle.set('daikin_demo_stylish_salon', prevAdd + kwh);
+      readings.push({
+        id: nextReadingId++,
+        deviceId: 'daikin_demo_stylish_salon',
+        roomId: 1,
+        recordedAt: ts.toISOString(),
+        powerW: null,
+        voltageV: null,
+        energyKwh: kwh,
+        energySource: 'add_ele',
+        tempC,
+        humidityPct,
+        contactOpen: null,
+      });
+    }
+
+    // 16. Daikin Perfera Chambre (Chauffage ponctuel soir/matin + veille)
+    {
+      const noise = pseudoNoise(step * 7.3);
+      const isEvening = hour >= 19.5 && hour <= 22.5;
+      const kwh = isEvening
+        ? Math.round((0.09 + noise * 0.14) * 1000) / 1000
+        : Math.round((0.01 + noise * 0.015) * 1000) / 1000;
+      const tempC =
+        step === 0
+          ? 18.9
+          : Math.round((18.5 + dayPhase * 0.6 + (noise - 0.5) * 0.3) * 10) / 10;
+      const humidityPct = step === 0 ? 51 : Math.round(51 + (noise - 0.5) * 4);
+      const prevAdd = cumulativeAddEle.get('daikin_demo_perfera_chambre') ?? 140;
+      cumulativeAddEle.set('daikin_demo_perfera_chambre', prevAdd + kwh);
+      readings.push({
+        id: nextReadingId++,
+        deviceId: 'daikin_demo_perfera_chambre',
+        roomId: 4,
+        recordedAt: ts.toISOString(),
+        powerW: null,
+        voltageV: null,
+        energyKwh: kwh,
+        energySource: 'add_ele',
+        tempC,
+        humidityPct,
+        contactOpen: null,
+      });
+    }
   }
 
   // Synchroniser les dernières valeurs des appareils avec la fin de la série générée
@@ -1479,7 +1632,9 @@ function createInitialDemoState(): DemoState {
               ? d.id.replace(/^hc_/, '')
               : d.primaryVendor === 'somfy'
                 ? d.id.replace(/^somfy_/, '')
-                : d.id,
+                : d.primaryVendor === 'daikin'
+                  ? d.id.replace(/^daikin_/, '')
+                  : d.id,
       externalName: d.name,
       isPrimaryTelemetry: true,
       linkedAt: syncedIso,
@@ -1488,7 +1643,8 @@ function createInitialDemoState(): DemoState {
       (d.primaryVendor === 'tuya' ||
         d.primaryVendor === 'kasa' ||
         d.primaryVendor === 'home_connect' ||
-        d.primaryVendor === 'somfy') &&
+        d.primaryVendor === 'somfy' ||
+        d.primaryVendor === 'daikin') &&
       d.systems.includes('google_home')
     ) {
       vendorLinks.push({
@@ -1525,6 +1681,12 @@ function createInitialDemoState(): DemoState {
     },
     somfy: {
       mode: 'cloud_account',
+      connected: true,
+      lastSyncedAt: syncedIso,
+      lastError: null,
+    },
+    daikin: {
+      mode: 'oauth_prod',
       connected: true,
       lastSyncedAt: syncedIso,
       lastError: null,

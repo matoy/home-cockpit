@@ -37,6 +37,7 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
   const scheduleUrl = `${origin}/api/schedule/collect`;
   const hcRedirectUri = `${origin}/api/vendors/home-connect/oauth/callback`;
   const localHcRedirectUri = 'http://localhost:3000/api/vendors/home-connect/oauth/callback';
+  const daikinRedirectUri = `${origin}/api/vendors/daikin/oauth/callback`;
   const googleRedirectUri = `${origin}/api/vendors/google-home/oauth/callback`;
   const localGoogleRedirectUri = 'http://localhost:3000/api/vendors/google-home/oauth/callback';
 
@@ -51,6 +52,7 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
   const showKasa = env.kasaConfigured;
   const showHomeConnect = env.homeConnectConfigured;
   const showSomfy = env.somfyConfigured;
+  const showDaikin = env.daikinConfigured;
   const showGoogleHomeApi = env.googleHomeApiEnabled;
 
   const googleOAuthDetail = env.googleHomeConfigured
@@ -112,6 +114,15 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
           label: 'Somfy Cloud Kit de connectivité (SOMFY_EMAIL & PASSWORD)',
           ok: env.somfyConfigured,
           detail: `Overkiz Cloud 100 % lecture seule · Région : ${env.somfyRegion.toUpperCase()}`,
+        },
+      ]
+      : []),
+    ...(showDaikin
+      ? [
+        {
+          label: 'Daikin Onecta Cloud (DAIKIN_CLIENT_ID & SECRET)',
+          ok: env.daikinConfigured,
+          detail: env.daikinConnected ? 'OAuth connecté' : 'Prêt pour connexion OAuth',
         },
       ]
       : []),
@@ -944,6 +955,180 @@ SOMFY_REGION="eu" # eu (Europe / France), na (Amérique du Nord) ou oc (Océanie
                 >
                   Ouvrir Volets &amp; Stores
                   <ArrowRight className="h-3.5 w-3.5 text-amber-400" />
+                </button>
+              </div>
+            )}
+          </div>
+        </details>
+      </div>
+
+      {/* Étape Daikin Onecta Cloud (toujours visible dans Guide Setup, repliable) */}
+      <div
+        id="setup-daikin"
+        className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-4 scroll-mt-24"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-xl bg-blue-500/15 p-2 text-blue-400">
+              <Cloud className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-white">
+                Daikin Onecta Cloud — Climatisation, PAC, consigne &amp; kWh (OAuth 2.0, lecture seule)
+              </h3>
+              <p className="text-xs text-slate-400">
+                API officielle Daikin Europe (<code>api.onecta.daikineurope.com</code>) · 1 seule requête par
+                cycle pour toutes vos unités, compatible <strong>Clim &amp; PAC</strong>, <strong>Climat</strong> et <strong>Énergie</strong>.
+              </p>
+            </div>
+          </div>
+
+          <span
+            className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${
+              env.daikinConnected
+                ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                : env.daikinConfigured
+                  ? 'border-blue-500/40 bg-blue-500/15 text-blue-300'
+                  : 'border-slate-700 bg-slate-800 text-slate-400'
+            }`}
+          >
+            {env.daikinConnected
+              ? 'OAuth connecté'
+              : env.daikinConfigured
+                ? 'Configuré (OAuth à finaliser)'
+                : 'Optionnel — non configuré'}
+          </span>
+        </div>
+
+        <details
+          id="setup-daikin-details"
+          open={showDaikin}
+          className="group rounded-xl border border-slate-800/90 bg-slate-950/40 p-4"
+        >
+          <summary className="cursor-pointer select-none text-xs font-medium text-blue-300 hover:text-blue-200 flex items-center justify-between gap-2">
+            <span>Déroulé pas-à-pas Portail Développeur Daikin Onecta, Redirect URI HTTPS &amp; tests locaux</span>
+            <span className="text-[11px] text-slate-400 group-open:hidden">
+              Cliquer pour déplier
+            </span>
+            <span className="text-[11px] text-slate-400 hidden group-open:inline">
+              Cliquer pour replier
+            </span>
+          </summary>
+
+          <div className="mt-4 space-y-4 text-xs text-slate-300 leading-relaxed">
+            <ol className="list-decimal list-inside space-y-2">
+              <li>
+                Connectez-vous au{' '}
+                <a
+                  href="https://developer.cloud.daikineurope.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300 inline-flex items-center gap-1 underline"
+                >
+                  Portail Développeur Daikin Cloud
+                  <ExternalLink className="h-3 w-3" />
+                </a>{' '}
+                avec le même compte Daikin Onecta que votre application mobile.
+              </li>
+              <li>
+                Ouvrez <strong>My Apps → Create a new app</strong>, donnez un nom (ex.{' '}
+                <code>Home Cockpit</code>) et renseignez une <strong>Redirect URI en HTTPS</strong>{' '}
+                (ex. votre URL Vercel en <code>https://…</code> ci-dessous). Daikin refuse{' '}
+                <code>http://localhost</code> en clair.
+              </li>
+              <li>
+                Copiez le <strong>Client ID</strong> et le <strong>Client Secret</strong> dans{' '}
+                <code>.env.local</code> et dans les variables d&apos;environnement Vercel.
+              </li>
+              <li>
+                <strong>Connexion :</strong> sur Vercel HTTPS, cliquez simplement sur{' '}
+                <strong>Connecter Daikin (OAuth)</strong> dans <strong>Appareils</strong>.{' '}
+                <em>Astuce local (<code>http://localhost:3000</code>) :</em> lancez OAuth avec{' '}
+                <code>DAIKIN_REDIRECT_URI</code> pointant vers une URL HTTPS (ex.{' '}
+                <code>https://localhost:3000/api/vendors/daikin/oauth/callback</code> ou votre URL
+                Vercel), puis après redirection copiez l&apos;URL de la barre d&apos;adresse et collez-la
+                dans <strong>« Tester en local : coller l&apos;URL ou le code OAuth »</strong>.
+              </li>
+            </ol>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                  Redirect URI OAuth à déclarer chez Daikin (HTTPS requis)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => copyText('daikin-redirect', daikinRedirectUri)}
+                  className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
+                >
+                  {copiedKey === 'daikin-redirect' ? (
+                    <Check className="h-3 w-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                  Copier
+                </button>
+              </div>
+              <code className="block font-mono text-[11px] text-blue-300 break-all">
+                {daikinRedirectUri}
+              </code>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-slate-400">
+                  <KeyRound className="h-3.5 w-3.5 text-blue-400" />
+                  Variables Daikin Onecta (.env.local / Vercel)
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    copyText(
+                      'daikin-env',
+                      'DAIKIN_CLIENT_ID="votre_client_id_daikin"\nDAIKIN_CLIENT_SECRET="votre_client_secret_daikin"'
+                    )
+                  }
+                  className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
+                >
+                  {copiedKey === 'daikin-env' ? (
+                    <Check className="h-3 w-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                  Copier
+                </button>
+              </div>
+              <pre className="font-mono text-[11px] text-blue-300 overflow-x-auto leading-relaxed">
+                {`DAIKIN_CLIENT_ID="votre_client_id_daikin"
+DAIKIN_CLIENT_SECRET="votre_client_secret_daikin"
+# DAIKIN_REDIRECT_URI="" # Optionnel : surcharge HTTPS si vous testez en local`}
+              </pre>
+              <p className="text-[11px] text-slate-400">
+                <strong>Quotas &amp; calculs :</strong> Daikin limite l&apos;API publique à{' '}
+                <strong>200 requêtes/jour</strong>. Chaque collecte n&apos;effectue qu&apos;<strong>un seul appel</strong>{' '}
+                <code>GET /v1/gateway-devices</code> (~48/jour avec le cron 30 min). Les relevés{' '}
+                <code>kWh</code> et <code>°C / %</code> alimentent automatiquement <strong>Énergie</strong> et{' '}
+                <strong>Climat</strong> (utilisez <strong>Exclure</strong> dans Appareils si vous avez déjà une sonde murale).
+              </p>
+            </div>
+
+            {onNavigateTab && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('devices')}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3 py-1.5 text-xs font-medium text-white transition"
+                >
+                  Connecter Daikin dans Appareils
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('hvac')}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
+                >
+                  Ouvrir Clim &amp; PAC
+                  <ArrowRight className="h-3.5 w-3.5 text-blue-400" />
                 </button>
               </div>
             )}

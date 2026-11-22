@@ -24,6 +24,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { VENDOR_IDS, VENDOR_REGISTRY } from '@/lib/vendors/registry';
+import { extractDaikinSummary } from '@/lib/vendors/daikin-display';
 import { extractHomeConnectSummary } from '@/lib/vendors/home-connect-display';
 import { extractSomfyDisplaySummary } from '@/lib/vendors/somfy-display';
 import type {
@@ -46,6 +47,7 @@ interface DevicesRoomsTabProps {
   onOpenGoogleGuide?: () => void;
   onOpenHomeConnectGuide?: () => void;
   onOpenSomfyGuide?: () => void;
+  onOpenDaikinGuide?: () => void;
 }
 
 const SCALE_OPTIONS = [
@@ -64,6 +66,7 @@ function normalizeSearchText(value: string): string {
 
 function buildDeviceSearchHaystack(dev: DeviceRecord, roomName?: string): string {
   const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
+  const dkSummary = extractDaikinSummary(dev.lastRawStatus);
   const somfySummary = extractSomfyDisplaySummary(dev);
   const parts: Array<string | number | null | undefined> = [
     dev.id,
@@ -95,6 +98,7 @@ function buildDeviceSearchHaystack(dev: DeviceRecord, roomName?: string): string
     dev.lastHumidityPct !== null ? `${dev.lastHumidityPct}%` : null,
     dev.lastBatteryPct !== null ? `${dev.lastBatteryPct}%` : null,
     hcSummary?.searchableText,
+    dkSummary?.searchableText,
     somfySummary?.protocol,
     somfySummary?.gatewayId,
     somfySummary?.cover?.kindLabel,
@@ -112,15 +116,22 @@ export function DevicesRoomsTab({
   onOpenGoogleGuide,
   onOpenHomeConnectGuide,
   onOpenSomfyGuide,
+  onOpenDaikinGuide,
 }: DevicesRoomsTabProps) {
   const showKasa = data.env.kasaConfigured;
   const showHomeConnect = data.env.homeConnectConfigured;
   const showSomfy = data.env.somfyConfigured;
+  const showDaikin = data.env.daikinConfigured;
   const showGoogleHomeApi = data.env.googleHomeApiEnabled;
   const [syncingTuya, setSyncingTuya] = useState(false);
   const [syncingKasa, setSyncingKasa] = useState(false);
   const [syncingHomeConnect, setSyncingHomeConnect] = useState(false);
   const [syncingSomfy, setSyncingSomfy] = useState(false);
+  const [syncingDaikin, setSyncingDaikin] = useState(false);
+  const [disconnectingDaikin, setDisconnectingDaikin] = useState(false);
+  const [showDaikinLocalBox, setShowDaikinLocalBox] = useState(false);
+  const [daikinExchangeInput, setDaikinExchangeInput] = useState('');
+  const [exchangingDaikin, setExchangingDaikin] = useState(false);
   const [disconnectingHomeConnect, setDisconnectingHomeConnect] = useState(false);
   const [selectedHomeConnectEnv, setSelectedHomeConnectEnv] = useState<HomeConnectEnv>(
     data.env.homeConnectEnv ?? 'prod'
@@ -374,6 +385,7 @@ export function DevicesRoomsTab({
       kasa: 0,
       home_connect: 0,
       somfy: 0,
+      daikin: 0,
       google_home: 0,
       multi: 0,
       manual: 0,
@@ -406,6 +418,7 @@ export function DevicesRoomsTab({
       if (dev.systems.includes('kasa')) sysCounts.kasa += 1;
       if (dev.systems.includes('home_connect')) sysCounts.home_connect += 1;
       if (dev.systems.includes('somfy')) sysCounts.somfy += 1;
+      if (dev.systems.includes('daikin')) sysCounts.daikin += 1;
       if (dev.systems.includes('google_home')) sysCounts.google_home += 1;
       if (dev.systems.length > 1) sysCounts.multi += 1;
       if (dev.id.startsWith('manual_')) sysCounts.manual += 1;
@@ -715,6 +728,76 @@ export function DevicesRoomsTab({
     }
   }
 
+  async function handleSyncDaikin() {
+    setSyncingDaikin(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/vendors/daikin/sync', { method: 'POST' });
+      const json = (await res.json()) as { message?: string; error?: string };
+      if (!res.ok) throw new Error(json.error || 'Échec de synchronisation Daikin Onecta');
+      setSyncMessage({
+        ok: true,
+        text: json.message || 'Synchronisation Daikin Onecta terminée.',
+      });
+      await onRefresh();
+    } catch (err) {
+      setSyncMessage({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Erreur Daikin Onecta',
+      });
+    } finally {
+      setSyncingDaikin(false);
+    }
+  }
+
+  async function handleExchangeDaikinCode() {
+    if (!daikinExchangeInput.trim()) return;
+    setExchangingDaikin(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/vendors/daikin/oauth/exchange', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: daikinExchangeInput.trim() }),
+      });
+      const json = (await res.json()) as { message?: string; error?: string };
+      if (!res.ok) throw new Error(json.error || 'Échec échange OAuth Daikin');
+      setDaikinExchangeInput('');
+      setShowDaikinLocalBox(false);
+      setSyncMessage({
+        ok: true,
+        text: json.message || 'Daikin Onecta connecté et synchronisé.',
+      });
+      await onRefresh();
+    } catch (err) {
+      setSyncMessage({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Erreur échange OAuth Daikin',
+      });
+    } finally {
+      setExchangingDaikin(false);
+    }
+  }
+
+  async function handleDisconnectDaikin() {
+    setDisconnectingDaikin(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/vendors/daikin/disconnect', { method: 'POST' });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error || 'Échec de déconnexion Daikin Onecta');
+      setSyncMessage({ ok: true, text: 'Daikin Onecta déconnecté.' });
+      await onRefresh();
+    } catch (err) {
+      setSyncMessage({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Erreur déconnexion Daikin Onecta',
+      });
+    } finally {
+      setDisconnectingDaikin(false);
+    }
+  }
+
   async function handleSyncGoogleHome() {
     setSyncingGoogle(true);
     setSyncMessage(null);
@@ -891,6 +974,8 @@ export function DevicesRoomsTab({
   const hcVendor = data.vendors.find((v) => v.vendor === 'home_connect');
   const isHcConnected = Boolean(hcVendor?.connected);
   const somfyVendor = data.vendors.find((v) => v.vendor === 'somfy');
+  const daikinVendor = data.vendors.find((v) => v.vendor === 'daikin');
+  const isDkConnected = Boolean(daikinVendor?.connected);
   const ghVendor = data.vendors.find((v) => v.vendor === 'google_home');
   const isGhConnected = Boolean(ghVendor?.connected);
 
@@ -899,6 +984,7 @@ export function DevicesRoomsTab({
     (showKasa ? 1 : 0) +
     (showHomeConnect ? 1 : 0) +
     (showSomfy ? 1 : 0) +
+    (showDaikin ? 1 : 0) +
     (showGoogleHomeApi ? 1 : 0);
   const syncGridClass =
     visibleSyncCardsCount === 1
@@ -1213,6 +1299,132 @@ export function DevicesRoomsTab({
           </div>
         )}
 
+        {/* Daikin Onecta Cloud (masqué si non configuré) */}
+        {showDaikin && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.daikin.badgeClass}`}
+                >
+                  {VENDOR_REGISTRY.daikin.label}
+                </span>
+                <span className="text-xs text-slate-400">
+                  {daikinVendor?.devicesCount ?? systemCounts.daikin} appareil(s)
+                </span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                    isDkConnected || data.env.mode === 'demo'
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  {data.env.mode === 'demo'
+                    ? 'Mode Démo'
+                    : isDkConnected
+                      ? 'Connecté (OAuth)'
+                      : 'Prêt (OAuth requis)'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                {VENDOR_REGISTRY.daikin.description}. Quota 200 req/jour respecté (1 appel /
+                collecte).
+              </p>
+              {daikinVendor?.lastError && (
+                <p className="text-[11px] text-amber-300">{daikinVendor.lastError}</p>
+              )}
+              {data.env.mode === 'live' && !isDkConnected && (
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowDaikinLocalBox((v) => !v)}
+                    className="text-[11px] font-medium text-blue-300 hover:text-blue-200 underline underline-offset-2"
+                  >
+                    {showDaikinLocalBox
+                      ? 'Masquer la validation manuelle (localhost)'
+                      : 'Tester en local (http://localhost) : coller l’URL ou le code OAuth'}
+                  </button>
+                  {showDaikinLocalBox && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/70 p-2.5">
+                      <input
+                        type="text"
+                        value={daikinExchangeInput}
+                        onChange={(e) => setDaikinExchangeInput(e.target.value)}
+                        placeholder="Collez l'URL complète de retour (?code=...) ou le code"
+                        className="flex-1 min-w-[200px] rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        disabled={exchangingDaikin || !daikinExchangeInput.trim()}
+                        onClick={() => void handleExchangeDaikinCode()}
+                        className="rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 px-3 py-1.5 text-[11px] font-medium text-white transition"
+                      >
+                        {exchangingDaikin ? 'Validation...' : 'Valider'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <span className="text-[11px] text-slate-500">
+                {daikinVendor?.lastSyncedAt
+                  ? `Synchro : ${new Date(daikinVendor.lastSyncedAt).toLocaleString('fr-FR')}`
+                  : '100 % lecture seule · 1 requête/cycle'}
+              </span>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {onOpenDaikinGuide && (
+                  <button
+                    type="button"
+                    onClick={onOpenDaikinGuide}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:text-white transition"
+                    title="Afficher le déroulé pas-à-pas Daikin Onecta"
+                  >
+                    <BookOpen className="h-3.5 w-3.5 text-blue-400" />
+                    Déroulé setup
+                  </button>
+                )}
+
+                {data.env.mode === 'live' && !isDkConnected ? (
+                  <a
+                    href="/api/vendors/daikin/oauth/start"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3.5 py-2 text-xs font-medium text-white transition"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Connecter Daikin (OAuth)
+                  </a>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleSyncDaikin}
+                      disabled={syncingDaikin || disconnectingDaikin}
+                      className="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${syncingDaikin ? 'animate-spin' : ''}`}
+                      />
+                      {syncingDaikin ? 'Synchronisation...' : 'Synchroniser Daikin'}
+                    </button>
+                    {data.env.mode === 'live' && isDkConnected && (
+                      <button
+                        type="button"
+                        onClick={handleDisconnectDaikin}
+                        disabled={disconnectingDaikin || syncingDaikin}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3 py-2 text-xs text-slate-300 transition"
+                      >
+                        Déconnecter
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Google Home (masqué si GOOGLE_HOME_MODE=off ou non défini) */}
         {showGoogleHomeApi && (
           <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4">
@@ -1521,6 +1733,8 @@ export function DevicesRoomsTab({
                 return showHomeConnect || (data.env.mode === 'live' && count > 0);
               if (vId === 'somfy')
                 return showSomfy || (data.env.mode === 'live' && count > 0);
+              if (vId === 'daikin')
+                return showDaikin || count > 0;
               if (vId === 'google_home')
                 return showGoogleHomeApi || (data.env.mode === 'live' && count > 0);
               return true;
@@ -2027,6 +2241,7 @@ export function DevicesRoomsTab({
                       <td className="px-2.5 py-2.5 font-mono text-[11px] text-slate-300 min-w-0">
                         {(() => {
                           const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
+                          const dkSummary = extractDaikinSummary(dev.lastRawStatus);
                           const somfySummary = extractSomfyDisplaySummary(dev);
                           return (
                             <div className="flex flex-wrap gap-x-2 gap-y-0.5">
@@ -2092,6 +2307,25 @@ export function DevicesRoomsTab({
                               {hcSummary?.doorOpen && (
                                 <span className="rounded bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 text-[9.5px] text-amber-300">
                                   Porte ouverte
+                                </span>
+                              )}
+                              {dkSummary && (
+                                <span
+                                  title={dkSummary.compactText}
+                                  className={
+                                    dkSummary.modeTone === 'amber'
+                                      ? 'text-amber-300'
+                                      : dkSummary.modeTone === 'sky'
+                                        ? 'text-sky-300'
+                                        : dkSummary.modeTone === 'indigo'
+                                          ? 'text-indigo-300'
+                                          : 'text-slate-400'
+                                  }
+                                >
+                                  {dkSummary.modeLabel}
+                                  {dkSummary.targetTempC !== null ? ` · Cible ${dkSummary.targetTempC}°C` : ''}
+                                  {dkSummary.outdoorTempC !== null ? ` · Ext ${dkSummary.outdoorTempC}°C` : ''}
+                                  {dkSummary.todayKwh !== null ? ` · ${dkSummary.todayKwh.toFixed(1)} kWh/j` : ''}
                                 </span>
                               )}
                             </div>
@@ -2368,6 +2602,7 @@ export function DevicesRoomsTab({
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                     {(() => {
                       const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
+                      const dkSummary = extractDaikinSummary(dev.lastRawStatus);
                       const somfySummary = extractSomfyDisplaySummary(dev);
                       return (
                         <div className="flex flex-wrap gap-2 font-mono text-[11px] text-slate-300">
@@ -2425,6 +2660,22 @@ export function DevicesRoomsTab({
                           {hcSummary?.doorOpen && (
                             <span className="rounded bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[10px] text-amber-300">
                               Porte ouverte
+                            </span>
+                          )}
+                          {dkSummary && (
+                            <span
+                              title={dkSummary.compactText}
+                              className={
+                                dkSummary.modeTone === 'amber'
+                                  ? 'text-amber-300'
+                                  : dkSummary.modeTone === 'sky'
+                                    ? 'text-sky-300'
+                                    : dkSummary.modeTone === 'indigo'
+                                      ? 'text-indigo-300'
+                                      : 'text-slate-400'
+                              }
+                            >
+                              {dkSummary.compactText}
                             </span>
                           )}
                         </div>

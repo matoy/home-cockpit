@@ -30,6 +30,13 @@ import {
   makeKasaDeviceId,
 } from './vendors/kasa-client';
 import {
+  DaikinApiError,
+  fetchDaikinInventory,
+  getDaikinConfig,
+  makeDaikinDeviceId,
+  refreshDaikinAccessToken,
+} from './vendors/daikin-client';
+import {
   fetchHomeConnectInventory,
   getHomeConnectConfig,
   HomeConnectApiError,
@@ -100,12 +107,14 @@ const RANGE_HOURS: Record<Exclude<TimeRange, 'custom'>, number> = {
 
 export function getEnvStatus(
   googleHomeConnected = false,
-  homeConnectConnected = false
+  homeConnectConnected = false,
+  daikinConnected = false
 ): EnvStatus {
   const tuya = getTuyaConfig();
   const kasa = getKasaConfig();
   const hc = getHomeConnectConfig();
   const somfy = getSomfyConfig();
+  const daikin = getDaikinConfig();
   const google = getGoogleHomeConfig();
   const databaseConfigured = isDatabaseConfigured();
   return {
@@ -121,6 +130,8 @@ export function getEnvStatus(
     homeConnectEnv: hc.defaultEnv,
     somfyConfigured: somfy.configured,
     somfyRegion: somfy.region,
+    daikinConfigured: daikin.configured,
+    daikinConnected: daikin.configured && daikinConnected,
     appPasswordConfigured: isAppPasswordConfigured(),
     scheduleSecretConfigured: Boolean(process.env.SCHEDULE_SECRET?.trim()),
     googleHomeApiEnabled: google.apiEnabled,
@@ -598,6 +609,9 @@ function buildVendorConnectionSummaries(params: {
   somfyConnected: boolean;
   somfyLastSyncedAt: string | null;
   somfyLastError: string | null;
+  daikinConnected: boolean;
+  daikinLastSyncedAt: string | null;
+  daikinLastError: string | null;
   ghConnected: boolean;
   ghMode: GoogleHomeMode;
   ghLastSyncedAt: string | null;
@@ -607,6 +621,7 @@ function buildVendorConnectionSummaries(params: {
   const kasaCfg = getKasaConfig();
   const hcCfg = getHomeConnectConfig();
   const somfyCfg = getSomfyConfig();
+  const daikinCfg = getDaikinConfig();
   const googleCfg = getGoogleHomeConfig();
 
   const countFor = (vendor: VendorId) =>
@@ -654,6 +669,16 @@ function buildVendorConnectionSummaries(params: {
       lastError: params.somfyLastError,
     },
     {
+      vendor: 'daikin',
+      label: VENDOR_REGISTRY.daikin.label,
+      mode: 'oauth_prod',
+      configured: daikinCfg.configured,
+      connected: params.daikinConnected,
+      devicesCount: countFor('daikin'),
+      lastSyncedAt: params.daikinLastSyncedAt,
+      lastError: params.daikinLastError,
+    },
+    {
       vendor: 'google_home',
       label: VENDOR_REGISTRY.google_home.label,
       mode: params.ghMode,
@@ -682,6 +707,7 @@ export async function getDashboardData(
     const kasaState = state.vendorConnections.kasa;
     const hcState = state.vendorConnections.home_connect;
     const somfyState = state.vendorConnections.somfy;
+    const daikinState = state.vendorConnections.daikin;
     const hcEnv: HomeConnectEnv =
       hcState.mode === 'oauth_simulator'
         ? 'simulator'
@@ -689,7 +715,7 @@ export async function getDashboardData(
           ? 'cn'
           : getHomeConnectConfig().defaultEnv;
     const env = {
-      ...getEnvStatus(ghState.connected, hcState.connected),
+      ...getEnvStatus(ghState.connected, hcState.connected, daikinState.connected),
       googleHomeMode:
         ghState.mode === 'mcp' || ghState.mode === 'sdm'
           ? ghState.mode
@@ -717,6 +743,9 @@ export async function getDashboardData(
       somfyConnected: somfyState.connected,
       somfyLastSyncedAt: somfyState.lastSyncedAt,
       somfyLastError: somfyState.lastError,
+      daikinConnected: daikinState.connected,
+      daikinLastSyncedAt: daikinState.lastSyncedAt,
+      daikinLastError: daikinState.lastError,
       ghConnected: ghState.connected,
       ghMode: env.googleHomeMode,
       ghLastSyncedAt: ghState.lastSyncedAt,
@@ -786,12 +815,14 @@ export async function getDashboardData(
   const kasaConn = connRows.find((c) => c.vendor === 'kasa');
   const hcConn = connRows.find((c) => c.vendor === 'home_connect');
   const somfyConn = connRows.find((c) => c.vendor === 'somfy');
+  const daikinConn = connRows.find((c) => c.vendor === 'daikin');
   const ghConn = connRows.find((c) => c.vendor === 'google_home');
   const googleCfg = getGoogleHomeConfig();
   const tuyaCfg = getTuyaConfig();
   const kasaCfg = getKasaConfig();
   const hcCfg = getHomeConnectConfig();
   const somfyCfg = getSomfyConfig();
+  const daikinCfg = getDaikinConfig();
 
   const ghMode: GoogleHomeMode =
     ghConn?.mode === 'mcp' || ghConn?.mode === 'sdm' ? ghConn.mode : googleCfg.defaultMode;
@@ -816,9 +847,16 @@ export async function getDashboardData(
     somfyCfg.configured ||
     somfyConn?.status === 'connected' ||
     mappedDevices.some((d) => d.systems.includes('somfy'));
+  const daikinConnected =
+    daikinCfg.configured &&
+    Boolean(
+      daikinConn &&
+        daikinConn.status === 'connected' &&
+        (daikinConn.accessToken || daikinConn.refreshToken)
+    );
 
   const env: EnvStatus = {
-    ...getEnvStatus(ghConnected, hcConnected),
+    ...getEnvStatus(ghConnected, hcConnected, daikinConnected),
     googleHomeMode: ghMode,
     homeConnectEnv: hcEnv,
   };
@@ -838,6 +876,9 @@ export async function getDashboardData(
     somfyConnected,
     somfyLastSyncedAt: somfyConn?.lastSyncedAt ? somfyConn.lastSyncedAt.toISOString() : null,
     somfyLastError: somfyConn?.lastError ?? null,
+    daikinConnected,
+    daikinLastSyncedAt: daikinConn?.lastSyncedAt ? daikinConn.lastSyncedAt.toISOString() : null,
+    daikinLastError: daikinConn?.lastError ?? null,
     ghConnected,
     ghMode,
     ghLastSyncedAt: ghConn?.lastSyncedAt ? ghConn.lastSyncedAt.toISOString() : null,
@@ -3674,6 +3715,332 @@ export async function syncSomfyDevices(): Promise<{
   };
 }
 
+async function ensureValidDaikinAccessToken(
+  db: AppDatabase,
+  conn: typeof vendorConnections.$inferSelect,
+  forceRefresh = false
+): Promise<string> {
+  const plainAccess = decryptSecret(conn.accessToken);
+  const plainRefresh = decryptSecret(conn.refreshToken);
+
+  if (
+    !forceRefresh &&
+    plainAccess &&
+    (!conn.tokenExpiresAt || conn.tokenExpiresAt.getTime() > Date.now() + 180_000)
+  ) {
+    return plainAccess;
+  }
+
+  if (!plainRefresh) {
+    if (!forceRefresh && plainAccess) return plainAccess;
+    throw new Error('Jeton Daikin Onecta expiré ou absent. Reconnectez Daikin Onecta.');
+  }
+
+  const refreshed = await refreshDaikinAccessToken({ refreshToken: plainRefresh });
+  const expiresAt = new Date(Date.now() + refreshed.expiresInSec * 1000);
+
+  await db
+    .update(vendorConnections)
+    .set({
+      accessToken: encryptSecret(refreshed.accessToken),
+      refreshToken: refreshed.refreshToken ? encryptSecret(refreshed.refreshToken) : conn.refreshToken,
+      tokenExpiresAt: expiresAt,
+      lastError: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(vendorConnections.vendor, 'daikin'));
+
+  return refreshed.accessToken;
+}
+
+export async function saveDaikinConnection(params: {
+  accessToken: string;
+  refreshToken: string | null;
+  expiresInSec: number;
+}): Promise<void> {
+  const now = new Date();
+  const db = getDb();
+
+  if (!db) {
+    const state = getDemoState();
+    state.vendorConnections.daikin = {
+      mode: 'oauth_prod',
+      connected: true,
+      lastSyncedAt: now.toISOString(),
+      lastError: null,
+    };
+    return;
+  }
+
+  await ensureSchemaInitialized(db);
+  const existingRows = await db
+    .select()
+    .from(vendorConnections)
+    .where(eq(vendorConnections.vendor, 'daikin'))
+    .limit(1);
+
+  const encryptedAccess = encryptSecret(params.accessToken);
+  const encryptedRefresh = params.refreshToken
+    ? encryptSecret(params.refreshToken)
+    : existingRows[0]?.refreshToken ?? null;
+  const expiresAt = new Date(Date.now() + params.expiresInSec * 1000);
+
+  await db
+    .insert(vendorConnections)
+    .values({
+      vendor: 'daikin',
+      mode: 'oauth_prod',
+      status: 'connected',
+      accessToken: encryptedAccess,
+      refreshToken: encryptedRefresh,
+      tokenExpiresAt: expiresAt,
+      config: {},
+      lastError: null,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: vendorConnections.vendor,
+      set: {
+        mode: 'oauth_prod',
+        status: 'connected',
+        accessToken: encryptedAccess,
+        refreshToken: encryptedRefresh,
+        tokenExpiresAt: expiresAt,
+        lastError: null,
+        updatedAt: now,
+      },
+    });
+}
+
+export async function disconnectDaikin(): Promise<void> {
+  const db = getDb();
+  if (!db) {
+    const state = getDemoState();
+    state.vendorConnections.daikin.connected = false;
+    state.vendorConnections.daikin.lastError = null;
+    return;
+  }
+
+  await ensureSchemaInitialized(db);
+  await db
+    .update(vendorConnections)
+    .set({
+      status: 'disconnected',
+      accessToken: null,
+      refreshToken: null,
+      tokenExpiresAt: null,
+      lastError: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(vendorConnections.vendor, 'daikin'));
+}
+
+export async function syncDaikinDevices(): Promise<{
+  syncedCount: number;
+  newCount: number;
+  mode: 'live' | 'demo';
+  message: string;
+}> {
+  const db = getDb();
+  const dkCfg = getDaikinConfig();
+  const now = new Date();
+
+  if (!db) {
+    const state = getDemoState();
+    state.vendorConnections.daikin.connected = true;
+    state.vendorConnections.daikin.lastSyncedAt = now.toISOString();
+    state.vendorConnections.daikin.lastError = null;
+    const dkCount = state.devices.filter((d) => d.systems.includes('daikin')).length;
+    return {
+      syncedCount: dkCount,
+      newCount: 0,
+      mode: 'demo',
+      message: `Mode démo actif : ${dkCount} unité(s) Daikin Onecta simulée(s) synchronisée(s).`,
+    };
+  }
+
+  await seedDefaultDataIfEmpty(db);
+  if (!dkCfg.configured) {
+    throw new Error(
+      'Identifiants Daikin Onecta manquants (DAIKIN_CLIENT_ID et DAIKIN_CLIENT_SECRET).'
+    );
+  }
+
+  const connRows = await db
+    .select()
+    .from(vendorConnections)
+    .where(eq(vendorConnections.vendor, 'daikin'))
+    .limit(1);
+
+  const conn = connRows[0];
+  if (!conn || conn.status !== 'connected' || (!conn.accessToken && !conn.refreshToken)) {
+    throw new Error(
+      'Daikin Onecta n’est pas connecté. Cliquez d’abord sur « Connecter Daikin (OAuth) ».'
+    );
+  }
+
+  let inventory;
+  try {
+    const accessToken = await ensureValidDaikinAccessToken(db, conn);
+    try {
+      inventory = await fetchDaikinInventory({ accessToken });
+    } catch (err) {
+      if (err instanceof DaikinApiError && err.status === 401 && conn.refreshToken) {
+        const refreshedToken = await ensureValidDaikinAccessToken(db, conn, true);
+        inventory = await fetchDaikinInventory({ accessToken: refreshedToken });
+      } else {
+        throw err;
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur synchronisation Daikin Onecta';
+    await db
+      .update(vendorConnections)
+      .set({ lastError: msg, updatedAt: now })
+      .where(eq(vendorConnections.vendor, 'daikin'));
+    throw err;
+  }
+
+  const [existingDeviceRows, dkLinkRows] = await Promise.all([
+    db.select().from(devices),
+    db.select().from(deviceVendorLinks).where(eq(deviceVendorLinks.vendor, 'daikin')),
+  ]);
+
+  const deviceById = new Map(existingDeviceRows.map((d) => [d.id, d]));
+  const linkByExternalId = new Map(dkLinkRows.map((l) => [l.externalId, l]));
+  let newCount = 0;
+
+  for (const dk of inventory.devices) {
+    const existingLink = linkByExternalId.get(dk.externalId);
+    const linkedDevice = existingLink ? deviceById.get(existingLink.deviceId) : undefined;
+    const productName =
+      [dk.manufacturer, dk.model].filter(Boolean).join(' · ') || 'Daikin Onecta';
+    const vendorMetadata = {
+      manufacturer: dk.manufacturer,
+      model: dk.model,
+      deviceType: dk.deviceType,
+      macAddress: dk.macAddress ?? null,
+    };
+
+    if (linkedDevice) {
+      const primaryVendor: VendorId = isValidVendorId(linkedDevice.primaryVendor)
+        ? linkedDevice.primaryVendor
+        : 'daikin';
+      const nextSystems = mergeDeviceSystems(
+        normalizeSystems(linkedDevice.systems, primaryVendor),
+        'daikin',
+        primaryVendor
+      );
+
+      if (primaryVendor === 'tuya' || primaryVendor === 'kasa') {
+        await db
+          .update(devices)
+          .set({ systems: nextSystems })
+          .where(eq(devices.id, linkedDevice.id));
+      } else {
+        await db
+          .update(devices)
+          .set({
+            name: dk.name,
+            systems: nextSystems,
+            category: dk.category,
+            tuyaCategory: dk.deviceType ?? 'climateControl',
+            productName,
+            ipAddress: linkedDevice.ipAddress ?? dk.ipAddress ?? null,
+            macAddress: linkedDevice.macAddress ?? dk.macAddress ?? null,
+            isOnline: dk.isOnline,
+            lastRawStatus: dk.rawTraits,
+            lastSeenAt: now,
+            ...(dk.tempC !== null ? { lastTempC: dk.tempC } : {}),
+            ...(dk.humidityPct !== null ? { lastHumidityPct: dk.humidityPct } : {}),
+            ...(dk.addEleKwh !== undefined && dk.addEleKwh !== null
+              ? { lastAddEleKwh: dk.addEleKwh }
+              : {}),
+          })
+          .where(eq(devices.id, linkedDevice.id));
+      }
+
+      await db
+        .update(deviceVendorLinks)
+        .set({
+          externalName: dk.name,
+          vendorMetadata,
+        })
+        .where(eq(deviceVendorLinks.id, existingLink!.id));
+    } else {
+      let candidateId = makeDaikinDeviceId(dk.externalId);
+      if (deviceById.has(candidateId)) {
+        candidateId = `${candidateId}_${now.getTime().toString(36).slice(-4)}`;
+      }
+
+      const [inserted] = await db
+        .insert(devices)
+        .values({
+          id: candidateId,
+          name: dk.name,
+          customName: null,
+          primaryVendor: 'daikin',
+          systems: ['daikin'],
+          roomId: null,
+          category: dk.category,
+          tuyaCategory: dk.deviceType ?? 'climateControl',
+          productName,
+          ipAddress: dk.ipAddress ?? null,
+          macAddress: dk.macAddress ?? null,
+          isOnline: dk.isOnline,
+          isMonitored: true,
+          excludeFromTotals: false,
+          energyMode: 'add_ele',
+          dpConfig: {},
+          lastRawStatus: dk.rawTraits,
+          lastSeenAt: now,
+          lastPowerW: null,
+          lastVoltageV: null,
+          lastAddEleKwh: dk.addEleKwh ?? null,
+          lastTempC: dk.tempC,
+          lastHumidityPct: dk.humidityPct,
+          lastBatteryPct: null,
+          lastContactOpen: null,
+        })
+        .returning();
+
+      await db
+        .insert(deviceVendorLinks)
+        .values({
+          deviceId: candidateId,
+          vendor: 'daikin',
+          externalId: dk.externalId,
+          externalName: dk.name,
+          vendorMetadata,
+          isPrimaryTelemetry: true,
+          linkedAt: now,
+        })
+        .onConflictDoNothing();
+
+      deviceById.set(candidateId, inserted);
+      newCount++;
+    }
+  }
+
+  await db
+    .update(vendorConnections)
+    .set({
+      status: 'connected',
+      lastSyncedAt: now,
+      lastError: inventory.warning ?? null,
+      updatedAt: now,
+    })
+    .where(eq(vendorConnections.vendor, 'daikin'));
+
+  const baseMsg = `${inventory.devices.length} unité(s) Daikin Onecta synchronisée(s) (${newCount} nouvelle(s)).`;
+  return {
+    syncedCount: inventory.devices.length,
+    newCount,
+    mode: 'live',
+    message: inventory.warning ? `${baseMsg} (${inventory.warning})` : baseMsg,
+  };
+}
+
 async function collectSomfyReadingsInDb(
   db: AppDatabase,
   somfyDevices: Array<typeof devices.$inferSelect>,
@@ -3872,12 +4239,131 @@ async function collectTuyaIntermediateEvents(params: {
   return results;
 }
 
+async function collectDaikinReadingsInDb(
+  db: AppDatabase,
+  daikinDevices: Array<typeof devices.$inferSelect>,
+  now: Date
+): Promise<{ updatedCount: number; readingsInserted: number }> {
+  const daikinCfg = getDaikinConfig();
+  if (daikinDevices.length === 0 || !daikinCfg.configured) {
+    return { updatedCount: 0, readingsInserted: 0 };
+  }
+
+  const connRows = await db
+    .select()
+    .from(vendorConnections)
+    .where(eq(vendorConnections.vendor, 'daikin'))
+    .limit(1);
+  const conn = connRows[0];
+  if (!conn || conn.status !== 'connected' || (!conn.accessToken && !conn.refreshToken)) {
+    return { updatedCount: 0, readingsInserted: 0 };
+  }
+
+  let inventory;
+  try {
+    const accessToken = await ensureValidDaikinAccessToken(db, conn);
+    try {
+      inventory = await fetchDaikinInventory({ accessToken });
+    } catch (err) {
+      if (err instanceof DaikinApiError && err.status === 401 && conn.refreshToken) {
+        const refreshedToken = await ensureValidDaikinAccessToken(db, conn, true);
+        inventory = await fetchDaikinInventory({ accessToken: refreshedToken });
+      } else {
+        throw err;
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erreur collecte Daikin Onecta';
+    await db
+      .update(vendorConnections)
+      .set({ lastError: msg, updatedAt: now })
+      .where(eq(vendorConnections.vendor, 'daikin'));
+    throw err;
+  }
+
+  await db
+    .update(vendorConnections)
+    .set({
+      lastSyncedAt: now,
+      lastError: inventory.warning ?? null,
+      updatedAt: now,
+    })
+    .where(eq(vendorConnections.vendor, 'daikin'));
+
+  const dkLinks = await db
+    .select()
+    .from(deviceVendorLinks)
+    .where(eq(deviceVendorLinks.vendor, 'daikin'));
+  const deviceIdByExternalId = new Map(dkLinks.map((l) => [l.externalId, l.deviceId]));
+  const deviceById = new Map(daikinDevices.map((d) => [d.id, d]));
+
+  const readingsToInsert: Array<typeof metricReadings.$inferInsert> = [];
+  let updatedCount = 0;
+
+  for (const dk of inventory.devices) {
+    const devId = deviceIdByExternalId.get(dk.externalId) ?? makeDaikinDeviceId(dk.externalId);
+    const dev = deviceById.get(devId);
+    if (!dev || !dev.isMonitored) continue;
+
+    const hasEnergy = dk.addEleKwh !== undefined && dk.addEleKwh !== null;
+    const hasClimate = dk.tempC !== null || dk.humidityPct !== null;
+
+    const energyRes = hasEnergy
+      ? computeHybridEnergyKwh({
+          energyMode: 'add_ele',
+          powerW: dk.powerW,
+          currentAddEleKwh: dk.addEleKwh ?? null,
+          previousAddEleKwh: dev.lastAddEleKwh,
+          previousSeenAt: dev.lastSeenAt,
+          now,
+        })
+      : null;
+
+    await db
+      .update(devices)
+      .set({
+        isOnline: dk.isOnline,
+        lastRawStatus: dk.rawTraits,
+        lastSeenAt: now,
+        ...(dk.ipAddress ? { ipAddress: dk.ipAddress } : {}),
+        ...(dk.macAddress ? { macAddress: dk.macAddress } : {}),
+        ...(dk.tempC !== null ? { lastTempC: dk.tempC } : {}),
+        ...(dk.humidityPct !== null ? { lastHumidityPct: dk.humidityPct } : {}),
+        ...(hasEnergy ? { lastAddEleKwh: dk.addEleKwh } : {}),
+      })
+      .where(eq(devices.id, dev.id));
+    updatedCount++;
+
+    if (hasEnergy || hasClimate) {
+      readingsToInsert.push({
+        deviceId: dev.id,
+        roomId: dev.roomId,
+        recordedAt: now,
+        powerW: dk.powerW,
+        voltageV: dk.voltageV ?? null,
+        energyKwh: energyRes ? energyRes.energyKwh : null,
+        energySource: energyRes ? energyRes.source : null,
+        tempC: dk.tempC,
+        humidityPct: dk.humidityPct,
+        contactOpen: null,
+      });
+    }
+  }
+
+  if (readingsToInsert.length > 0) {
+    await db.insert(metricReadings).values(readingsToInsert);
+  }
+
+  return { updatedCount, readingsInserted: readingsToInsert.length };
+}
+
 export async function runCollection(trigger: 'schedule' | 'manual'): Promise<CollectionLogRecord> {
   const db = getDb();
   const tuya = getTuyaConfig();
   const kasa = getKasaConfig();
   const hcCfg = getHomeConnectConfig();
   const somfyCfg = getSomfyConfig();
+  const daikinCfg = getDaikinConfig();
   const ghCfg = getGoogleHomeConfig();
   const startedMs = Date.now();
 
@@ -3913,6 +4399,12 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           !d.id.startsWith('manual_') &&
           d.primaryVendor === 'somfy'
       );
+      const daikinMonitored = allDevices.filter(
+        (d) =>
+          d.isMonitored &&
+          !d.id.startsWith('manual_') &&
+          d.primaryVendor === 'daikin'
+      );
       const ghMonitored = allDevices.filter(
         (d) =>
           d.isMonitored &&
@@ -3921,7 +4413,10 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       );
 
       const hasFallbackVendors =
-        kasa.configured || hcCfg.configured || (ghCfg.apiEnabled && ghMonitored.length > 0);
+        kasa.configured ||
+        hcCfg.configured ||
+        daikinCfg.configured ||
+        (ghCfg.apiEnabled && ghMonitored.length > 0);
       const kasaInserted = kasa.configured
         ? await collectKasaReadingsInDb(db, kasaMonitored, now)
         : 0;
@@ -3931,9 +4426,27 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           return { updatedCount: 0, readingsInserted: 0 };
         })
         : { updatedCount: 0, readingsInserted: 0 };
+      const daikinRes = daikinCfg.configured
+        ? await collectDaikinReadingsInDb(db, daikinMonitored, now).catch((err) => {
+          if (
+            !kasa.configured &&
+            !somfyCfg.configured &&
+            !hcCfg.configured &&
+            (!ghCfg.apiEnabled || ghMonitored.length === 0)
+          ) {
+            throw err;
+          }
+          return { updatedCount: 0, readingsInserted: 0 };
+        })
+        : { updatedCount: 0, readingsInserted: 0 };
       const hcUpdated = hcCfg.configured
         ? await collectHomeConnectStatusInDb(db, hcMonitored, now).catch((err) => {
-          if (!kasa.configured && !somfyCfg.configured && (!ghCfg.apiEnabled || ghMonitored.length === 0)) {
+          if (
+            !kasa.configured &&
+            !somfyCfg.configured &&
+            !daikinCfg.configured &&
+            (!ghCfg.apiEnabled || ghMonitored.length === 0)
+          ) {
             throw err;
           }
           return 0;
@@ -3941,7 +4454,14 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
         : 0;
       const ghInserted = ghCfg.apiEnabled
         ? await collectGoogleHomeReadingsInDb(db, ghMonitored, now).catch((err) => {
-          if (!kasa.configured && !somfyCfg.configured && hcMonitored.length === 0) throw err;
+          if (
+            !kasa.configured &&
+            !somfyCfg.configured &&
+            !daikinCfg.configured &&
+            hcMonitored.length === 0
+          ) {
+            throw err;
+          }
           return 0;
         })
         : 0;
@@ -3951,6 +4471,8 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
         somfyCfg.configured ||
         somfyRes.updatedCount > 0 ||
         somfyMonitored.length > 0 ||
+        daikinRes.updatedCount > 0 ||
+        daikinMonitored.length > 0 ||
         hcUpdated > 0 ||
         hcMonitored.length > 0 ||
         ghInserted > 0 ||
@@ -3963,9 +4485,14 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
             devicesCount:
               kasaMonitored.length +
               somfyMonitored.length +
+              daikinMonitored.length +
               hcMonitored.length +
               (ghCfg.apiEnabled ? ghMonitored.length : 0),
-            readingsInserted: kasaInserted + somfyRes.readingsInserted + ghInserted,
+            readingsInserted:
+              kasaInserted +
+              somfyRes.readingsInserted +
+              daikinRes.readingsInserted +
+              ghInserted,
             status: 'success',
             errorMessage: null,
             durationMs: Date.now() - startedMs,
@@ -4201,6 +4728,12 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
         !d.id.startsWith('manual_') &&
         d.primaryVendor === 'somfy'
     );
+    const daikinMonitored = allDevices.filter(
+      (d) =>
+        d.isMonitored &&
+        !d.id.startsWith('manual_') &&
+        d.primaryVendor === 'daikin'
+    );
     const googleMonitored = allDevices.filter(
       (d) =>
         d.isMonitored &&
@@ -4317,9 +4850,13 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       await db.insert(metricReadings).values(readingsToInsert);
     }
 
-    const [kasaInserted, somfyRes, ghInserted] = await Promise.all([
+    const [kasaInserted, somfyRes, daikinRes, ghInserted] = await Promise.all([
       collectKasaReadingsInDb(db, kasaMonitored, now).catch(() => 0),
       collectSomfyReadingsInDb(db, somfyMonitored, now).catch(() => ({
+        updatedCount: 0,
+        readingsInserted: 0,
+      })),
+      collectDaikinReadingsInDb(db, daikinMonitored, now).catch(() => ({
         updatedCount: 0,
         readingsInserted: 0,
       })),
@@ -4335,10 +4872,15 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
           tuyaMonitored.length +
           kasaMonitored.length +
           somfyMonitored.length +
+          daikinMonitored.length +
           hcMonitored.length +
           (ghCfg.apiEnabled ? googleMonitored.length : 0),
         readingsInserted:
-          readingsToInsert.length + kasaInserted + somfyRes.readingsInserted + ghInserted,
+          readingsToInsert.length +
+          kasaInserted +
+          somfyRes.readingsInserted +
+          daikinRes.readingsInserted +
+          ghInserted,
         status: 'success',
         errorMessage: null,
         durationMs: Date.now() - startedMs,

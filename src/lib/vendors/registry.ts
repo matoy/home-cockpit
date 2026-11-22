@@ -1,6 +1,13 @@
 import type { DeviceCategory, RawDpStatus, VendorId } from '@/types';
 
-export const VENDOR_IDS: readonly VendorId[] = ['tuya', 'kasa', 'home_connect', 'somfy', 'google_home'];
+export const VENDOR_IDS: readonly VendorId[] = [
+  'tuya',
+  'kasa',
+  'home_connect',
+  'somfy',
+  'daikin',
+  'google_home',
+];
 
 export interface VendorMeta {
   id: VendorId;
@@ -53,6 +60,16 @@ export const VENDOR_REGISTRY: Record<VendorId, VendorMeta> = {
     description:
       'Kit de connectivité Somfy / Overkiz Cloud (100 % cloud, lecture seule : volets io/RTS, stores, capteurs)',
   },
+  daikin: {
+    id: 'daikin',
+    label: 'Daikin Onecta',
+    shortLabel: 'DK',
+    accentColor: '#3b82f6',
+    badgeClass: 'border-blue-500/40 bg-blue-500/15 text-blue-300',
+    dotClass: 'bg-blue-400',
+    description:
+      'Climatisation & PAC Daikin Onecta Cloud OAuth (100 % lecture seule : °C int./ext., consigne, mode, kWh)',
+  },
   google_home: {
     id: 'google_home',
     label: 'Google Home',
@@ -103,6 +120,7 @@ export function isValidVendorId(value: unknown): value is VendorId {
     value === 'kasa' ||
     value === 'home_connect' ||
     value === 'somfy' ||
+    value === 'daikin' ||
     value === 'google_home'
   );
 }

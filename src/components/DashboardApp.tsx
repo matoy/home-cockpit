@@ -19,13 +19,16 @@ import {
   Workflow,
   Home,
   Blinds,
+  Wind,
 } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
 import { EnergyTab } from './EnergyTab';
 import { ClimateTab } from './ClimateTab';
 import { ContactsTab } from './ContactsTab';
 import { CoversTab } from './CoversTab';
+import { HvacTab } from './HvacTab';
 import { extractCoverSummary } from '@/lib/covers-utils';
+import { extractDaikinSummary, isDaikinHvacDevice } from '@/lib/vendors/daikin-display';
 import { AutomationsTab } from './AutomationsTab';
 import { TariffsTab } from './TariffsTab';
 import { DevicesRoomsTab } from './DevicesRoomsTab';
@@ -87,6 +90,8 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     const hcStatus = params.get('hc');
     const hcEnv = params.get('hc_env');
     const hcError = params.get('hc_error');
+    const dkStatus = params.get('dk');
+    const dkError = params.get('dk_error');
 
     if (tabParam === 'devices') {
       setActiveTab('devices');
@@ -110,9 +115,17 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     } else if (hcError) {
       setToast(`Erreur Siemens Home Connect : ${hcError}`);
       setTimeout(() => setToast(null), 7000);
+    } else if (dkStatus === 'connected') {
+      setToast(
+        'Daikin Onecta connecté. Cliquez sur « Synchroniser Daikin » dans Appareils.'
+      );
+      setTimeout(() => setToast(null), 6000);
+    } else if (dkError) {
+      setToast(`Erreur Daikin Onecta : ${dkError}`);
+      setTimeout(() => setToast(null), 7000);
     }
 
-    if (tabParam || ghStatus || ghError || hcStatus || hcError) {
+    if (tabParam || ghStatus || ghError || hcStatus || hcError || dkStatus || dkError) {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
@@ -270,6 +283,17 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     }, 60);
   }
 
+  function handleOpenDaikinGuide() {
+    setActiveTab('guide');
+    setTimeout(() => {
+      const detailsEl = document.getElementById('setup-daikin-details');
+      if (detailsEl instanceof HTMLDetailsElement) detailsEl.open = true;
+      document
+        .getElementById('setup-daikin')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  }
+
   function handleOpenRoomDevices(targetRoomId: string) {
     setDevicesRoomFilter(targetRoomId);
     setActiveTab('devices');
@@ -297,6 +321,17 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     const cover = extractCoverSummary(d);
     return cover !== null && (cover.state === 'open' || cover.state === 'partial');
   }).length;
+  const activeHvacCount = data.devices.filter((d) => {
+    if (data.selectedSystem !== 'all' && !d.systems.includes(data.selectedSystem)) {
+      return false;
+    }
+    if (data.selectedRoomId !== 'all' && String(d.roomId) !== data.selectedRoomId) {
+      return false;
+    }
+    if (!isDaikinHvacDevice(d)) return false;
+    const summary = extractDaikinSummary(d.lastRawStatus);
+    return Boolean(summary?.isOn);
+  }).length;
 
   const tabs: Array<{
     id: TabId;
@@ -319,6 +354,12 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
       label: 'Volets & Stores',
       icon: Blinds,
       badge: openCoversCount > 0 ? openCoversCount : undefined,
+    },
+    {
+      id: 'hvac',
+      label: 'Clim & PAC',
+      icon: Wind,
+      badge: activeHvacCount > 0 ? activeHvacCount : undefined,
     },
     {
       id: 'automations',
@@ -418,6 +459,12 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
                   if (v.vendor === 'somfy') {
                     return (
                       data.env.somfyConfigured ||
+                      (data.env.mode === 'live' && v.devicesCount > 0)
+                    );
+                  }
+                  if (v.vendor === 'daikin') {
+                    return (
+                      data.env.daikinConfigured ||
                       (data.env.mode === 'live' && v.devicesCount > 0)
                     );
                   }
@@ -616,6 +663,13 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             onResetGlobalFilters={() => void handleResetGlobalFilters()}
           />
         )}
+        {activeTab === 'hvac' && (
+          <HvacTab
+            data={data}
+            onNavigateTab={setActiveTab}
+            onResetGlobalFilters={() => void handleResetGlobalFilters()}
+          />
+        )}
         {activeTab === 'automations' && (
           <AutomationsTab data={data} onRefresh={() => fetchDashboard(range, roomId)} />
         )}
@@ -630,6 +684,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
               data.env.homeConnectConfigured ? handleOpenHomeConnectGuide : undefined
             }
             onOpenSomfyGuide={data.env.somfyConfigured ? handleOpenSomfyGuide : undefined}
+            onOpenDaikinGuide={data.env.daikinConfigured ? handleOpenDaikinGuide : undefined}
           />
         )}
         {activeTab === 'rooms' && (
