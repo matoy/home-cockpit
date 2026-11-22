@@ -24,6 +24,8 @@ export interface SomfyConfig {
   password: string;
   region: SomfyRegion;
   baseUrl: string;
+  gatewayIp: string | null;
+  gatewayMac: string | null;
   configured: boolean;
 }
 
@@ -51,6 +53,7 @@ export interface OverkizRawDevice {
   widget?: string;
   type?: number;
   states?: OverkizRawState[];
+  attributes?: OverkizRawState[];
 }
 
 export interface OverkizRawGateway {
@@ -58,6 +61,18 @@ export interface OverkizRawGateway {
   type?: number;
   alive?: boolean;
   mode?: string;
+  ip?: string;
+  ipAddress?: string;
+  localIp?: string;
+  mac?: string;
+  macAddress?: string;
+  connectivity?: {
+    status?: string;
+    protocolVersion?: string;
+    ip?: string;
+    ipAddress?: string;
+    macAddress?: string;
+  };
 }
 
 export interface OverkizSetupPayload {
@@ -65,6 +80,12 @@ export interface OverkizSetupPayload {
   gateways?: OverkizRawGateway[];
   rootPlace?: OverkizPlace;
   devices?: OverkizRawDevice[];
+}
+
+export interface SomfyGatewayNetworkInfo {
+  gatewayId: string;
+  ipAddress: string | null;
+  macAddress: string | null;
 }
 
 export class SomfyCloudError extends Error {
@@ -77,6 +98,185 @@ export class SomfyCloudError extends Error {
     this.status = opts?.status;
     this.errorCode = opts?.errorCode;
   }
+}
+
+export function sanitizeSomfyIpv4(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower === 'n/a' || lower === 'na' || lower === 'none' || lower === 'null' || trimmed === '0.0.0.0') {
+    return null;
+  }
+  const match = trimmed.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!match) return null;
+  for (let i = 1; i <= 4; i++) {
+    const octet = Number(match[i]);
+    if (!Number.isInteger(octet) || octet < 0 || octet > 255) return null;
+  }
+  return trimmed;
+}
+
+export function formatSomfyMac(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim().toUpperCase();
+  if (!trimmed) return null;
+  const compact = trimmed.replace(/[^A-F0-9]/g, '');
+  if (compact.length !== 12) return null;
+  const formatted = compact.match(/.{1,2}/g)?.join(':') ?? null;
+  if (!formatted || formatted === '00:00:00:00:00:00' || formatted === 'FF:FF:FF:FF:FF:FF') {
+    return null;
+  }
+  return formatted;
+}
+
+export function extractSomfyGatewayId(deviceUrl?: string | null): string | null {
+  if (!deviceUrl) return null;
+  const match = deviceUrl.trim().match(/^[a-z0-9+.-]+:\/\/([^/]+)/i);
+  const gwId = match?.[1]?.trim();
+  return gwId || null;
+}
+
+export function extractNetworkInfoFromEntries(
+  entries?: OverkizRawState[] | null
+): { ipAddress: string | null; macAddress: string | null } {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return { ipAddress: null, macAddress: null };
+  }
+
+  const byLowerName = new Map<string, unknown>();
+  for (const item of entries) {
+    if (item && typeof item.name === 'string') {
+      byLowerName.set(item.name.toLowerCase(), item.value);
+    }
+  }
+
+  const ipPriorityKeys = [
+    'core:localipv4addressstate',
+    'internal:localipv4addressstate',
+    'core:ipaddressstate',
+    'core:networkipaddressstate',
+  ];
+  let ipAddress: string | null = null;
+  for (const key of ipPriorityKeys) {
+    ipAddress = sanitizeSomfyIpv4(byLowerName.get(key));
+    if (ipAddress) break;
+  }
+  if (!ipAddress) {
+    for (const [key, val] of byLowerName.entries()) {
+      if (/localip|ipv4|ipaddress/i.test(key)) {
+        ipAddress = sanitizeSomfyIpv4(val);
+        if (ipAddress) break;
+      }
+    }
+  }
+
+  const macPriorityKeys = [
+    'core:networkmacstate',
+    'core:macaddressstate',
+    'internal:networkmacstate',
+    'internal:macaddressstate',
+    'core:wifimacaddressstate',
+    'core:ethernetmacaddressstate',
+  ];
+  let macAddress: string | null = null;
+  for (const key of macPriorityKeys) {
+    macAddress = formatSomfyMac(byLowerName.get(key));
+    if (macAddress) break;
+  }
+  if (!macAddress) {
+    for (const [key, val] of byLowerName.entries()) {
+      if (/macaddress|networkmac|macstate/i.test(key)) {
+        macAddress = formatSomfyMac(val);
+        if (macAddress) break;
+      }
+    }
+  }
+
+  return { ipAddress, macAddress };
+}
+
+export function extractSomfyGatewayNetworks(
+  setup: OverkizSetupPayload,
+  fallback?: { gatewayIp?: string | null; gatewayMac?: string | null }
+): {
+  byGatewayId: Map<string, SomfyGatewayNetworkInfo>;
+  defaultGateway: SomfyGatewayNetworkInfo | null;
+} {
+  const byGatewayId = new Map<string, SomfyGatewayNetworkInfo>();
+  const ensureEntry = (gwId: string): SomfyGatewayNetworkInfo => {
+    const existing = byGatewayId.get(gwId);
+    if (existing) return existing;
+    const created: SomfyGatewayNetworkInfo = {
+      gatewayId: gwId,
+      ipAddress: null,
+      macAddress: null,
+    };
+    byGatewayId.set(gwId, created);
+    return created;
+  };
+
+  for (const gw of setup.gateways ?? []) {
+    const gwId = (gw.gatewayId ?? '').trim();
+    if (!gwId) continue;
+    const entry = ensureEntry(gwId);
+    const gwIp =
+      sanitizeSomfyIpv4(gw.ip) ??
+      sanitizeSomfyIpv4(gw.ipAddress) ??
+      sanitizeSomfyIpv4(gw.localIp) ??
+      sanitizeSomfyIpv4(gw.connectivity?.ip) ??
+      sanitizeSomfyIpv4(gw.connectivity?.ipAddress);
+    const gwMac =
+      formatSomfyMac(gw.mac) ??
+      formatSomfyMac(gw.macAddress) ??
+      formatSomfyMac(gw.connectivity?.macAddress);
+    if (gwIp && !entry.ipAddress) entry.ipAddress = gwIp;
+    if (gwMac && !entry.macAddress) entry.macAddress = gwMac;
+  }
+
+  for (const dev of setup.devices ?? []) {
+    const gwId = extractSomfyGatewayId(dev.deviceURL);
+    if (!gwId) continue;
+    const isPodOrGateway =
+      isInternalSomfyDevice(dev) || byGatewayId.has(gwId);
+    if (!isPodOrGateway) continue;
+
+    const fromStates = extractNetworkInfoFromEntries(dev.states);
+    const fromAttrs = extractNetworkInfoFromEntries(dev.attributes);
+    const ipAddress = fromStates.ipAddress ?? fromAttrs.ipAddress;
+    const macAddress = fromStates.macAddress ?? fromAttrs.macAddress;
+    if (ipAddress || macAddress || byGatewayId.has(gwId)) {
+      const entry = ensureEntry(gwId);
+      if (ipAddress && !entry.ipAddress) entry.ipAddress = ipAddress;
+      if (macAddress && !entry.macAddress) entry.macAddress = macAddress;
+    }
+  }
+
+  const fallbackIp = sanitizeSomfyIpv4(fallback?.gatewayIp);
+  const fallbackMac = formatSomfyMac(fallback?.gatewayMac);
+
+  for (const entry of byGatewayId.values()) {
+    if (!entry.ipAddress && fallbackIp) entry.ipAddress = fallbackIp;
+    if (!entry.macAddress && fallbackMac) entry.macAddress = fallbackMac;
+  }
+
+  let defaultGateway: SomfyGatewayNetworkInfo | null = null;
+  if (byGatewayId.size === 1) {
+    defaultGateway = [...byGatewayId.values()][0];
+  } else if (byGatewayId.size > 1) {
+    const firstWithNetwork = [...byGatewayId.values()].find(
+      (g) => g.ipAddress || g.macAddress
+    );
+    defaultGateway = firstWithNetwork ?? [...byGatewayId.values()][0];
+  } else if (fallbackIp || fallbackMac) {
+    defaultGateway = {
+      gatewayId: '',
+      ipAddress: fallbackIp,
+      macAddress: fallbackMac,
+    };
+  }
+
+  return { byGatewayId, defaultGateway };
 }
 
 export function normalizeSomfyRegion(raw?: string | null): SomfyRegion {
@@ -97,11 +297,15 @@ export function getSomfyConfig(): SomfyConfig {
   const password = process.env.SOMFY_PASSWORD ?? '';
   const region = normalizeSomfyRegion(process.env.SOMFY_REGION);
   const baseUrl = getSomfyBaseUrl(region);
+  const gatewayIp = sanitizeSomfyIpv4(process.env.SOMFY_GATEWAY_IP);
+  const gatewayMac = formatSomfyMac(process.env.SOMFY_GATEWAY_MAC);
   return {
     email,
     password,
     region,
     baseUrl,
+    gatewayIp,
+    gatewayMac,
     configured: Boolean(email && password),
   };
 }
@@ -349,7 +553,11 @@ function extractSomfyBattery(statesMap: Map<string, unknown>): number | null {
 export function normalizeSomfyDevice(
   raw: OverkizRawDevice,
   placesMap: Map<string, string>,
-  gatewayOnline = true
+  gatewayOnline = true,
+  gatewayNetworks?: {
+    byGatewayId: Map<string, SomfyGatewayNetworkInfo>;
+    defaultGateway: SomfyGatewayNetworkInfo | null;
+  }
 ): NormalizedVendorDevice | null {
   if (!raw.deviceURL || isInternalSomfyDevice(raw)) {
     return null;
@@ -374,12 +582,35 @@ export function normalizeSomfyDevice(
   const protocol = detectSomfyProtocol(raw.deviceURL, raw.controllableName);
   const controllableName = (raw.controllableName ?? '').trim();
 
+  const ownFromStates = extractNetworkInfoFromEntries(raw.states);
+  const ownFromAttrs = extractNetworkInfoFromEntries(raw.attributes);
+  const ownIp = ownFromStates.ipAddress ?? ownFromAttrs.ipAddress;
+  const ownMac = ownFromStates.macAddress ?? ownFromAttrs.macAddress;
+
+  const extractedGwId = extractSomfyGatewayId(raw.deviceURL);
+  const gwNetwork =
+    (extractedGwId ? gatewayNetworks?.byGatewayId.get(extractedGwId) : undefined) ??
+    gatewayNetworks?.defaultGateway ??
+    null;
+  const gatewayId = extractedGwId || gwNetwork?.gatewayId || null;
+
+  const ipAddress = ownIp ?? gwNetwork?.ipAddress ?? null;
+  const macAddress = ownMac ?? gwNetwork?.macAddress ?? null;
+  const usedGatewayNetwork =
+    (!ownIp && Boolean(gwNetwork?.ipAddress)) || (!ownMac && Boolean(gwNetwork?.macAddress));
+
   rawTraits.push(
     { code: 'somfy:uiClass', value: uiClass },
     { code: 'somfy:protocol', value: protocol },
     { code: 'somfy:controllableName', value: controllableName },
     { code: 'somfy:deviceURL', value: raw.deviceURL }
   );
+  if (gatewayId) {
+    rawTraits.push({ code: 'somfy:gatewayId', value: gatewayId });
+  }
+  if (usedGatewayNetwork) {
+    rawTraits.push({ code: 'somfy:networkSource', value: 'gateway' });
+  }
 
   const statusState = String(statesMap.get('core:StatusState') ?? '').toLowerCase();
   const isOnline =
@@ -439,23 +670,40 @@ export function normalizeSomfyDevice(
     powerW: null,
     voltageV: null,
     addEleKwh: null,
-    macAddress: null,
-    ipAddress: null,
+    macAddress,
+    ipAddress,
     rawTraits,
   };
 }
 
-export function normalizeSomfySetupPayload(setup: OverkizSetupPayload): VendorInventoryResult {
+export function normalizeSomfySetupPayload(
+  setup: OverkizSetupPayload,
+  fallbackOverride?: { gatewayIp?: string | null; gatewayMac?: string | null }
+): VendorInventoryResult {
   const { placesMap, roomNames: subPlaceNames } = extractSomfyPlacesMap(setup.rootPlace);
   const gateways = Array.isArray(setup.gateways) ? setup.gateways : [];
   const gatewayOffline = gateways.length > 0 && gateways.every((g) => g.alive === false);
+
+  const cfg = fallbackOverride ? null : getSomfyConfig();
+  const gatewayNetworks = extractSomfyGatewayNetworks(
+    setup,
+    fallbackOverride ?? {
+      gatewayIp: cfg?.gatewayIp ?? null,
+      gatewayMac: cfg?.gatewayMac ?? null,
+    }
+  );
 
   const rawDevices = Array.isArray(setup.devices) ? setup.devices : [];
   const devices: NormalizedVendorDevice[] = [];
   const referencedRooms = new Set<string>(subPlaceNames);
 
   for (const raw of rawDevices) {
-    const normalized = normalizeSomfyDevice(raw, placesMap, !gatewayOffline);
+    const normalized = normalizeSomfyDevice(
+      raw,
+      placesMap,
+      !gatewayOffline,
+      gatewayNetworks
+    );
     if (!normalized) continue;
     devices.push(normalized);
     if (normalized.roomName) {

@@ -3079,6 +3079,8 @@ export async function syncSomfyDevices(): Promise<{
           existing.tuyaCategory = sf.deviceType ?? 'somfy';
           existing.productName =
             [sf.manufacturer, sf.deviceType].filter(Boolean).join(' · ') || existing.productName;
+          existing.ipAddress = sf.ipAddress ?? existing.ipAddress;
+          existing.macAddress = sf.macAddress ?? existing.macAddress;
           existing.isOnline = sf.isOnline;
           existing.lastRawStatus = sf.rawTraits;
           existing.lastSeenAt = now.toISOString();
@@ -3105,8 +3107,8 @@ export async function syncSomfyDevices(): Promise<{
           category: sf.category,
           tuyaCategory: sf.deviceType ?? 'somfy',
           productName: [sf.manufacturer, sf.deviceType].filter(Boolean).join(' · ') || 'Somfy Overkiz',
-          ipAddress: null,
-          macAddress: null,
+          ipAddress: sf.ipAddress ?? null,
+          macAddress: sf.macAddress ?? null,
           isOnline: sf.isOnline,
           isMonitored: isCover || sf.category !== 'other',
           excludeFromTotals: false,
@@ -3191,6 +3193,8 @@ export async function syncSomfyDevices(): Promise<{
       manufacturer: sf.manufacturer,
       model: sf.model,
       deviceType: sf.deviceType,
+      ipAddress: sf.ipAddress ?? null,
+      macAddress: sf.macAddress ?? null,
     };
 
     if (linkedDevice) {
@@ -3222,6 +3226,8 @@ export async function syncSomfyDevices(): Promise<{
             category: sf.category,
             tuyaCategory: sf.deviceType ?? 'somfy',
             productName,
+            ipAddress: sf.ipAddress ?? linkedDevice.ipAddress,
+            macAddress: sf.macAddress ?? linkedDevice.macAddress,
             isOnline: sf.isOnline,
             lastRawStatus: sf.rawTraits,
             lastSeenAt: now,
@@ -3266,8 +3272,8 @@ export async function syncSomfyDevices(): Promise<{
           category: sf.category,
           tuyaCategory: sf.deviceType ?? 'somfy',
           productName,
-          ipAddress: null,
-          macAddress: null,
+          ipAddress: sf.ipAddress ?? null,
+          macAddress: sf.macAddress ?? null,
           isOnline: sf.isOnline,
           isMonitored,
           excludeFromTotals: false,
@@ -3375,6 +3381,8 @@ async function collectSomfyReadingsInDb(
         isOnline: sf.isOnline,
         lastRawStatus: sf.rawTraits,
         lastSeenAt: now,
+        ...(sf.ipAddress ? { ipAddress: sf.ipAddress } : {}),
+        ...(sf.macAddress ? { macAddress: sf.macAddress } : {}),
         ...(sf.tempC !== null ? { lastTempC: sf.tempC } : {}),
         ...(sf.humidityPct !== null ? { lastHumidityPct: sf.humidityPct } : {}),
         ...(sf.batteryPct !== null ? { lastBatteryPct: sf.batteryPct } : {}),

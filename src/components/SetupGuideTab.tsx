@@ -881,8 +881,16 @@ SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
                 {`SOMFY_EMAIL="votre-email@exemple.com"
 SOMFY_PASSWORD="votre-mot-de-passe"
 SOMFY_REGION="eu" # eu (Europe / France), na (Amérique du Nord) ou oc (Océanie)
-# SOMFY_CLOUD_URL="" # Optionnel : surcharge l'URL Overkiz enduserAPI`}
+# SOMFY_CLOUD_URL="" # Optionnel : surcharge l'URL Overkiz enduserAPI
+# SOMFY_GATEWAY_IP="" # Optionnel : repli IP passerelle si Overkiz renvoie "N/A"
+# SOMFY_GATEWAY_MAC="" # Optionnel : repli MAC passerelle si masquée par Overkiz`}
               </pre>
+              <p className="text-[11px] text-slate-400">
+                L&apos;adresse IP et l&apos;adresse MAC de la passerelle Kit de connectivité sont
+                extraites automatiquement de <code>/setup</code> lorsqu&apos;Overkiz les expose ;
+                renseignez <code>SOMFY_GATEWAY_IP</code> / <code>SOMFY_GATEWAY_MAC</code> en repli
+                si Overkiz renvoie <code>N/A</code>.
+              </p>
             </div>
 
             <details className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-xs">

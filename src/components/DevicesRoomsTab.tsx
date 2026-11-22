@@ -96,6 +96,7 @@ function buildDeviceSearchHaystack(dev: DeviceRecord, roomName?: string): string
     dev.lastBatteryPct !== null ? `${dev.lastBatteryPct}%` : null,
     hcSummary?.searchableText,
     somfySummary?.protocol,
+    somfySummary?.gatewayId,
     somfySummary?.cover?.kindLabel,
     somfySummary?.cover?.stateLabel,
   ];
@@ -1497,15 +1498,38 @@ export function DevicesRoomsTab({
                       </td>
 
                       <td className="px-2.5 py-2.5 font-mono text-[10.5px] leading-tight min-w-0">
-                        <div className="text-slate-200 truncate" title={dev.ipAddress || '—'}>
-                          {dev.ipAddress || '—'}
-                        </div>
-                        <div
-                          className="text-[10px] text-slate-400 mt-0.5 truncate"
-                          title={dev.macAddress || '—'}
-                        >
-                          {dev.macAddress || '—'}
-                        </div>
+                        {(() => {
+                          const somfyNet = extractSomfyDisplaySummary(dev);
+                          const ipLabel = dev.ipAddress || '—';
+                          const macLabel =
+                            dev.macAddress ||
+                            (somfyNet?.gatewayId ? `GW ${somfyNet.gatewayId}` : '—');
+                          const ipTitle =
+                            dev.ipAddress && somfyNet?.isGatewayNetwork
+                              ? `Passerelle Somfy (${somfyNet.gatewayId || 'Kit de connectivité'}) : ${dev.ipAddress}`
+                              : somfyNet && !dev.ipAddress
+                                ? 'IP passerelle non exposée par Overkiz Cloud — définissez SOMFY_GATEWAY_IP si besoin'
+                                : ipLabel;
+                          const macTitle =
+                            dev.macAddress && somfyNet?.isGatewayNetwork
+                              ? `MAC passerelle Somfy (${somfyNet.gatewayId || 'Kit de connectivité'}) : ${dev.macAddress}`
+                              : somfyNet && !dev.macAddress
+                                ? 'MAC passerelle non exposée par Overkiz Cloud — définissez SOMFY_GATEWAY_MAC si besoin'
+                                : macLabel;
+                          return (
+                            <>
+                              <div className="text-slate-200 truncate" title={ipTitle}>
+                                {ipLabel}
+                              </div>
+                              <div
+                                className="text-[10px] text-slate-400 mt-0.5 truncate"
+                                title={macTitle}
+                              >
+                                {macLabel}
+                              </div>
+                            </>
+                          );
+                        })()}
                       </td>
 
                       <td className="px-2.5 py-2.5 min-w-0">
@@ -1815,9 +1839,18 @@ export function DevicesRoomsTab({
                     </div>
                     <div>
                       <label className="block text-[10px] text-slate-400 mb-1">IP / MAC</label>
-                      <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-2.5 py-1.5 font-mono text-[11px] text-slate-300 truncate">
-                        {dev.ipAddress || '—'} · {dev.macAddress || '—'}
-                      </div>
+                      {(() => {
+                        const somfyNet = extractSomfyDisplaySummary(dev);
+                        const ipLabel = dev.ipAddress || '—';
+                        const macLabel =
+                          dev.macAddress ||
+                          (somfyNet?.gatewayId ? `GW ${somfyNet.gatewayId}` : '—');
+                        return (
+                          <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-2.5 py-1.5 font-mono text-[11px] text-slate-300 truncate">
+                            {ipLabel} · {macLabel}
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div>
                       <label className="block text-[10px] text-slate-400 mb-1">Pièce</label>

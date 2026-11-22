@@ -4,6 +4,8 @@ import { extractCoverSummary, type CoverSummary } from '@/lib/covers-utils';
 export interface SomfyDisplaySummary {
   protocol: string;
   uiClass: string;
+  gatewayId: string | null;
+  isGatewayNetwork: boolean;
   cover: CoverSummary | null;
   rssiLevel: string | null;
   batteryPct: number | null;
@@ -53,6 +55,11 @@ export function extractSomfyDisplaySummary(
     (typeof map.get('somfy:protocol') === 'string'
       ? (map.get('somfy:protocol') as string)
       : 'Overkiz');
+  const gatewayId =
+    typeof map.get('somfy:gatewayId') === 'string' && (map.get('somfy:gatewayId') as string).trim()
+      ? (map.get('somfy:gatewayId') as string).trim()
+      : null;
+  const isGatewayNetwork = map.get('somfy:networkSource') === 'gateway';
 
   const rssiRaw = map.get('core:DiscreteRSSILevelState');
   const rssiLevel =
@@ -74,6 +81,8 @@ export function extractSomfyDisplaySummary(
   return {
     protocol,
     uiClass,
+    gatewayId,
+    isGatewayNetwork,
     cover,
     rssiLevel,
     batteryPct: cover?.batteryPct ?? device.lastBatteryPct,
