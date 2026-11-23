@@ -1644,14 +1644,3 @@ export function SystemsTab({
     </div>
   );
 }
-                ) : (
-  <span className="text-rose-300">{log.errorMessage}</span>
-)}
-              </div >
-            </div >
-          ))}
-        </div >
-      </div >
-    </div >
-  );
-}
