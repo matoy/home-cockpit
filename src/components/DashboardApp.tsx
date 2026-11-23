@@ -40,18 +40,13 @@ import { DevicesRoomsTab } from './DevicesRoomsTab';
 import { RoomsTab } from './RoomsTab';
 import { SystemsTab } from './SystemsTab';
 import { SetupGuideTab } from './SetupGuideTab';
+import { LanguageSwitcher } from './LanguageSwitcher';
+import { useI18n } from './I18nProvider';
 import type { DashboardPayload, SystemFilter, TabId, TimeRange } from '@/types';
 
 interface DashboardAppProps {
   initialData: DashboardPayload;
 }
-
-const RANGES: Array<{ id: Exclude<TimeRange, 'custom'>; label: string }> = [
-  { id: '24h', label: '24h' },
-  { id: '7d', label: '7 jours' },
-  { id: '30d', label: '30 jours' },
-  { id: '365d', label: '12 mois' },
-];
 
 function toLocalDateTimeInput(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -60,6 +55,7 @@ function toLocalDateTimeInput(date: Date): string {
 
 export function DashboardApp({ initialData }: DashboardAppProps) {
   const router = useRouter();
+  const { t, formatDateTime } = useI18n();
   const [data, setData] = useState<DashboardPayload>(initialData);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [range, setRange] = useState<TimeRange>(initialData.range);
@@ -110,36 +106,39 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     }
     if (ghStatus === 'connected') {
       const targetLabel =
-        tabParam === 'rooms' ? 'Pièces' : tabParam === 'devices' ? 'Appareils' : 'Systèmes';
+        tabParam === 'rooms'
+          ? t('nav.rooms')
+          : tabParam === 'devices'
+            ? t('nav.devices')
+            : t('nav.systems');
       setToast(
-        `Google Home connecté (${(ghMode || 'mcp').toUpperCase()}). Cliquez sur « Synchroniser » dans ${targetLabel}.`
+        t('header.oauthGhConnected', {
+          mode: (ghMode || 'mcp').toUpperCase(),
+          target: targetLabel,
+        })
       );
       setTimeout(() => setToast(null), 6000);
     } else if (ghError) {
-      setToast(`Erreur Google Home : ${ghError}`);
+      setToast(t('header.oauthGhError', { error: ghError }));
       setTimeout(() => setToast(null), 7000);
     } else if (hcStatus === 'connected') {
-      setToast(
-        `Siemens Home Connect connecté (${(hcEnv || 'prod').toUpperCase()}). Cliquez sur « Synchroniser Home Connect ».`
-      );
+      setToast(t('header.oauthHcConnected', { env: (hcEnv || 'prod').toUpperCase() }));
       setTimeout(() => setToast(null), 6000);
     } else if (hcError) {
-      setToast(`Erreur Siemens Home Connect : ${hcError}`);
+      setToast(t('header.oauthHcError', { error: hcError }));
       setTimeout(() => setToast(null), 7000);
     } else if (dkStatus === 'connected') {
-      setToast(
-        'Daikin Onecta connecté. Cliquez sur « Synchroniser Daikin » dans Systèmes.'
-      );
+      setToast(t('header.oauthDkConnected'));
       setTimeout(() => setToast(null), 6000);
     } else if (dkError) {
-      setToast(`Erreur Daikin Onecta : ${dkError}`);
+      setToast(t('header.oauthDkError', { error: dkError }));
       setTimeout(() => setToast(null), 7000);
     }
 
     if (tabParam || ghStatus || ghError || hcStatus || hcError || dkStatus || dkError) {
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, []);
+  }, [t]);
 
   const fetchDashboard = useCallback(
     async (
@@ -244,11 +243,9 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
         log?: { readingsInserted: number; errorMessage: string | null };
       };
       if (!res.ok || !json.ok) {
-        setToast(json.log?.errorMessage || json.error || 'Échec de collecte');
+        setToast(json.log?.errorMessage || json.error || t('header.collectFailed'));
       } else {
-        setToast(
-          `Collecte effectuée : ${json.log?.readingsInserted ?? 0} mesure(s) enregistrée(s).`
-        );
+        setToast(t('header.collectSuccess', { count: json.log?.readingsInserted ?? 0 }));
         await fetchDashboard(range, roomId);
       }
     } finally {
@@ -399,6 +396,13 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     return Boolean(xs?.isAlert || mi?.isAlert);
   }).length;
 
+  const rangeOptions: Array<{ id: Exclude<TimeRange, 'custom'>; label: string }> = [
+    { id: '24h', label: t('header.range24h') },
+    { id: '7d', label: t('header.range7d') },
+    { id: '30d', label: t('header.range30d') },
+    { id: '365d', label: t('header.range365d') },
+  ];
+
   const tabs: Array<{
     id: TabId;
     label: string;
@@ -406,49 +410,49 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     icon: typeof LayoutGrid;
     badge?: number;
   }> = [
-    { id: 'overview', label: 'Synthèse', title: 'Synthèse & Pièces', icon: LayoutGrid },
-    { id: 'energy', label: 'Énergie', title: 'Énergie & Puissance', icon: BarChart3 },
-    { id: 'climate', label: 'Climat', title: 'Climat (°C / %)', icon: Thermometer },
+    { id: 'overview', label: t('nav.overview'), icon: LayoutGrid },
+    { id: 'energy', label: t('nav.energy'), icon: BarChart3 },
+    { id: 'climate', label: t('nav.climate'), icon: Thermometer },
     {
       id: 'contacts',
-      label: 'Ouvertures',
+      label: t('nav.contacts'),
       icon: DoorOpen,
       badge: data.contacts.summary.openCountNow,
     },
     {
       id: 'covers',
-      label: 'Volets & Stores',
+      label: t('nav.covers'),
       icon: Blinds,
       badge: openCoversCount > 0 ? openCoversCount : undefined,
     },
     {
       id: 'hvac',
-      label: 'Clim & PAC',
+      label: t('nav.hvac'),
       icon: Wind,
       badge: activeHvacCount > 0 ? activeHvacCount : undefined,
     },
     {
       id: 'security',
-      label: 'Sécurité & Détecteurs',
+      label: t('nav.security'),
       icon: ShieldAlert,
       badge: activeSecurityAlertsCount > 0 ? activeSecurityAlertsCount : undefined,
     },
     {
       id: 'automations',
-      label: 'Automatisations',
+      label: t('nav.automations'),
       icon: Workflow,
       badge: data.automations.summary.warningCount,
     },
-    { id: 'devices', label: 'Appareils', icon: Cpu },
-    { id: 'rooms', label: 'Pièces', icon: Home },
+    { id: 'devices', label: t('nav.devices'), icon: Cpu },
+    { id: 'rooms', label: t('nav.rooms'), icon: Home },
     {
       id: 'systems',
-      label: 'Systèmes',
+      label: t('nav.systems'),
       icon: Plug,
       badge: connectedSystemsCount > 0 ? connectedSystemsCount : undefined,
     },
-    { id: 'tariffs', label: 'Tarifs kWh', icon: Euro },
-    { id: 'guide', label: 'Guide Setup', icon: BookOpen },
+    { id: 'tariffs', label: t('nav.tariffs'), icon: Euro },
+    { id: 'guide', label: t('nav.guide'), icon: BookOpen },
   ];
 
   return (
@@ -463,7 +467,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base font-bold tracking-tight text-white">
-                  Home Cockpit · Multi-Vendors
+                  {t('header.appTitle')}
                 </h1>
                 <span
                   className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold border ${data.env.mode === 'live'
@@ -472,15 +476,13 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
                     }`}
                 >
                   <Database className="h-2.5 w-2.5" />
-                  {data.env.mode === 'live' ? 'Neon Postgres' : 'Mode Démo'}
+                  {data.env.mode === 'live' ? t('common.liveMode') : t('common.demoMode')}
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">
                 {lastLog
-                  ? `Dernière collecte (${lastLog.trigger}) : ${new Date(
-                    lastLog.executedAt
-                  ).toLocaleString('fr-FR')}`
-                  : 'Collecte planifiée toutes les 30 minutes'}
+                  ? `${t('header.lastCollection', { date: formatDateTime(lastLog.executedAt) })} (${lastLog.trigger})`
+                  : t('common.noRecentSync')}
               </p>
             </div>
           </div>
@@ -489,7 +491,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
           <div className="flex flex-wrap items-center gap-2">
             {/* Période */}
             <div className="flex flex-wrap rounded-xl border border-slate-800 bg-slate-900 p-0.5">
-              {RANGES.map((r) => (
+              {rangeOptions.map((r) => (
                 <button
                   key={r.id}
                   onClick={() => void handleRangeChange(r.id)}
@@ -510,7 +512,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
                   }`}
               >
                 <CalendarRange className="h-3.5 w-3.5" />
-                Personnalisé
+                {t('header.rangeCustom')}
               </button>
             </div>
 
@@ -518,10 +520,10 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             <select
               value={systemFilter}
               onChange={(e) => void handleSystemChange(e.target.value as SystemFilter)}
-              aria-label="Filtrer par système"
+              aria-label={t('header.filterSystemAria')}
               className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
             >
-              <option value="all">Tous les systèmes ({data.devices.length})</option>
+              <option value="all">{t('header.allSystemsCount', { count: data.devices.length })}</option>
               {data.vendors
                 .filter((v) => {
                   if (v.vendor === 'tuya' || systemFilter === v.vendor) return true;
@@ -578,10 +580,10 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             <select
               value={roomId}
               onChange={(e) => void handleRoomChange(e.target.value)}
-              aria-label="Filtrer par pièce"
+              aria-label={t('header.filterRoomAria')}
               className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
             >
-              <option value="all">Toutes les pièces ({systemScopedDevices.length})</option>
+              <option value="all">{t('header.allRoomsCount', { count: systemScopedDevices.length })}</option>
               {data.rooms.map((r) => (
                 <option key={r.id} value={String(r.id)}>
                   {r.name} ({roomDeviceCounts.get(r.id) ?? 0})
@@ -589,19 +591,21 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
               ))}
             </select>
 
+            <LanguageSwitcher compact />
+
             <button
               onClick={() => void handleCollectNow()}
               disabled={collecting}
               className="flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 disabled:opacity-50 px-3 py-1.5 text-xs font-medium text-emerald-300 transition"
             >
               <Play className={`h-3.5 w-3.5 ${collecting ? 'animate-pulse' : ''}`} />
-              {collecting ? 'Collecte...' : 'Collecter'}
+              {collecting ? t('header.collecting') : t('header.collectNow')}
             </button>
 
             <button
               onClick={() => void fetchDashboard(range, roomId)}
               disabled={loading}
-              title="Rafraîchir l'affichage"
+              title={t('header.refreshTitle')}
               className="rounded-xl border border-slate-800 bg-slate-900 hover:bg-slate-800 p-2 text-slate-300 transition"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -610,7 +614,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             {data.env.appPasswordConfigured && (
               <button
                 onClick={() => void handleLogout()}
-                title="Déconnexion"
+                title={t('header.logoutTitle')}
                 className="rounded-xl border border-slate-800 bg-slate-900 hover:bg-slate-800 p-2 text-slate-400 hover:text-rose-300 transition"
               >
                 <LogOut className="h-3.5 w-3.5" />
@@ -624,14 +628,14 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
           <div className="mx-auto max-w-7xl px-4 sm:px-6 pb-3">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-500/30 bg-slate-900/95 p-3 text-xs">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-slate-400 font-medium">Du</span>
+                <span className="text-slate-400 font-medium">{t('header.from')}</span>
                 <input
                   type="datetime-local"
                   value={customFromInput}
                   onChange={(e) => setCustomFromInput(e.target.value)}
                   className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-white focus:border-indigo-500 focus:outline-none"
                 />
-                <span className="text-slate-400 font-medium">Au</span>
+                <span className="text-slate-400 font-medium">{t('header.to')}</span>
                 <input
                   type="datetime-local"
                   value={customToInput}
@@ -643,7 +647,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
                   onClick={() => void applyCustomBounds(customFromInput, customToInput)}
                   className="rounded-lg bg-indigo-600 hover:bg-indigo-500 px-3 py-1 font-medium text-white transition"
                 >
-                  Appliquer
+                  {t('header.apply')}
                 </button>
               </div>
 
@@ -653,28 +657,28 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
                   onClick={() => applyQuickCustomPreset('today')}
                   className="rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 text-[11px] text-slate-300"
                 >
-                  Aujourd&apos;hui
+                  {t('header.presetToday')}
                 </button>
                 <button
                   type="button"
                   onClick={() => applyQuickCustomPreset('yesterday')}
                   className="rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 text-[11px] text-slate-300"
                 >
-                  Hier
+                  {t('header.presetYesterday')}
                 </button>
                 <button
                   type="button"
                   onClick={() => applyQuickCustomPreset('last7d')}
                   className="rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 text-[11px] text-slate-300"
                 >
-                  7 derniers jours
+                  {t('header.presetLast7d')}
                 </button>
                 <button
                   type="button"
                   onClick={() => applyQuickCustomPreset('thisMonth')}
                   className="rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 text-[11px] text-slate-300"
                 >
-                  Ce mois-ci
+                  {t('header.presetThisMonth')}
                 </button>
               </div>
             </div>
@@ -683,7 +687,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
 
         {/* Navigation par onglets */}
         <nav
-          aria-label="Navigation principale"
+          aria-label={t('nav.ariaLabel')}
           className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-wrap items-center gap-x-1 gap-y-0.5 border-t border-slate-800/60"
         >
           {tabs.map((tab) => {
@@ -717,14 +721,13 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
         {data.env.mode === 'demo' && (
           <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200 flex flex-wrap items-center justify-between gap-2">
             <span>
-              <strong>Aperçu Démo interactif :</strong> <code>DATABASE_URL</code> n&apos;est pas encore
-              configuré. Les graphiques affichent 30 jours de mesures simulées au pas de 30 minutes.
+              <strong>{t('header.demoBannerTitle')}</strong> {t('header.demoBannerBody')}
             </span>
             <button
               onClick={() => setActiveTab('guide')}
               className="rounded-lg border border-amber-400/40 bg-amber-400/15 px-3 py-1 font-medium text-amber-100 hover:bg-amber-400/25"
             >
-              Configurer Neon &amp; Tuya →
+              {t('common.openGuideSetup')}
             </button>
           </div>
         )}

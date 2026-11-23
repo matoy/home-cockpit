@@ -19,6 +19,7 @@ import {
   type DaikinModeTone,
   type DaikinUnitSummary,
 } from '@/lib/vendors/daikin-display';
+import { useI18n } from './I18nProvider';
 import type {
   DashboardPayload,
   DeviceRecord,
@@ -42,13 +43,6 @@ interface HvacItem {
 
 type HvacFilter = 'all' | 'on' | 'off' | 'heating' | 'cooling' | 'auto';
 
-const RANGE_LABELS: Record<string, string> = {
-  '24h': '24h',
-  '7d': '7 jours',
-  '30d': '30 jours',
-  '365d': '12 mois',
-};
-
 const MODE_BADGE_CLASSES: Record<DaikinModeTone, string> = {
   amber: 'border-amber-500/40 bg-amber-500/15 text-amber-300',
   sky: 'border-sky-500/40 bg-sky-500/15 text-sky-300',
@@ -57,11 +51,11 @@ const MODE_BADGE_CLASSES: Record<DaikinModeTone, string> = {
   slate: 'border-slate-700 bg-slate-800/80 text-slate-300',
 };
 
-function formatTimeShort(iso: string | null): string {
+function formatTimeShort(iso: string | null, intlLocale: string): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('fr-FR', {
+  return d.toLocaleString(intlLocale, {
     day: '2-digit',
     month: '2-digit',
     hour: '2-digit',
@@ -75,6 +69,7 @@ function avg(nums: number[]): number | null {
 }
 
 export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabProps) {
+  const { t, intlLocale } = useI18n();
   const [hvacFilter, setHvacFilter] = useState<HvacFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -90,8 +85,16 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
 
   const rangeLabel =
     data.range === 'custom' && data.customFrom && data.customTo
-      ? 'période'
-      : RANGE_LABELS[data.range] ?? data.range;
+      ? t('hvac.periodFallback')
+      : data.range === '24h'
+        ? t('header.range24h')
+        : data.range === '7d'
+          ? t('header.range7d')
+          : data.range === '30d'
+            ? t('header.range30d')
+            : data.range === '365d'
+              ? t('header.range365d')
+              : data.range;
 
   const allHvac = useMemo<HvacItem[]>(() => {
     const items: HvacItem[] = [];
@@ -107,13 +110,13 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
     return items.sort((a, b) => {
       const roomA = a.room?.name ?? 'zzz';
       const roomB = b.room?.name ?? 'zzz';
-      if (roomA !== roomB) return roomA.localeCompare(roomB, 'fr');
+      if (roomA !== roomB) return roomA.localeCompare(roomB, intlLocale);
       return (a.device.customName || a.device.name).localeCompare(
         b.device.customName || b.device.name,
-        'fr'
+        intlLocale
       );
     });
-  }, [data.devices, roomById, energyByDeviceId]);
+  }, [data.devices, roomById, energyByDeviceId, intlLocale]);
 
   const scopedHvac = useMemo(() => {
     return allHvac.filter(({ device }) => {
@@ -255,14 +258,14 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
       } else {
         groups.set(key, {
           key,
-          roomName: item.room?.name ?? 'Sans pièce',
+          roomName: item.room?.name ?? t('common.noRoom'),
           color: item.room?.color ?? '#64748b',
           items: [item],
         });
       }
     }
     return [...groups.values()];
-  }, [filteredHvac]);
+  }, [filteredHvac, t]);
 
   if (allHvac.length === 0) {
     return (
@@ -271,12 +274,10 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
           <Wind className="h-6 w-6" />
         </div>
         <h2 className="text-lg font-semibold text-white">
-          Aucune unité Clim &amp; PAC Daikin détectée
+          {t('hvac.emptyTitle')}
         </h2>
         <p className="mx-auto mt-1 max-w-xl text-sm text-slate-400">
-          Connectez votre compte <strong>Daikin Onecta Cloud</strong> en 100 % lecture seule
-          pour retrouver ici vos splits, pompes à chaleur, consignes, températures extérieure /
-          intérieure et consommations électriques kWh.
+          {t('hvac.emptyDesc')}
         </p>
         <div className="mt-5 flex flex-wrap justify-center gap-3">
           <button
@@ -284,14 +285,14 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
             onClick={() => onNavigateTab('systems')}
             className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-500 transition"
           >
-            Aller dans Systèmes
+            {t('hvac.goToSystems')}
           </button>
           <button
             type="button"
             onClick={() => onNavigateTab('guide')}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800 transition"
           >
-            Ouvrir Guide Setup
+            {t('common.openGuideSetup')}
           </button>
         </div>
       </div>
@@ -317,37 +318,42 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Unités actives</span>
+            <span>{t('hvac.kpiActive')}</span>
             <Wind className="h-4 w-4 text-blue-400" />
           </div>
           <div className="mt-2 text-2xl font-bold text-white">
             {stats.onCount} / {stats.total}
           </div>
           <p className="mt-1 text-xs text-slate-400">
-            {stats.heatingCount} chauffage · {stats.coolingCount} clim · {stats.offCount} veille
+            {t('hvac.activeSub', {
+              heat: stats.heatingCount,
+              cool: stats.coolingCount,
+              off: stats.offCount,
+            })}
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Intérieur vs Consigne</span>
+            <span>{t('hvac.kpiIndoorTarget')}</span>
             <Thermometer className="h-4 w-4 text-emerald-400" />
           </div>
           <div className="mt-2 text-2xl font-bold text-white">
             {stats.avgRoomTempC !== null ? `${stats.avgRoomTempC.toFixed(1)} °C` : '—'}
           </div>
           <p className="mt-1 text-xs text-slate-400">
-            Consigne moy.{' '}
-            {stats.avgTargetTempC !== null ? `${stats.avgTargetTempC.toFixed(1)} °C` : '—'}
+            {t('hvac.avgTargetSub', {
+              target: stats.avgTargetTempC !== null ? `${stats.avgTargetTempC.toFixed(1)} °C` : '—',
+            })}
             {stats.avgHumidityPct !== null
-              ? ` · ${stats.avgHumidityPct.toFixed(0)} % hum.`
+              ? t('hvac.humiditySuffix', { pct: stats.avgHumidityPct.toFixed(0) })
               : ''}
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Température Extérieure</span>
+            <span>{t('hvac.kpiOutdoor')}</span>
             <Snowflake className="h-4 w-4 text-sky-400" />
           </div>
           <div className="mt-2 text-2xl font-bold text-white">
@@ -357,22 +363,25 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
             {stats.minOutdoorTempC !== null &&
             stats.maxOutdoorTempC !== null &&
             stats.minOutdoorTempC !== stats.maxOutdoorTempC
-              ? `De ${stats.minOutdoorTempC.toFixed(1)} °C à ${stats.maxOutdoorTempC.toFixed(1)} °C`
-              : 'Sonde groupe extérieur Daikin'}
+              ? t('hvac.outdoorRange', {
+                  min: stats.minOutdoorTempC.toFixed(1),
+                  max: stats.maxOutdoorTempC.toFixed(1),
+                })
+              : t('hvac.outdoorProbe')}
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Énergie Clim ({rangeLabel})</span>
+            <span>{t('hvac.kpiEnergy', { range: rangeLabel })}</span>
             <Zap className="h-4 w-4 text-amber-400" />
           </div>
           <div className="mt-2 text-2xl font-bold text-white">
             {stats.periodEnergyKwh.toFixed(1)} kWh
           </div>
           <p className="mt-1 text-xs text-slate-400">
-            {stats.periodCostEur.toFixed(2)} € sur la période
-            {stats.todayKwh !== null ? ` · ${stats.todayKwh.toFixed(1)} kWh auj.` : ''}
+            {t('hvac.periodCostSub', { cost: stats.periodCostEur.toFixed(2) })}
+            {stats.todayKwh !== null ? t('hvac.todayKwhSuffix', { kwh: stats.todayKwh.toFixed(1) }) : ''}
           </p>
         </div>
       </div>
@@ -382,17 +391,17 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
         <div className="flex flex-wrap items-center gap-1.5">
           {(
             [
-              { id: 'all', label: `Toutes (${stats.total})` },
-              { id: 'on', label: `En marche (${stats.onCount})` },
-              { id: 'off', label: `Veille (${stats.offCount})` },
+              { id: 'all', label: t('hvac.filterAll', { count: stats.total }) },
+              { id: 'on', label: t('hvac.filterOn', { count: stats.onCount }) },
+              { id: 'off', label: t('hvac.filterOff', { count: stats.offCount }) },
               ...(stats.heatingCount > 0
-                ? [{ id: 'heating' as const, label: `Chauffage (${stats.heatingCount})` }]
+                ? [{ id: 'heating' as const, label: t('hvac.filterHeating', { count: stats.heatingCount }) }]
                 : []),
               ...(stats.coolingCount > 0
-                ? [{ id: 'cooling' as const, label: `Clim (${stats.coolingCount})` }]
+                ? [{ id: 'cooling' as const, label: t('hvac.filterCooling', { count: stats.coolingCount }) }]
                 : []),
               ...(stats.autoCount > 0
-                ? [{ id: 'auto' as const, label: `Auto (${stats.autoCount})` }]
+                ? [{ id: 'auto' as const, label: t('hvac.filterAuto', { count: stats.autoCount }) }]
                 : []),
             ] as Array<{ id: HvacFilter; label: string }>
           ).map((pill) => (
@@ -417,7 +426,7 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Rechercher..."
+            placeholder={t('common.search')}
             className="w-48 rounded-xl border border-slate-700 bg-slate-950 py-1.5 pl-8 pr-3 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
           />
         </div>
@@ -426,14 +435,14 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
       {/* Groupes par pièce */}
       {groupedByRoom.length === 0 ? (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 text-center text-sm text-slate-400 space-y-3">
-          <div>Aucune unité Daikin ne correspond aux filtres actifs.</div>
+          <div>{t('hvac.noMatching')}</div>
           {hasAnyActiveFilter && (
             <button
               type="button"
               onClick={handleResetAllFilters}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3.5 py-1.5 text-xs font-medium text-slate-200 transition"
             >
-              Réinitialiser les filtres
+              {t('common.resetFilters')}
             </button>
           )}
         </div>
@@ -452,7 +461,9 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
                 <Home className="h-4 w-4 text-slate-400" />
                 <h3 className="text-sm font-semibold text-white">{group.roomName}</h3>
                 <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300">
-                  {group.items.length} unité{group.items.length > 1 ? 's' : ''}
+                  {group.items.length > 1
+                    ? t('hvac.unitPlural', { count: group.items.length })
+                    : t('hvac.unitSingular', { count: group.items.length })}
                 </span>
               </div>
 
@@ -483,15 +494,15 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
                             </span>
                             {device.excludeFromTotals && (
                               <span
-                                title="Exclu des moyennes Climat et totaux Énergie"
+                                title={t('hvac.excludedTitle')}
                                 className="rounded border border-amber-500/30 bg-amber-500/15 px-1.5 py-0.2 text-[9.5px] text-amber-300"
                               >
-                                Exclu totaux
+                                {t('hvac.excludedBadge')}
                               </span>
                             )}
                           </div>
                           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
-                            <span>{summary?.unitTypeLabel ?? 'Unité Daikin'}</span>
+                            <span>{summary?.unitTypeLabel ?? t('hvac.defaultUnitType')}</span>
                             {summary?.model && (
                               <>
                                 <span>·</span>
@@ -510,7 +521,7 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
                           {summary?.isOn && summary.operationMode === 'cooling' && (
                             <Snowflake className="h-3 w-3" />
                           )}
-                          {summary?.modeLabel ?? (device.isOnline ? 'Connecté' : 'Hors ligne')}
+                          {summary?.modeLabel ?? (device.isOnline ? t('common.connected') : t('common.offline'))}
                         </span>
                       </div>
 
@@ -519,7 +530,7 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
                         <div>
                           <div className="text-[10px] text-slate-400 flex items-center gap-1">
                             <Thermometer className="h-3 w-3 text-emerald-400" />
-                            Intérieur
+                            {t('hvac.indoorLabel')}
                           </div>
                           <div className="mt-0.5 font-semibold text-white font-mono">
                             {roomTemp !== null ? `${roomTemp.toFixed(1)} °C` : '—'}
@@ -533,26 +544,26 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
                         </div>
 
                         <div>
-                          <div className="text-[10px] text-slate-400">Consigne</div>
+                          <div className="text-[10px] text-slate-400">{t('hvac.targetLabel')}</div>
                           <div className="mt-0.5 font-semibold text-blue-300 font-mono">
                             {summary?.targetTempC !== null && summary?.targetTempC !== undefined
                               ? `${summary.targetTempC.toFixed(1)} °C`
                               : '—'}
                           </div>
                           <div className="text-[10px] text-slate-500 mt-0.5">
-                            {summary?.isOn ? 'Régulation active' : 'En veille'}
+                            {summary?.isOn ? t('hvac.regulating') : t('hvac.standby')}
                           </div>
                         </div>
 
                         <div>
-                          <div className="text-[10px] text-slate-400">Extérieur</div>
+                          <div className="text-[10px] text-slate-400">{t('hvac.outdoorLabel')}</div>
                           <div className="mt-0.5 font-semibold text-sky-300 font-mono">
                             {summary?.outdoorTempC !== null && summary?.outdoorTempC !== undefined
                               ? `${summary.outdoorTempC.toFixed(1)} °C`
                               : '—'}
                           </div>
                           <div className="text-[10px] text-slate-500 mt-0.5">
-                            {summary?.fanLabel ?? 'Ventil. —'}
+                            {summary?.fanLabel ?? t('hvac.fanFallback')}
                           </div>
                         </div>
                       </div>
@@ -562,22 +573,25 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
                         <div className="flex flex-wrap items-center gap-1.5">
                           {summary?.todayKwh !== null && summary?.todayKwh !== undefined && (
                             <span className="rounded bg-slate-900 px-1.5 py-0.5 font-mono text-amber-300">
-                              Auj. {summary.todayKwh.toFixed(1)} kWh
+                              {t('hvac.todayBadge', { kwh: summary.todayKwh.toFixed(1) })}
                             </span>
                           )}
                           {summary?.weekKwh !== null && summary?.weekKwh !== undefined && (
                             <span className="rounded bg-slate-900 px-1.5 py-0.5 font-mono text-slate-300">
-                              Sem. {summary.weekKwh.toFixed(1)} kWh
+                              {t('hvac.weekBadge', { kwh: summary.weekKwh.toFixed(1) })}
                             </span>
                           )}
                           {energy && (
                             <span className="rounded bg-slate-900 px-1.5 py-0.5 font-mono text-indigo-300">
-                              Période {energy.energyKwh.toFixed(1)} kWh ({energy.costEur.toFixed(2)} €)
+                              {t('hvac.periodBadge', {
+                                kwh: energy.energyKwh.toFixed(1),
+                                cost: energy.costEur.toFixed(2),
+                              })}
                             </span>
                           )}
                           {summary?.swingLabel && (
                             <span className="rounded bg-slate-900 px-1.5 py-0.5 text-slate-300">
-                              Volets {summary.swingLabel}
+                              {t('hvac.swingBadge', { swing: summary.swingLabel })}
                             </span>
                           )}
                           {summary?.econo && (
@@ -606,7 +620,7 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
                         </div>
 
                         <span className="text-[10px] text-slate-500">
-                          {formatTimeShort(device.lastSeenAt)}
+                          {formatTimeShort(device.lastSeenAt, intlLocale)}
                         </span>
                       </div>
                     </div>

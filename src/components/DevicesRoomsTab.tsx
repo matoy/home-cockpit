@@ -27,6 +27,7 @@ import { extractHomeConnectSummary } from '@/lib/vendors/home-connect-display';
 import { extractSomfyDisplaySummary } from '@/lib/vendors/somfy-display';
 import { extractXSenseSummary } from '@/lib/vendors/xsense-display';
 import { extractXiaomiSummary } from '@/lib/vendors/xiaomi-display';
+import { useI18n } from './I18nProvider';
 import type {
   DashboardPayload,
   DeviceCategory,
@@ -45,13 +46,6 @@ interface DevicesRoomsTabProps {
   onOpenSystemsTab?: () => void;
   onOpenBackupSection?: () => void;
 }
-
-const SCALE_OPTIONS = [
-  { label: '× 1 (brut)', value: 1 },
-  { label: '÷ 10 (× 0.1)', value: 0.1 },
-  { label: '÷ 100 (× 0.01)', value: 0.01 },
-  { label: '÷ 1000 (× 0.001)', value: 0.001 },
-];
 
 function normalizeSearchText(value: string): string {
   return value
@@ -116,6 +110,13 @@ export function DevicesRoomsTab({
   onOpenSystemsTab,
   onOpenBackupSection,
 }: DevicesRoomsTabProps) {
+  const { t } = useI18n();
+  const scaleOptions = [
+    { label: t('devices.scale1'), value: 1 },
+    { label: t('devices.scale10'), value: 0.1 },
+    { label: t('devices.scale100'), value: 0.01 },
+    { label: t('devices.scale1000'), value: 0.001 },
+  ];
   const showKasa = data.env.kasaConfigured;
   const showHomeConnect = data.env.homeConnectConfigured;
   const showSomfy = data.env.somfyConfigured;
@@ -250,7 +251,7 @@ export function DevicesRoomsTab({
     e.preventDefault();
     const trimmedName = manualName.trim();
     if (!trimmedName) {
-      setManualFeedback({ ok: false, text: "Le nom de l'appareil est requis." });
+      setManualFeedback({ ok: false, text: t('devices.manualNameRequired') });
       return;
     }
 
@@ -286,7 +287,7 @@ export function DevicesRoomsTab({
       });
       const json = (await res.json()) as { error?: string };
       if (!res.ok) {
-        throw new Error(json.error || "Échec de l'enregistrement de l'appareil.");
+        throw new Error(json.error || t('devices.manualSaveError'));
       }
 
       setShowManualModal(false);
@@ -294,14 +295,14 @@ export function DevicesRoomsTab({
       setSyncMessage({
         ok: true,
         text: editingManualDeviceId
-          ? `Appareil « ${trimmedName} » mis à jour.`
-          : `Appareil manuel « ${trimmedName} » déclaré.`,
+          ? t('devices.manualUpdated', { name: trimmedName })
+          : t('devices.manualCreated', { name: trimmedName }),
       });
       await onRefresh();
     } catch (err) {
       setManualFeedback({
         ok: false,
-        text: err instanceof Error ? err.message : "Erreur lors de l'enregistrement.",
+        text: err instanceof Error ? err.message : t('devices.manualSaveError'),
       });
     } finally {
       setSavingManualDevice(false);
@@ -312,7 +313,7 @@ export function DevicesRoomsTab({
     const label = dev.customName || dev.name;
     if (
       typeof window !== 'undefined' &&
-      !window.confirm(`Supprimer l'appareil manuel « ${label} » ?`)
+      !window.confirm(t('devices.manualDeleteConfirm', { name: label }))
     ) {
       return;
     }
@@ -324,17 +325,17 @@ export function DevicesRoomsTab({
       });
       const json = (await res.json()) as { error?: string };
       if (!res.ok) {
-        throw new Error(json.error || "Échec de la suppression de l'appareil.");
+        throw new Error(json.error || t('devices.manualDeleteError'));
       }
       setSyncMessage({
         ok: true,
-        text: `Appareil manuel « ${label} » supprimé.`,
+        text: t('devices.manualDeleted', { name: label }),
       });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur lors de la suppression.',
+        text: err instanceof Error ? err.message : t('devices.manualDeleteError'),
       });
     }
   }
@@ -553,7 +554,7 @@ export function DevicesRoomsTab({
         error?: string;
       };
       if (!res.ok) {
-        throw new Error(json.error || 'Échec de la mise à jour en masse des systèmes');
+        throw new Error(json.error || t('devices.bulkError'));
       }
 
       const updatedCount = json.updatedCount ?? 0;
@@ -562,7 +563,7 @@ export function DevicesRoomsTab({
       const hasOnlyPrimarySkip =
         updatedCount === 0 && skippedPrimaryCount > 0 && alreadySetCount === 0;
       const ok = !hasOnlyPrimarySkip;
-      const text = json.message || 'Liaison multi-systèmes mise à jour.';
+      const text = json.message || t('devices.bulkUpdated');
 
       setBulkFeedback({ ok, text });
       setSyncMessage({ ok, text });
@@ -571,7 +572,7 @@ export function DevicesRoomsTab({
         setSelectedDeviceIds([]);
       }
     } catch (err) {
-      const text = err instanceof Error ? err.message : 'Erreur liaison en masse';
+      const text = err instanceof Error ? err.message : t('devices.bulkError');
       setBulkFeedback({ ok: false, text });
       setSyncMessage({ ok: false, text });
     } finally {
@@ -600,14 +601,14 @@ export function DevicesRoomsTab({
         message?: string;
         error?: string;
       };
-      if (!res.ok) throw new Error(json.error || 'Échec de la fusion en masse');
+      if (!res.ok) throw new Error(json.error || t('devices.bulkMergeError'));
       const ok = (json.mergedCount ?? 0) > 0;
-      const text = json.message || 'Doublons fusionnés sans perte de mesures.';
+      const text = json.message || t('devices.bulkMergeDone');
       setSyncMessage({ ok, text });
       setLinkFeedback({ ok, text });
       await onRefresh();
     } catch (err) {
-      const text = err instanceof Error ? err.message : 'Erreur fusion en masse';
+      const text = err instanceof Error ? err.message : t('devices.bulkMergeError');
       setSyncMessage({ ok: false, text });
       setLinkFeedback({ ok: false, text });
     } finally {
@@ -628,19 +629,19 @@ export function DevicesRoomsTab({
         body: JSON.stringify({ action: 'merge', targetDeviceId, sourceDeviceId }),
       });
       const json = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec de fusion des appareils');
+      if (!res.ok) throw new Error(json.error || t('devices.mergeError'));
       setMergeSourceId('');
       setLinkFeedback({
         ok: true,
-        text: 'Doublon fusionné et liaison mémorisée pour les futures synchronisations.',
+        text: t('devices.mergeDone'),
       });
       setSyncMessage({
         ok: true,
-        text: 'Appareils fusionnés sans doublon. La liaison multi-systèmes est mémorisée.',
+        text: t('devices.mergeSyncMsg'),
       });
       await onRefresh();
     } catch (err) {
-      const text = err instanceof Error ? err.message : 'Erreur fusion';
+      const text = err instanceof Error ? err.message : t('devices.mergeError');
       setLinkFeedback({ ok: false, text });
       setSyncMessage({ ok: false, text });
     } finally {
@@ -659,13 +660,13 @@ export function DevicesRoomsTab({
         body: JSON.stringify({ action: 'toggle_system', deviceId, vendor, enabled }),
       });
       const json = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec mise à jour des systèmes');
-      setLinkFeedback({ ok: true, text: 'Systèmes mis à jour.' });
+      if (!res.ok) throw new Error(json.error || t('devices.toggleSystemError'));
+      setLinkFeedback({ ok: true, text: t('devices.toggleSystemDone') });
       await onRefresh();
     } catch (err) {
       setLinkFeedback({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur mise à jour',
+        text: err instanceof Error ? err.message : t('devices.toggleSystemError'),
       });
     } finally {
       setSavingLink(false);
@@ -681,13 +682,13 @@ export function DevicesRoomsTab({
         { method: 'DELETE' }
       );
       const json = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec dissociation');
-      setLinkFeedback({ ok: true, text: 'Liaison système supprimée.' });
+      if (!res.ok) throw new Error(json.error || t('devices.unlinkError'));
+      setLinkFeedback({ ok: true, text: t('devices.unlinkDone') });
       await onRefresh();
     } catch (err) {
       setLinkFeedback({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur dissociation',
+        text: err instanceof Error ? err.message : t('devices.unlinkError'),
       });
     } finally {
       setSavingLink(false);
@@ -770,11 +771,11 @@ export function DevicesRoomsTab({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-semibold text-amber-200">
               <GitMerge className="h-4 w-4 text-amber-400 shrink-0" />
-              Doublons potentiels multi-systèmes détectés ({visibleDuplicateCandidates.length})
+              {t('devices.duplicatesTitle', { count: visibleDuplicateCandidates.length })}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[11px] text-amber-300/80">
-                Fusionnez en 1 clic pour combiner les badges sur une seule ligne et conserver les mesures principales (Tuya / Kasa).
+                {t('devices.duplicatesHint')}
               </span>
               {visibleDuplicateCandidates.length > 1 && (
                 <button
@@ -785,8 +786,8 @@ export function DevicesRoomsTab({
                 >
                   <GitMerge className="h-3.5 w-3.5" />
                   {bulkMergingAll
-                    ? 'Fusion en cours...'
-                    : `Tout fusionner (${visibleDuplicateCandidates.length})`}
+                    ? t('devices.merging')
+                    : t('devices.mergeAll', { count: visibleDuplicateCandidates.length })}
                 </button>
               )}
             </div>
@@ -826,7 +827,7 @@ export function DevicesRoomsTab({
                     className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 px-3 py-1.5 text-[11px] font-semibold text-slate-950 transition"
                   >
                     <GitMerge className="h-3.5 w-3.5" />
-                    {mergingId === cand.sourceDeviceId ? 'Fusion...' : 'Fusionner en 1 clic'}
+                    {mergingId === cand.sourceDeviceId ? t('devices.mergingOne') : t('devices.mergeOneClick')}
                   </button>
                   <button
                     type="button"
@@ -835,7 +836,7 @@ export function DevicesRoomsTab({
                     }
                     className="rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 px-2.5 py-1.5 text-[11px] text-slate-300 transition"
                   >
-                    Ignorer
+                    {t('devices.ignore')}
                   </button>
                 </div>
               </div>
@@ -850,14 +851,15 @@ export function DevicesRoomsTab({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-semibold text-white">
-                Appareils détectés ({filteredDevices.length}
-                {roomFilter !== 'all' || systemFilter !== 'all' || searchQuery.trim() !== ''
-                  ? ` / ${data.devices.length}`
-                  : ''}
-                )
+                {t('devices.listTitle', {
+                  count:
+                    roomFilter !== 'all' || systemFilter !== 'all' || searchQuery.trim() !== ''
+                      ? `${filteredDevices.length} / ${data.devices.length}`
+                      : filteredDevices.length,
+                })}
               </h3>
               <p className="text-xs text-slate-400">
-                Filtrez par texte, système ou pièce, déclarez les liaisons multi-systèmes sans doublons et calibrez vos calculs kWh
+                {t('devices.listSubtitle')}
               </p>
             </div>
 
@@ -868,15 +870,15 @@ export function DevicesRoomsTab({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Rechercher (nom, IP, MAC, pièce, système, DP...)"
-                  aria-label="Rechercher un appareil"
+                  placeholder={t('devices.searchPlaceholder')}
+                  aria-label={t('devices.searchAria')}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 pl-8 pr-8 py-1.5 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
-                    title="Effacer la recherche"
+                    title={t('common.clearSearch')}
                     className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:bg-slate-800 hover:text-white"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -900,7 +902,7 @@ export function DevicesRoomsTab({
                   }`}
               >
                 <Link2 className="h-3.5 w-3.5" />
-                Lier en masse
+                {t('devices.bulkLinkBtn')}
                 {selectedDeviceIds.length > 0 && (
                   <span className="rounded-full bg-indigo-500 px-1.5 py-0.2 text-[10px] font-semibold text-white">
                     {selectedDeviceIds.length}
@@ -912,11 +914,11 @@ export function DevicesRoomsTab({
                 <button
                   type="button"
                   onClick={onOpenSystemsTab}
-                  title="Connecter et synchroniser vos systèmes domotiques"
+                  title={t('devices.systemsShortcutTitle')}
                   className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700/80 px-3 py-1.5 text-xs font-medium text-slate-200 transition shrink-0"
                 >
                   <Plug className="h-3.5 w-3.5 text-indigo-400" />
-                  Systèmes
+                  {t('devices.systemsShortcutBtn')}
                 </button>
               )}
 
@@ -924,11 +926,11 @@ export function DevicesRoomsTab({
                 <button
                   type="button"
                   onClick={onOpenBackupSection}
-                  title="Exporter ou importer une sauvegarde compressée (.json.gz)"
+                  title={t('devices.exportImportTitle')}
                   className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700/80 px-3 py-1.5 text-xs font-medium text-slate-200 transition shrink-0"
                 >
                   <Archive className="h-3.5 w-3.5 text-indigo-400" />
-                  Export / Import
+                  {t('devices.exportImportBtn')}
                 </button>
               )}
 
@@ -938,7 +940,7 @@ export function DevicesRoomsTab({
                 className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white transition shrink-0"
               >
                 <Plus className="h-3.5 w-3.5" />
-                Déclarer un appareil
+                {t('devices.declareManualBtn')}
               </button>
             </div>
           </div>
@@ -947,7 +949,7 @@ export function DevicesRoomsTab({
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 mr-1">
               <Layers className="h-3.5 w-3.5 text-slate-500" />
-              Système :
+              {t('devices.systemFilterLabel')}
             </span>
             <button
               type="button"
@@ -957,7 +959,7 @@ export function DevicesRoomsTab({
                 : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
                 }`}
             >
-              Tous ({systemCounts.all})
+              {t('devices.filterAll', { count: systemCounts.all })}
             </button>
             {VENDOR_IDS.filter((vId) => {
               const count = systemCounts[vId];
@@ -1004,7 +1006,7 @@ export function DevicesRoomsTab({
                 }`}
             >
               <Link2 className="h-3 w-3" />
-              Multi-systèmes ({systemCounts.multi})
+              {t('devices.filterMulti', { count: systemCounts.multi })}
             </button>
             <button
               type="button"
@@ -1015,7 +1017,7 @@ export function DevicesRoomsTab({
                 }`}
             >
               <Pencil className="h-3 w-3" />
-              Manuels ({systemCounts.manual})
+              {t('devices.filterManual', { count: systemCounts.manual })}
             </button>
           </div>
 
@@ -1023,7 +1025,7 @@ export function DevicesRoomsTab({
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 mr-1">
               <Home className="h-3.5 w-3.5 text-slate-500" />
-              Pièce :
+              {t('devices.roomFilterLabel')}
             </span>
             <button
               type="button"
@@ -1033,7 +1035,12 @@ export function DevicesRoomsTab({
                 : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
                 }`}
             >
-              Toutes ({systemCounts.all === filteredDevices.length && roomFilter === 'all' ? systemCounts.all : unassignedCount + Array.from(roomDeviceCounts.values()).reduce((a, b) => a + b, 0)})
+              {t('devices.roomFilterAll', {
+                count:
+                  systemCounts.all === filteredDevices.length && roomFilter === 'all'
+                    ? systemCounts.all
+                    : unassignedCount + Array.from(roomDeviceCounts.values()).reduce((a, b) => a + b, 0),
+              })}
             </button>
 
             <button
@@ -1046,7 +1053,7 @@ export function DevicesRoomsTab({
                   : 'border-transparent bg-slate-800/80 text-slate-400 hover:bg-slate-800'
                 }`}
             >
-              Sans pièce ({unassignedCount})
+              {t('devices.roomFilterUnassigned', { count: unassignedCount })}
             </button>
 
             {data.rooms.map((r) => {
@@ -1078,7 +1085,7 @@ export function DevicesRoomsTab({
                 onClick={onOpenRoomsTab}
                 className="ml-auto inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1.5 text-[11px] font-medium text-slate-200 transition"
               >
-                Gérer les pièces
+                {t('devices.manageRoomsBtn')}
                 <ArrowRight className="h-3 w-3 text-indigo-400" />
               </button>
             )}
@@ -1090,18 +1097,20 @@ export function DevicesRoomsTab({
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span className="inline-flex items-center gap-1.5 font-semibold text-indigo-200">
                     <Link2 className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-                    Liaison multi-systèmes en masse
+                    {t('devices.bulkBarTitle')}
                   </span>
                   <span className="rounded-full bg-indigo-500/25 px-2 py-0.5 text-[11px] font-medium text-indigo-100">
-                    {selectedDeviceIds.length} appareil(s) sélectionné(s)
+                    {t('devices.bulkSelectedCount', { count: selectedDeviceIds.length })}
                   </span>
                   {selectedDeviceIds.length > selectedFilteredCount && (
                     <span className="text-[11px] text-amber-300/90">
-                      (dont {selectedDeviceIds.length - selectedFilteredCount} hors filtre actif)
+                      {t('devices.bulkOutsideFilter', {
+                        count: selectedDeviceIds.length - selectedFilteredCount,
+                      })}
                     </span>
                   )}
                   <span className="text-[11px] text-slate-400 hidden sm:inline">
-                    Maj + clic pour une plage
+                    {t('devices.bulkShiftHint')}
                   </span>
                 </div>
 
@@ -1117,7 +1126,7 @@ export function DevicesRoomsTab({
                     }}
                     className="rounded-lg border border-slate-700 bg-slate-900/90 hover:bg-slate-800 disabled:opacity-40 px-2.5 py-1 text-[11px] text-slate-200 transition"
                   >
-                    Tous les affichés ({filteredDevices.length})
+                    {t('devices.bulkSelectAllVisible', { count: filteredDevices.length })}
                   </button>
                   <button
                     type="button"
@@ -1125,7 +1134,10 @@ export function DevicesRoomsTab({
                     onClick={handleSelectNotLinkedToBulkVendor}
                     className="rounded-lg border border-slate-700 bg-slate-900/90 hover:bg-slate-800 disabled:opacity-40 px-2.5 py-1 text-[11px] text-slate-200 transition"
                   >
-                    Non liés à {VENDOR_REGISTRY[bulkVendor].label} ({filteredNotLinkedToBulkVendorIds.length})
+                    {t('devices.bulkSelectNotLinked', {
+                      vendor: VENDOR_REGISTRY[bulkVendor].label,
+                      count: filteredNotLinkedToBulkVendorIds.length,
+                    })}
                   </button>
                   {selectedDeviceIds.length > 0 && (
                     <button
@@ -1137,7 +1149,7 @@ export function DevicesRoomsTab({
                       }}
                       className="rounded-lg border border-slate-700 bg-slate-900/90 hover:bg-slate-800 disabled:opacity-40 px-2.5 py-1 text-[11px] text-slate-300 transition"
                     >
-                      Effacer
+                      {t('devices.bulkClear')}
                     </button>
                   )}
                 </div>
@@ -1148,7 +1160,7 @@ export function DevicesRoomsTab({
                   htmlFor="bulk-vendor-select"
                   className="text-[11px] font-medium text-slate-300"
                 >
-                  Système cible :
+                  {t('devices.bulkTargetSystem')}
                 </label>
                 <select
                   id="bulk-vendor-select"
@@ -1174,7 +1186,7 @@ export function DevicesRoomsTab({
                   className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 px-3 py-1.5 text-xs font-medium text-white transition"
                 >
                   <Link2 className="h-3.5 w-3.5" />
-                  {bulkSaving ? 'Application...' : 'Lier au système'}
+                  {bulkSaving ? t('devices.bulkApplying') : t('devices.bulkLinkAction')}
                 </button>
 
                 <button
@@ -1184,7 +1196,7 @@ export function DevicesRoomsTab({
                   className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:border-rose-500/40 hover:bg-rose-500/15 hover:text-rose-200 disabled:opacity-40 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
                 >
                   <Unlink className="h-3.5 w-3.5" />
-                  Délier du système
+                  {t('devices.bulkUnlinkAction')}
                 </button>
 
                 <button
@@ -1195,8 +1207,8 @@ export function DevicesRoomsTab({
                     setSelectedDeviceIds([]);
                     setBulkFeedback(null);
                   }}
-                  title="Fermer la barre de liaison en masse"
-                  aria-label="Fermer la barre de liaison en masse"
+                  title={t('devices.bulkCloseBar')}
+                  aria-label={t('devices.bulkCloseBar')}
                   className="ml-auto rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition"
                 >
                   <X className="h-4 w-4" />
@@ -1221,7 +1233,7 @@ export function DevicesRoomsTab({
                   <button
                     type="button"
                     onClick={() => setBulkFeedback(null)}
-                    aria-label="Fermer le message"
+                    aria-label={t('devices.closeMessage')}
                     className="rounded p-0.5 opacity-70 hover:opacity-100"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -1245,42 +1257,42 @@ export function DevicesRoomsTab({
                       checked={allFilteredSelected}
                       disabled={filteredDevices.length === 0 || bulkSaving}
                       onChange={handleToggleSelectAllFiltered}
-                      aria-label="Tout sélectionner parmi les appareils affichés"
+                      aria-label={t('devices.selectAllAria')}
                       title={
                         allFilteredSelected
-                          ? 'Désélectionner tous les appareils affichés'
-                          : 'Sélectionner tous les appareils affichés'
+                          ? t('devices.deselectAllTitle')
+                          : t('devices.selectAllTitle')
                       }
                       className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500 shrink-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                     />
-                    <span>Appareil / Nom affiché</span>
+                    <span>{t('devices.colDeviceName')}</span>
                   </div>
                 </th>
-                <th className="w-[13%] px-2.5 py-2.5">Système</th>
-                <th className="w-[12%] px-2.5 py-2.5">IP / MAC</th>
-                <th className="w-[13%] px-2.5 py-2.5">Pièce</th>
-                <th className="w-[12%] px-2.5 py-2.5">Calcul kWh</th>
-                <th className="w-[11%] px-2.5 py-2.5">Valeurs</th>
+                <th className="w-[13%] px-2.5 py-2.5">{t('devices.colSystem')}</th>
+                <th className="w-[12%] px-2.5 py-2.5">{t('devices.colIpMac')}</th>
+                <th className="w-[13%] px-2.5 py-2.5">{t('devices.colRoom')}</th>
+                <th className="w-[12%] px-2.5 py-2.5">{t('devices.colKwhMode')}</th>
+                <th className="w-[11%] px-2.5 py-2.5">{t('devices.colValues')}</th>
                 <th
                   className="w-[5%] px-2 py-2.5 text-center"
-                  title="Décocher pour ignorer complètement cet appareil lors des collectes et dans le dashboard"
+                  title={t('devices.colMonitoredTitle')}
                 >
-                  Suivi
+                  {t('devices.colMonitored')}
                 </th>
                 <th
                   className="w-[6%] px-2 py-2.5 text-center"
-                  title="Exclure (Cascade / Climat) : cocher pour exclure l'appareil des totaux électriques (prises en cascade) et des mesures/compteurs de la page Climat (ex. pilotes de radiateurs)"
+                  title={t('devices.colExcludeTitle')}
                 >
-                  Exclure
+                  {t('devices.colExclude')}
                 </th>
-                <th className="w-[7%] px-2.5 py-2.5 text-right">Actions</th>
+                <th className="w-[7%] px-2.5 py-2.5 text-right">{t('devices.colActions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80">
               {filteredDevices.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-8 text-center text-xs text-slate-500">
-                    <div>Aucun appareil ne correspond aux filtres actifs.</div>
+                    <div>{t('devices.noMatchingDevices')}</div>
                     {(roomFilter !== 'all' || systemFilter !== 'all' || searchQuery.trim() !== '') && (
                       <button
                         type="button"
@@ -1291,7 +1303,7 @@ export function DevicesRoomsTab({
                         }}
                         className="mt-2.5 inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1 text-[11px] text-slate-200 transition"
                       >
-                        Réinitialiser les filtres
+                        {t('common.resetFilters')}
                       </button>
                     )}
                   </td>
@@ -1322,8 +1334,8 @@ export function DevicesRoomsTab({
                               lastShiftKeyRef.current = false;
                               toggleSelectDevice(dev.id, shift);
                             }}
-                            aria-label={`Sélectionner ${dev.customName || dev.name}`}
-                            title="Sélectionner pour lier en masse (Maj + clic pour une plage)"
+                            aria-label={t('devices.selectDeviceAria', { name: dev.customName || dev.name })}
+                            title={t('devices.selectDeviceTitle')}
                             className="mt-0.5 h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500 shrink-0 cursor-pointer"
                           />
                           {dev.isOnline ? (
@@ -1338,7 +1350,7 @@ export function DevicesRoomsTab({
                               </span>
                               {isManual && (
                                 <span className="shrink-0 rounded border border-emerald-500/30 bg-emerald-500/15 px-1.5 py-0.2 text-[9.5px] font-medium text-emerald-300">
-                                  Manuel
+                                  {t('devices.manualBadge')}
                                 </span>
                               )}
                             </div>
@@ -1352,8 +1364,8 @@ export function DevicesRoomsTab({
                               key={`name-${dev.id}-${dev.customName ?? ''}`}
                               type="text"
                               defaultValue={dev.customName ?? ''}
-                              placeholder="Nom affiché (personnaliser…)"
-                              aria-label={`Nom affiché pour ${dev.name}`}
+                              placeholder={t('devices.customNamePlaceholder')}
+                              aria-label={t('devices.customNameAria', { name: dev.name })}
                               onBlur={(e) => {
                                 const val = e.target.value.trim();
                                 if (val !== (dev.customName ?? '')) {
@@ -1376,8 +1388,8 @@ export function DevicesRoomsTab({
                                 key={sys}
                                 title={
                                   isPrimary
-                                    ? `${meta.label} — Source principale de mesure`
-                                    : `${meta.label} — Lié sans doublon`
+                                    ? t('devices.primarySourceTitle', { vendor: meta.label })
+                                    : t('devices.linkedNoDupTitle', { vendor: meta.label })
                                 }
                                 className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${meta.badgeClass}`}
                               >
@@ -1389,11 +1401,11 @@ export function DevicesRoomsTab({
                           <button
                             type="button"
                             onClick={() => openManageSystems(dev)}
-                            title="Gérer les systèmes liés (déclarer Google Home / fusionner un doublon)"
+                            title={t('devices.manageSystemsTitle')}
                             className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/80 hover:border-slate-500 hover:bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300 transition"
                           >
                             <Link2 className="h-2.5 w-2.5" />
-                            Lier
+                            {t('devices.linkBtn')}
                           </button>
                         </div>
                       </td>
@@ -1440,7 +1452,7 @@ export function DevicesRoomsTab({
                       <td className="px-2.5 py-2.5 min-w-0">
                         <select
                           value={dev.roomId ?? ''}
-                          aria-label={`Pièce de ${dev.name}`}
+                          aria-label={t('devices.roomAria', { name: dev.name })}
                           onChange={(e) =>
                             void handleDeviceUpdate(dev.id, {
                               roomId: e.target.value ? Number(e.target.value) : null,
@@ -1448,7 +1460,7 @@ export function DevicesRoomsTab({
                           }
                           className="w-full min-w-0 truncate rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 focus:border-indigo-500 focus:outline-none"
                         >
-                          <option value="">Non assignée</option>
+                          <option value="">{t('common.unassigned')}</option>
                           {data.rooms.map((r) => (
                             <option key={r.id} value={r.id}>
                               {r.name}
@@ -1460,7 +1472,7 @@ export function DevicesRoomsTab({
                       <td className="px-2.5 py-2.5 min-w-0">
                         <select
                           value={dev.energyMode}
-                          aria-label={`Calcul kWh de ${dev.name}`}
+                          aria-label={t('devices.energyModeAria', { name: dev.name })}
                           onChange={(e) =>
                             void handleDeviceUpdate(dev.id, {
                               energyMode: e.target.value as EnergyMode,
@@ -1468,9 +1480,9 @@ export function DevicesRoomsTab({
                           }
                           className="w-full min-w-0 truncate rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 focus:border-indigo-500 focus:outline-none"
                         >
-                          <option value="hybrid">Hybride Auto</option>
-                          <option value="add_ele">Compteur (add_ele)</option>
-                          <option value="integration">Intégration (W×0.5h)</option>
+                          <option value="hybrid">{t('devices.energyHybrid')}</option>
+                          <option value="add_ele">{t('devices.energyAddEle')}</option>
+                          <option value="integration">{t('devices.energyIntegration')}</option>
                         </select>
                       </td>
 
@@ -1498,7 +1510,7 @@ export function DevicesRoomsTab({
                                     dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'
                                   }
                                 >
-                                  {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
+                                  {dev.lastContactOpen ? t('common.open') : t('common.closed')}
                                 </span>
                               )}
                               {somfySummary?.cover && (
@@ -1544,7 +1556,7 @@ export function DevicesRoomsTab({
                               )}
                               {hcSummary?.doorOpen && (
                                 <span className="rounded bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 text-[9.5px] text-amber-300">
-                                  Porte ouverte
+                                  {t('common.doorOpen')}
                                 </span>
                               )}
                               {dkSummary && (
@@ -1599,7 +1611,7 @@ export function DevicesRoomsTab({
                         <input
                           type="checkbox"
                           checked={dev.isMonitored}
-                          aria-label={`Suivi de ${dev.name}`}
+                          aria-label={t('devices.colMonitored') + ' ' + dev.name}
                           onChange={(e) =>
                             void handleDeviceUpdate(dev.id, { isMonitored: e.target.checked })
                           }
@@ -1610,12 +1622,12 @@ export function DevicesRoomsTab({
                       <td className="px-2 py-2.5 text-center">
                         <label
                           className="inline-flex flex-col items-center gap-0.5 cursor-pointer"
-                          title="Si coché, cet appareil est exclu des totaux électriques (prises en cascade) et des mesures/compteurs de la page Climat"
+                          title={t('devices.colExcludeTitle')}
                         >
                           <input
                             type="checkbox"
                             checked={dev.excludeFromTotals}
-                            aria-label={`Exclure ${dev.name}`}
+                            aria-label={t('devices.colExclude') + ' ' + dev.name}
                             onChange={(e) =>
                               void handleDeviceUpdate(dev.id, {
                                 excludeFromTotals: e.target.checked,
@@ -1625,7 +1637,7 @@ export function DevicesRoomsTab({
                           />
                           {dev.excludeFromTotals && (
                             <span className="rounded bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 text-[9.5px] leading-tight text-amber-300">
-                              Exclu
+                              {t('devices.colExclude')}
                             </span>
                           )}
                         </label>
@@ -1637,7 +1649,7 @@ export function DevicesRoomsTab({
                             <button
                               type="button"
                               onClick={() => openEditManualDeviceModal(dev)}
-                              title="Modifier cet appareil manuel"
+                              title={t('common.edit')}
                               className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 p-1.5 text-slate-200 transition"
                             >
                               <Pencil className="h-3 w-3" />
@@ -1645,7 +1657,7 @@ export function DevicesRoomsTab({
                             <button
                               type="button"
                               onClick={() => void handleDeleteManualDevice(dev)}
-                              title="Supprimer cet appareil manuel"
+                              title={t('devices.deleteManualTitle')}
                               className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 hover:border-rose-500/40 hover:bg-rose-500/15 hover:text-rose-300 p-1.5 text-slate-300 transition"
                             >
                               <Trash2 className="h-3 w-3" />
@@ -1655,11 +1667,11 @@ export function DevicesRoomsTab({
                           <button
                             type="button"
                             onClick={() => openInspector(dev)}
-                            title="Ouvrir l'Inspecteur Data Points"
+                            title={t('devices.dpInspectorBtn')}
                             className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1 text-[11px] text-slate-200 transition"
                           >
                             <Sliders className="h-3 w-3" />
-                            DP
+                            {t('devices.dpBtnShort')}
                           </button>
                         )}
                       </td>
@@ -1675,7 +1687,7 @@ export function DevicesRoomsTab({
         <div className="lg:hidden divide-y divide-slate-800/80">
           {filteredDevices.length === 0 ? (
             <div className="px-4 py-8 text-center text-xs text-slate-500">
-              <div>Aucun appareil ne correspond aux filtres actifs.</div>
+              <div>{t('devices.noMatchingDevices')}</div>
               {(roomFilter !== 'all' || systemFilter !== 'all' || searchQuery.trim() !== '') && (
                 <button
                   type="button"
@@ -1686,7 +1698,7 @@ export function DevicesRoomsTab({
                   }}
                   className="mt-2.5 inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1 text-[11px] text-slate-200 transition"
                 >
-                  Réinitialiser les filtres
+                  {t('common.resetFilters')}
                 </button>
               )}
             </div>
@@ -1714,7 +1726,7 @@ export function DevicesRoomsTab({
                           lastShiftKeyRef.current = false;
                           toggleSelectDevice(dev.id, shift);
                         }}
-                        aria-label={`Sélectionner ${dev.customName || dev.name}`}
+                        aria-label={t('devices.selectDeviceAria', { name: dev.customName || dev.name })}
                         className="mt-0.5 h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500 shrink-0 cursor-pointer"
                       />
                       {dev.isOnline ? (
@@ -1727,7 +1739,7 @@ export function DevicesRoomsTab({
                           <span className="font-medium text-white truncate">{dev.name}</span>
                           {isManual && (
                             <span className="shrink-0 rounded border border-emerald-500/30 bg-emerald-500/15 px-1.5 py-0.2 text-[9.5px] font-medium text-emerald-300">
-                              Manuel
+                              {t('devices.manualBadge')}
                             </span>
                           )}
                         </div>
@@ -1745,12 +1757,12 @@ export function DevicesRoomsTab({
                           className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2.5 py-1 text-[11px] text-slate-200"
                         >
                           <Pencil className="h-3 w-3" />
-                          Modifier
+                          {t('common.edit')}
                         </button>
                         <button
                           type="button"
                           onClick={() => void handleDeleteManualDevice(dev)}
-                          title="Supprimer cet appareil manuel"
+                          title={t('devices.deleteManualTitle')}
                           className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 hover:border-rose-500/40 hover:bg-rose-500/15 hover:text-rose-300 p-1.5 text-slate-300"
                         >
                           <Trash2 className="h-3 w-3" />
@@ -1763,7 +1775,7 @@ export function DevicesRoomsTab({
                         className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2.5 py-1 text-[11px] text-slate-200 shrink-0"
                       >
                         <Sliders className="h-3 w-3" />
-                        Inspecteur DP
+                        {t('devices.dpInspectorBtn')}
                       </button>
                     )}
                   </div>
@@ -1787,13 +1799,13 @@ export function DevicesRoomsTab({
                       className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300"
                     >
                       <Link2 className="h-2.5 w-2.5" />
-                      Lier
+                      {t('devices.linkBtn')}
                     </button>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                      <label className="block text-[10px] text-slate-400 mb-1">Nom affiché</label>
+                      <label className="block text-[10px] text-slate-400 mb-1">{t('devices.customNameLabel')}</label>
                       <input
                         key={`mob-name-${dev.id}-${dev.customName ?? ''}`}
                         type="text"
@@ -1809,7 +1821,7 @@ export function DevicesRoomsTab({
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] text-slate-400 mb-1">IP / MAC</label>
+                      <label className="block text-[10px] text-slate-400 mb-1">{t('devices.colIpMac')}</label>
                       {(() => {
                         const somfyNet = extractSomfyDisplaySummary(dev);
                         const ipLabel = dev.ipAddress || '—';
@@ -1824,7 +1836,7 @@ export function DevicesRoomsTab({
                       })()}
                     </div>
                     <div>
-                      <label className="block text-[10px] text-slate-400 mb-1">Pièce</label>
+                      <label className="block text-[10px] text-slate-400 mb-1">{t('devices.colRoom')}</label>
                       <select
                         value={dev.roomId ?? ''}
                         onChange={(e) =>
@@ -1834,7 +1846,7 @@ export function DevicesRoomsTab({
                         }
                         className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
                       >
-                        <option value="">Non assignée</option>
+                        <option value="">{t('common.unassigned')}</option>
                         {data.rooms.map((r) => (
                           <option key={r.id} value={r.id}>
                             {r.name}
@@ -1843,7 +1855,7 @@ export function DevicesRoomsTab({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-[10px] text-slate-400 mb-1">Calcul kWh</label>
+                      <label className="block text-[10px] text-slate-400 mb-1">{t('devices.colKwhMode')}</label>
                       <select
                         value={dev.energyMode}
                         onChange={(e) =>
@@ -1853,9 +1865,9 @@ export function DevicesRoomsTab({
                         }
                         className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
                       >
-                        <option value="hybrid">Hybride Auto</option>
-                        <option value="add_ele">Compteur (add_ele)</option>
-                        <option value="integration">Intégration (W×0.5h)</option>
+                        <option value="hybrid">{t('devices.energyHybrid')}</option>
+                        <option value="add_ele">{t('devices.energyAddEle')}</option>
+                        <option value="integration">{t('devices.energyIntegration')}</option>
                       </select>
                     </div>
                   </div>
@@ -1894,7 +1906,7 @@ export function DevicesRoomsTab({
                           )}
                           {dev.lastContactOpen !== null && (
                             <span className={dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'}>
-                              {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
+                              {dev.lastContactOpen ? t('common.open') : t('common.closed')}
                             </span>
                           )}
                           {hcSummary?.operationLabel && (
@@ -1922,7 +1934,7 @@ export function DevicesRoomsTab({
                           )}
                           {hcSummary?.doorOpen && (
                             <span className="rounded bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[10px] text-amber-300">
-                              Porte ouverte
+                              {t('common.doorOpen')}
                             </span>
                           )}
                           {dkSummary && (
@@ -1979,7 +1991,7 @@ export function DevicesRoomsTab({
                           }
                           className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-indigo-600"
                         />
-                        Suivi
+                        {t('devices.colMonitored')}
                       </label>
                       <label className="inline-flex items-center gap-1.5 cursor-pointer">
                         <input
@@ -1992,7 +2004,7 @@ export function DevicesRoomsTab({
                           }
                           className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-amber-500"
                         />
-                        Exclure
+                        {t('devices.colExclude')}
                       </label>
                     </div>
                   </div>
@@ -2010,7 +2022,7 @@ export function DevicesRoomsTab({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-white">
-                  Inspecteur Data Points — {inspectDevice.customName || inspectDevice.name}
+                  {t('devices.dpModalTitle', { name: inspectDevice.customName || inspectDevice.name })}
                 </h3>
                 <p className="text-xs text-slate-400 font-mono">{inspectDevice.id}</p>
               </div>
@@ -2024,15 +2036,15 @@ export function DevicesRoomsTab({
 
             <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 space-y-3 text-xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="font-medium text-slate-200">Réseau local (IP / MAC)</div>
+                <div className="font-medium text-slate-200">{t('devices.dpNetworkTitle')}</div>
                 <span className="text-[11px] text-slate-400">
-                  Conservées lors des synchronisations cloud
+                  {t('devices.dpNetworkSub')}
                 </span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] text-slate-400 mb-1">
-                    Adresse IP locale
+                    {t('devices.dpIpLabel')}
                   </label>
                   <input
                     type="text"
@@ -2043,7 +2055,7 @@ export function DevicesRoomsTab({
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">Adresse MAC</label>
+                  <label className="block text-[11px] text-slate-400 mb-1">{t('devices.dpMacLabel')}</label>
                   <input
                     type="text"
                     value={inspectorMac}
@@ -2055,8 +2067,7 @@ export function DevicesRoomsTab({
               </div>
               {inspectDevice.primaryVendor === 'home_connect' && (
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  L&apos;API cloud publique Siemens Home Connect n&apos;expose pas l&apos;IP locale
-                  (la MAC est extraite automatiquement du <code>haId</code> BSH si présent).
+                  {t('devices.dpHcNote')}
                 </p>
               )}
             </div>
@@ -2064,13 +2075,13 @@ export function DevicesRoomsTab({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               {(
                 [
-                  { key: 'power', label: 'Puissance (W)' },
-                  { key: 'addEle', label: 'Compteur énergie (kWh)' },
-                  { key: 'voltage', label: 'Tension (V)' },
-                  { key: 'temp', label: 'Température (°C)' },
-                  { key: 'humidity', label: 'Humidité (%)' },
-                  { key: 'battery', label: 'Batterie (%)' },
-                  { key: 'contact', label: 'Contact (Ouvert / Fermé)' },
+                  { key: 'power', label: t('devices.dpFieldPower') },
+                  { key: 'addEle', label: t('devices.dpFieldAddEle') },
+                  { key: 'voltage', label: t('devices.dpFieldVoltage') },
+                  { key: 'temp', label: t('devices.dpFieldTemp') },
+                  { key: 'humidity', label: t('devices.dpFieldHumidity') },
+                  { key: 'battery', label: t('devices.dpFieldBattery') },
+                  { key: 'contact', label: t('devices.dpFieldContact') },
                 ] as const
               ).map(({ key, label }) => {
                 const current = dpDraft[key] ?? { code: '', scale: 1 };
@@ -2084,7 +2095,7 @@ export function DevicesRoomsTab({
                     <div className="flex gap-2">
                       <input
                         type="text"
-                        placeholder={isContact ? 'ex: doorcontact_state' : 'Code DP (ex: cur_power)'}
+                        placeholder={isContact ? 'ex: doorcontact_state' : t('devices.dpCodePlaceholder')}
                         value={current.code}
                         onChange={(e) => {
                           const code = e.target.value.trim();
@@ -2107,11 +2118,11 @@ export function DevicesRoomsTab({
                       >
                         {isContact ? (
                           <>
-                            <option value={1}>Normal (true = Ouvert)</option>
-                            <option value={-1}>Inversé (false = Ouvert)</option>
+                            <option value={1}>{t('devices.dpContactNormal')}</option>
+                            <option value={-1}>{t('devices.dpContactInverted')}</option>
                           </>
                         ) : (
-                          SCALE_OPTIONS.map((opt) => (
+                          scaleOptions.map((opt) => (
                             <option key={opt.value} value={opt.value}>
                               {opt.label}
                             </option>
@@ -2126,7 +2137,7 @@ export function DevicesRoomsTab({
 
             <div>
               <div className="text-xs font-medium text-slate-300 mb-1.5">
-                Dernier statut brut reçu (`lastRawStatus`)
+                {t('devices.dpRawStatusTitle')}
               </div>
               <pre className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-[11px] font-mono text-emerald-300 overflow-x-auto max-h-48">
                 {JSON.stringify(inspectDevice.lastRawStatus ?? [], null, 2)}
@@ -2138,14 +2149,14 @@ export function DevicesRoomsTab({
                 onClick={() => setInspectDevice(null)}
                 className="rounded-xl border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800"
               >
-                Fermer
+                {t('common.close')}
               </button>
               <button
                 onClick={saveInspector}
                 disabled={savingDp}
                 className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-medium text-white"
               >
-                {savingDp ? 'Enregistrement...' : 'Enregistrer'}
+                {savingDp ? t('common.saving') : t('common.save')}
               </button>
             </div>
           </div>
@@ -2160,10 +2171,12 @@ export function DevicesRoomsTab({
               <div>
                 <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                   <Link2 className="h-4 w-4 text-sky-400" />
-                  Systèmes &amp; Fusion — {manageSystemsDevice.customName || manageSystemsDevice.name}
+                  {t('devices.systemsModalTitle', {
+                    name: manageSystemsDevice.customName || manageSystemsDevice.name,
+                  })}
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Source principale de mesure :{' '}
+                  {t('devices.systemsModalPrimary')}{' '}
                   <strong className="text-slate-200">
                     {VENDOR_REGISTRY[manageSystemsDevice.primaryVendor].label}
                   </strong>
@@ -2197,7 +2210,7 @@ export function DevicesRoomsTab({
             {/* Cases à cocher présence multi-systèmes */}
             <div className="space-y-2.5">
               <div className="text-xs font-semibold text-slate-200">
-                Présence déclarée dans les écosystèmes (sans créer de doublon)
+                {t('devices.systemsPresenceTitle')}
               </div>
               <div className="space-y-2">
                 {VENDOR_IDS.map((vId) => {
@@ -2231,14 +2244,14 @@ export function DevicesRoomsTab({
                             <span>{meta.label}</span>
                             {isPrimary && (
                               <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] text-indigo-300">
-                                Système principal
+                                {t('devices.primaryBadge')}
                               </span>
                             )}
                           </div>
                           <p className="text-[11px] text-slate-400 mt-0.5">
                             {isPrimary
-                              ? 'Collecte active et source principale des métriques de cet appareil.'
-                              : `Cochez si cet appareil est aussi remonté dans ${meta.label}. Il apparaîtra dans les deux filtres sans doublon.`}
+                              ? t('devices.primaryDesc')
+                              : t('devices.secondaryDesc', { vendor: meta.label })}
                           </p>
                         </div>
                       </div>
@@ -2252,16 +2265,15 @@ export function DevicesRoomsTab({
             <div className="space-y-2.5 pt-2 border-t border-slate-800">
               <div className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                 <GitMerge className="h-3.5 w-3.5 text-amber-400" />
-                Fusionner un doublon existant dans cet appareil
+                {t('devices.mergeSectionTitle')}
               </div>
               <p className="text-[11px] text-slate-400">
-                Sélectionnez une ligne doublon d&apos;un autre système pour transférer son ID
-                externe vers cette fiche et supprimer la ligne en double.
+                {t('devices.mergeSectionDesc')}
               </p>
 
               {mergeableCandidatesForModal.length === 0 ? (
                 <div className="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5 text-[11px] text-slate-500">
-                  Aucun appareil d&apos;un autre fournisseur disponible à fusionner pour le moment.
+                  {t('devices.mergeEmpty')}
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-2">
@@ -2270,7 +2282,7 @@ export function DevicesRoomsTab({
                     onChange={(e) => setMergeSourceId(e.target.value)}
                     className="flex-1 min-w-[200px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
                   >
-                    <option value="">Choisir un appareil à absorber...</option>
+                    <option value="">{t('devices.mergeChoose')}</option>
                     {mergeableCandidatesForModal.map((cand) => {
                       const candRoom = data.rooms.find((r) => r.id === cand.roomId);
                       return (
@@ -2290,7 +2302,7 @@ export function DevicesRoomsTab({
                     className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 px-3.5 py-2 text-xs font-semibold text-slate-950 transition"
                   >
                     <GitMerge className="h-3.5 w-3.5" />
-                    Fusionner
+                    {t('devices.mergeBtn')}
                   </button>
                 </div>
               )}
@@ -2300,7 +2312,7 @@ export function DevicesRoomsTab({
             {(manageSystemsDevice.vendorLinks?.length ?? 0) > 0 && (
               <div className="space-y-2 pt-2 border-t border-slate-800">
                 <div className="text-xs font-semibold text-slate-200">
-                  Identités externes mémorisées (anti-doublon)
+                  {t('devices.savedLinksTitle')}
                 </div>
                 <div className="space-y-1.5 max-h-40 overflow-y-auto">
                   {manageSystemsDevice.vendorLinks?.map((link) => {
@@ -2334,10 +2346,10 @@ export function DevicesRoomsTab({
                               void handleUnlinkVendor(manageSystemsDevice.id, link.vendor)
                             }
                             className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 hover:border-rose-500/40 hover:text-rose-300 px-2 py-1 text-[10px] text-slate-300 shrink-0"
-                            title="Dissocier ce système"
+                            title={t('devices.unlinkTitle')}
                           >
                             <Unlink className="h-3 w-3" />
-                            Délier
+                            {t('devices.unlinkBtn')}
                           </button>
                         )}
                       </div>
@@ -2353,7 +2365,7 @@ export function DevicesRoomsTab({
                 onClick={() => setManageSystemsDeviceId(null)}
                 className="rounded-xl border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800"
               >
-                Fermer
+                {t('common.close')}
               </button>
             </div>
           </div>
@@ -2372,12 +2384,11 @@ export function DevicesRoomsTab({
                 <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                   <Plus className="h-4 w-4 text-emerald-400" />
                   {editingManualDeviceId
-                    ? 'Modifier un appareil manuel'
-                    : 'Déclarer un appareil manuel'}
+                    ? t('devices.manualModalEditTitle')
+                    : t('devices.manualModalCreateTitle')}
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Référencez vos appareils Google Home ou autres équipements hors cloud Tuya sans
-                  collecte cloud automatique.
+                  {t('devices.manualModalSubtitle')}
                 </p>
               </div>
               <button
@@ -2408,48 +2419,48 @@ export function DevicesRoomsTab({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div>
                 <label className="block text-slate-400 mb-1">
-                  Nom de l&apos;appareil <span className="text-rose-400">*</span>
+                  {t('devices.manualNameLabel')} <span className="text-rose-400">*</span>
                 </label>
                 <input
                   type="text"
                   required
                   value={manualName}
                   onChange={(e) => setManualName(e.target.value)}
-                  placeholder="ex: Nest Mini Salon, Chromecast..."
+                  placeholder={t('devices.manualNamePlaceholder')}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Nom affiché (optionnel)</label>
+                <label className="block text-slate-400 mb-1">{t('devices.manualCustomNameLabel')}</label>
                 <input
                   type="text"
                   value={manualCustomName}
                   onChange={(e) => setManualCustomName(e.target.value)}
-                  placeholder="Laisser vide pour le nom d'origine"
+                  placeholder={t('devices.manualCustomNamePlaceholder')}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Marque / Modèle (optionnel)</label>
+                <label className="block text-slate-400 mb-1">{t('devices.manualModelLabel')}</label>
                 <input
                   type="text"
                   value={manualProductName}
                   onChange={(e) => setManualProductName(e.target.value)}
-                  placeholder="ex: Google Nest Mini, Chromecast 4K..."
+                  placeholder={t('devices.manualModelPlaceholder')}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Pièce</label>
+                <label className="block text-slate-400 mb-1">{t('devices.colRoom')}</label>
                 <select
                   value={manualRoomId}
                   onChange={(e) => setManualRoomId(e.target.value)}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
                 >
-                  <option value="">Non assignée</option>
+                  <option value="">{t('common.unassigned')}</option>
                   {data.rooms.map((r) => (
                     <option key={r.id} value={String(r.id)}>
                       {r.name}
@@ -2459,22 +2470,22 @@ export function DevicesRoomsTab({
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Catégorie</label>
+                <label className="block text-slate-400 mb-1">{t('devices.manualCategoryLabel')}</label>
                 <select
                   value={manualCategory}
                   onChange={(e) => setManualCategory(e.target.value as DeviceCategory)}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
                 >
-                  <option value="other">Autre / Multimédia (other)</option>
-                  <option value="power">Énergie / Prise (power)</option>
-                  <option value="climate">Climat / Température (climate)</option>
-                  <option value="contact">Ouverture / Contact (contact)</option>
-                  <option value="hybrid">Hybride (hybrid)</option>
+                  <option value="other">{t('devices.catOther')}</option>
+                  <option value="power">{t('devices.catPower')}</option>
+                  <option value="climate">{t('devices.catClimate')}</option>
+                  <option value="contact">{t('devices.catContact')}</option>
+                  <option value="hybrid">{t('devices.catHybrid')}</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Adresse IP (optionnel)</label>
+                <label className="block text-slate-400 mb-1">{t('devices.manualIpLabel')}</label>
                 <input
                   type="text"
                   value={manualIpAddress}
@@ -2485,7 +2496,7 @@ export function DevicesRoomsTab({
               </div>
 
               <div className="sm:col-span-2">
-                <label className="block text-slate-400 mb-1">Adresse MAC (optionnel)</label>
+                <label className="block text-slate-400 mb-1">{t('devices.manualMacLabel')}</label>
                 <input
                   type="text"
                   value={manualMacAddress}
@@ -2498,7 +2509,7 @@ export function DevicesRoomsTab({
 
             {/* Systèmes associés */}
             <div className="space-y-2 text-xs">
-              <div className="text-slate-300 font-medium">Systèmes associés</div>
+              <div className="text-slate-300 font-medium">{t('devices.manualSystemsTitle')}</div>
               <div className="flex flex-wrap items-center gap-3">
                 {VENDOR_IDS.map((vId) => {
                   const meta = VENDOR_REGISTRY[vId];
@@ -2526,7 +2537,7 @@ export function DevicesRoomsTab({
 
               {manualSystems.length > 1 && (
                 <div className="pt-1">
-                  <label className="block text-slate-400 mb-1">Système principal</label>
+                  <label className="block text-slate-400 mb-1">{t('devices.manualPrimarySystemLabel')}</label>
                   <select
                     value={manualPrimaryVendor}
                     onChange={(e) => setManualPrimaryVendor(e.target.value as VendorId)}
@@ -2551,7 +2562,7 @@ export function DevicesRoomsTab({
                   onChange={(e) => setManualIsOnline(e.target.checked)}
                   className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-emerald-600"
                 />
-                En ligne
+                {t('common.online')}
               </label>
 
               <label className="inline-flex items-center gap-2 cursor-pointer">
@@ -2561,7 +2572,7 @@ export function DevicesRoomsTab({
                   onChange={(e) => setManualIsMonitored(e.target.checked)}
                   className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-indigo-600"
                 />
-                Suivi dans le dashboard
+                {t('devices.manualMonitoredLabel')}
               </label>
 
               <label className="inline-flex items-center gap-2 cursor-pointer">
@@ -2571,7 +2582,7 @@ export function DevicesRoomsTab({
                   onChange={(e) => setManualExcludeFromTotals(e.target.checked)}
                   className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-amber-500"
                 />
-                Exclure (Cascade / Climat)
+                {t('devices.manualExcludeLabel')}
               </label>
             </div>
 
@@ -2582,7 +2593,7 @@ export function DevicesRoomsTab({
                 disabled={savingManualDevice}
                 className="rounded-xl border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-50"
               >
-                Annuler
+                {t('common.cancel')}
               </button>
               <button
                 type="submit"
@@ -2590,10 +2601,10 @@ export function DevicesRoomsTab({
                 className="rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-4 py-2 text-xs font-medium text-white transition"
               >
                 {savingManualDevice
-                  ? 'Enregistrement...'
+                  ? t('common.saving')
                   : editingManualDeviceId
-                    ? 'Enregistrer'
-                    : "Déclarer l'appareil"}
+                    ? t('common.save')
+                    : t('devices.manualSubmitCreate')}
               </button>
             </div>
           </form>

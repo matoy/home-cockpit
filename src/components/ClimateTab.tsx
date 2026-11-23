@@ -27,6 +27,7 @@ import {
   Plug,
 } from 'lucide-react';
 import { isActiveClimateSensor } from '@/lib/device-utils';
+import { useI18n } from '@/components/I18nProvider';
 import type { DashboardPayload } from '@/types';
 
 interface ClimateTabProps {
@@ -34,6 +35,7 @@ interface ClimateTabProps {
 }
 
 export function ClimateTab({ data }: ClimateTabProps) {
+  const { t } = useI18n();
   const climateRooms = useMemo(
     () => data.roomSummaries.filter((rs) => rs.currentTempC !== null || rs.currentHumidityPct !== null),
     [data.roomSummaries]
@@ -129,7 +131,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
-              Température Moyenne
+              {t('climate.kpiAvgTemp')}
             </span>
             <div className="rounded-lg bg-emerald-500/15 p-2 text-emerald-400">
               <Thermometer className="h-4 w-4" />
@@ -141,14 +143,14 @@ export function ClimateTab({ data }: ClimateTabProps) {
             </span>
           </div>
           <p className="mt-2 text-xs text-slate-400">
-            {climateRooms.length} pièce(s) équipée(s)
+            {t('climate.equippedRooms', { count: climateRooms.length })}
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
-              Humidité Moyenne
+              {t('climate.kpiAvgHumidity')}
             </span>
             <div className="rounded-lg bg-sky-500/15 p-2 text-sky-400">
               <Droplets className="h-4 w-4" />
@@ -160,14 +162,14 @@ export function ClimateTab({ data }: ClimateTabProps) {
             </span>
           </div>
           <p className="mt-2 text-xs text-slate-400">
-            Zone saine recommandée : 40 % – 60 %
+            {t('climate.healthyHumidityZone')}
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
-              Confort Thermique
+              {t('climate.kpiThermalComfort')}
             </span>
             <div
               className={`rounded-lg p-2 ${
@@ -186,21 +188,21 @@ export function ClimateTab({ data }: ClimateTabProps) {
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-2xl font-bold tracking-tight text-white">
               {kpis.climateAlertsCount > 0
-                ? `${kpis.climateAlertsCount} alerte(s)`
-                : 'Zone optimale'}
+                ? t('climate.alertsCount', { count: kpis.climateAlertsCount })
+                : t('climate.optimalZone')}
             </span>
           </div>
           <p className="mt-2 text-xs text-slate-400">
             {kpis.climateAlertsCount > 0
-              ? 'Pièce(s) hors seuils cibles'
-              : 'Toutes les pièces dans leurs cibles'}
+              ? t('climate.roomsOutOfTarget')
+              : t('climate.allRoomsInTarget')}
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
-              Connectivité &amp; Piles
+              {t('climate.kpiConnectivity')}
             </span>
             <div
               className={`rounded-lg p-2 ${
@@ -220,14 +222,17 @@ export function ClimateTab({ data }: ClimateTabProps) {
             className="mt-3 flex items-baseline gap-2"
             title={
               climateHealth.sensors
-                .map((s) => `${s.customName || s.name} (${s.isOnline ? 'En ligne' : 'Hors ligne'})`)
-                .join(' • ') || 'Aucune sonde active'
+                .map(
+                  (s) =>
+                    `${s.customName || s.name} (${s.isOnline ? t('common.online') : t('common.offline')})`
+                )
+                .join(' • ') || t('climate.noActiveSensor')
             }
           >
             <span className="text-3xl font-bold tracking-tight text-white">
               {climateHealth.onlineCount} / {climateHealth.totalCount}
             </span>
-            <span className="text-xs text-slate-400">en ligne</span>
+            <span className="text-xs text-slate-400">{t('climate.onlineWord')}</span>
           </div>
           <p
             className={`mt-2 text-xs ${
@@ -235,20 +240,23 @@ export function ClimateTab({ data }: ClimateTabProps) {
             }`}
           >
             {climateHealth.lowBatteryCount > 0
-              ? `${climateHealth.lowBatteryCount} batterie(s) faible(s) (≤ 20%)${
+              ? `${t('climate.lowBatteryCount', { count: climateHealth.lowBatteryCount })}${
                   climateHealth.mainsPoweredCount > 0
-                    ? ` · ${climateHealth.mainsPoweredCount} sur secteur`
+                    ? t('climate.onMainsSuffix', { count: climateHealth.mainsPoweredCount })
                     : ''
                 }`
               : climateHealth.avgBatteryPct !== null
-                ? `Piles : moy. ${climateHealth.avgBatteryPct}% (min ${climateHealth.minBatteryPct}%)${
+                ? `${t('climate.avgMinBattery', {
+                    avg: climateHealth.avgBatteryPct,
+                    min: climateHealth.minBatteryPct ?? 0,
+                  })}${
                     climateHealth.mainsPoweredCount > 0
-                      ? ` · ${climateHealth.mainsPoweredCount} sur secteur`
+                      ? t('climate.onMainsSuffix', { count: climateHealth.mainsPoweredCount })
                       : ''
                   }`
                 : climateHealth.mainsPoweredCount > 0
-                  ? `${climateHealth.mainsPoweredCount} sonde(s) sur secteur`
-                  : 'Aucun niveau de pile remonté'}
+                  ? t('climate.mainsCount', { count: climateHealth.mainsPoweredCount })
+                  : t('climate.noBatteryReported')}
           </p>
         </div>
       </div>
@@ -259,17 +267,17 @@ export function ClimateTab({ data }: ClimateTabProps) {
           <div>
             <h3 className="text-sm font-semibold text-white flex items-center gap-2">
               <Thermometer className="h-4 w-4 text-emerald-400" />
-              Comparatif Température par Pièce (°C)
+              {t('climate.tempChartTitle')}
             </h3>
             <p className="text-xs text-slate-400">
-              Bande verte : plage de confort thermique recommandée (19°C – 22°C)
+              {t('climate.tempChartSub')}
             </p>
           </div>
         </div>
 
         {climateRooms.length === 0 || tempChartData.length === 0 ? (
           <div className="h-64 flex items-center justify-center text-sm text-slate-500">
-            Aucun capteur de température détecté sur la période.
+            {t('climate.noTempSensor')}
           </div>
         ) : (
           <div className="h-72 w-full">
@@ -312,16 +320,16 @@ export function ClimateTab({ data }: ClimateTabProps) {
         <div className="mb-4">
           <h3 className="text-sm font-semibold text-white flex items-center gap-2">
             <Droplets className="h-4 w-4 text-sky-400" />
-            Comparatif Humidité Relative par Pièce (%)
+            {t('climate.humidityChartTitle')}
           </h3>
           <p className="text-xs text-slate-400">
-            Bande bleue : zone hygrométrique saine (40% – 60%)
+            {t('climate.humidityChartSub')}
           </p>
         </div>
 
         {climateRooms.length === 0 || humidityChartData.length === 0 ? (
           <div className="h-64 flex items-center justify-center text-sm text-slate-500">
-            Aucun capteur d&apos;humidité détecté sur la période.
+            {t('climate.noHumiditySensor')}
           </div>
         ) : (
           <div className="h-72 w-full">
@@ -365,10 +373,10 @@ export function ClimateTab({ data }: ClimateTabProps) {
           <div>
             <h3 className="text-sm font-semibold text-white flex items-center gap-2">
               <Zap className="h-4 w-4 text-amber-400" />
-              Corrélation Chauffage / Équipement &amp; Température
+              {t('climate.correlationTitle')}
             </h3>
             <p className="text-xs text-slate-400">
-              Superpose la puissance électrique tirée dans la pièce (W) avec la courbe de température (°C)
+              {t('climate.correlationSub')}
             </p>
           </div>
 
@@ -387,7 +395,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
 
         {correlationData.length === 0 ? (
           <div className="h-64 flex items-center justify-center text-sm text-slate-500">
-            Pas assez de données pour cette pièce.
+            {t('climate.notEnoughRoomData')}
           </div>
         ) : (
           <div className="h-72 w-full">
@@ -422,7 +430,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
                   yAxisId="left"
                   type="monotone"
                   dataKey="powerW"
-                  name={`Puissance ${activeCorrelationRoom?.name ?? ''}`}
+                  name={t('climate.powerLegend', { room: activeCorrelationRoom?.name ?? '' })}
                   stroke="#6366f1"
                   fill="#6366f1"
                   fillOpacity={0.25}
@@ -431,7 +439,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
                   yAxisId="right"
                   type="monotone"
                   dataKey="tempC"
-                  name={`Température ${activeCorrelationRoom?.name ?? ''}`}
+                  name={t('climate.tempLegend', { room: activeCorrelationRoom?.name ?? '' })}
                   stroke="#10b981"
                   strokeWidth={2.5}
                   dot={false}
@@ -446,20 +454,20 @@ export function ClimateTab({ data }: ClimateTabProps) {
       {/* Tableau récapitulatif */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-800">
-          <h3 className="text-sm font-semibold text-white">Statistiques Climatiques par Pièce</h3>
+          <h3 className="text-sm font-semibold text-white">{t('climate.statsTableTitle')}</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider">
               <tr>
-                <th className="px-4 py-3">Pièce</th>
-                <th className="px-4 py-3">Temp. Actuelle</th>
-                <th className="px-4 py-3">Min / Max / Moy</th>
-                <th className="px-4 py-3">Amplitude</th>
-                <th className="px-4 py-3">Humidité (Moy / Min-Max)</th>
-                <th className="px-4 py-3">Point de rosée</th>
-                <th className="px-4 py-3">Piles sondes</th>
-                <th className="px-4 py-3">État</th>
+                <th className="px-4 py-3">{t('climate.colRoom')}</th>
+                <th className="px-4 py-3">{t('climate.colCurrentTemp')}</th>
+                <th className="px-4 py-3">{t('climate.colMinMaxAvg')}</th>
+                <th className="px-4 py-3">{t('climate.colAmplitude')}</th>
+                <th className="px-4 py-3">{t('climate.colHumidity')}</th>
+                <th className="px-4 py-3">{t('climate.colDewPoint')}</th>
+                <th className="px-4 py-3">{t('climate.colBatteries')}</th>
+                <th className="px-4 py-3">{t('climate.colStatus')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80">
@@ -518,7 +526,9 @@ export function ClimateTab({ data }: ClimateTabProps) {
                               <span
                                 key={s.id}
                                 title={
-                                  isMains ? `${sensorName} — Alimentation secteur` : sensorName
+                                  isMains
+                                    ? t('climate.mainsTooltip', { name: sensorName })
+                                    : sensorName
                                 }
                                 className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${badgeColor}`}
                               >
@@ -528,7 +538,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
                                   <WifiOff className="h-2.5 w-2.5" />
                                 )}
                                 {isMains && <Plug className="h-2.5 w-2.5" />}
-                                {pct !== null ? `${pct}%` : isMains ? 'Secteur' : 'N/A'}
+                                {pct !== null ? `${pct}%` : isMains ? t('climate.mainsBadge') : 'N/A'}
                               </span>
                             );
                           })}

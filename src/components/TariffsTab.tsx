@@ -13,24 +13,13 @@ import {
   Calendar,
 } from 'lucide-react';
 import { isTimeInHcSlot } from '@/lib/tariff-engine';
+import { useI18n } from './I18nProvider';
 import type { DashboardPayload, HcSlot, TariffMode, TariffPeriodRecord } from '@/types';
 
 interface TariffsTabProps {
   data: DashboardPayload;
   onRefresh: () => Promise<void>;
 }
-
-const HC_PRESETS: Array<{ label: string; slots: HcSlot[] }> = [
-  { label: 'Nuit classique (22h00 – 06h00)', slots: [{ start: '22:00', end: '06:00' }] },
-  { label: 'Nuit tardive (23h00 – 07h00)', slots: [{ start: '23:00', end: '07:00' }] },
-  {
-    label: 'Méridienne + Nuit (12h30–14h30 & 01h30–07h30)',
-    slots: [
-      { start: '12:30', end: '14:30' },
-      { start: '01:30', end: '07:30' },
-    ],
-  },
-];
 
 interface TariffFormState {
   id: number | null;
@@ -62,6 +51,18 @@ function emptyForm(): TariffFormState {
 }
 
 export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
+  const { t } = useI18n();
+  const hcPresets: Array<{ label: string; slots: HcSlot[] }> = [
+    { label: t('tariffs.presetClassic'), slots: [{ start: '22:00', end: '06:00' }] },
+    { label: t('tariffs.presetLate'), slots: [{ start: '23:00', end: '07:00' }] },
+    {
+      label: t('tariffs.presetMidday'),
+      slots: [
+        { start: '12:30', end: '14:30' },
+        { start: '01:30', end: '07:30' },
+      ],
+    },
+  ];
   const [form, setForm] = useState<TariffFormState>(emptyForm);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -177,12 +178,12 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       });
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error || 'Erreur lors de la sauvegarde');
+        throw new Error(err.error || t('tariffs.saveError'));
       }
       setShowForm(false);
       await onRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur inconnue');
+      setError(err instanceof Error ? err.message : t('tariffs.unknownError'));
     } finally {
       setSaving(false);
     }
@@ -203,11 +204,10 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
         <div>
           <h2 className="text-base font-semibold text-white">
-            Historique &amp; Plages Tarifaires (kWh)
+            {t('tariffs.title')}
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Gérez l&apos;évolution annuelle de vos prix du kWh (Base ou HP/HC). Lorsqu&apos;un nouveau tarif
-            commence sans date de fin, le tarif précédent est clôturé automatiquement la veille.
+            {t('tariffs.subtitle')}
           </p>
         </div>
 
@@ -216,7 +216,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
           className="flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-medium text-white transition"
         >
           <Plus className="h-4 w-4" />
-          Nouveau tarif / changement de prix
+          {t('tariffs.newBtn')}
         </button>
       </div>
 
@@ -228,7 +228,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
         >
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-white">
-              {form.id ? 'Modifier la période tarifaire' : 'Ajouter une nouvelle période tarifaire'}
+              {form.id ? t('tariffs.editTitle') : t('tariffs.addTitle')}
             </h3>
             <button
               type="button"
@@ -242,12 +242,12 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Nom du tarif *
+                {t('tariffs.nameLabel')}
               </label>
               <input
                 type="text"
                 required
-                placeholder="ex: Tarif Bleu EDF Fév. 2026"
+                placeholder={t('tariffs.namePlaceholder')}
                 value={form.label}
                 onChange={(e) => setForm({ ...form, label: e.target.value })}
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
@@ -256,7 +256,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
 
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Date de début *
+                {t('tariffs.startLabel')}
               </label>
               <input
                 type="date"
@@ -269,7 +269,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
 
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Date de fin (vide = en cours)
+                {t('tariffs.endLabel')}
               </label>
               <input
                 type="date"
@@ -283,7 +283,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
           {/* Sélecteur visuel Base vs HP/HC */}
           <div>
             <label className="block text-xs font-medium text-slate-300 mb-2">
-              Option tarifaire
+              {t('tariffs.optionLabel')}
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
@@ -296,11 +296,11 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold">Option Base (Tarif unique 24h/24)</span>
+                  <span className="text-xs font-semibold">{t('tariffs.optionBaseTitle')}</span>
                   {form.mode === 'BASE' && <Check className="h-4 w-4 text-indigo-400" />}
                 </div>
                 <p className="mt-1 text-[11px] opacity-80">
-                  Un seul prix fixe par kWh quelle que soit l&apos;heure.
+                  {t('tariffs.optionBaseDesc')}
                 </p>
               </button>
 
@@ -314,11 +314,11 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold">Heures Pleines / Heures Creuses</span>
+                  <span className="text-xs font-semibold">{t('tariffs.optionHpHcTitle')}</span>
                   {form.mode === 'HP_HC' && <Check className="h-4 w-4 text-emerald-400" />}
                 </div>
                 <p className="mt-1 text-[11px] opacity-80">
-                  Tarif réduit pendant vos plages horaires creuses configurées.
+                  {t('tariffs.optionHpHcDesc')}
                 </p>
               </button>
             </div>
@@ -329,7 +329,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
             {form.mode === 'BASE' ? (
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  Prix Base TTC (€ / kWh) *
+                  {t('tariffs.baseRateLabel')}
                 </label>
                 <input
                   type="number"
@@ -345,7 +345,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
               <>
                 <div>
                   <label className="block text-xs font-medium text-amber-300 mb-1.5">
-                    Prix Heures Pleines (€ / kWh) *
+                    {t('tariffs.hpRateLabel')}
                   </label>
                   <input
                     type="number"
@@ -359,7 +359,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-emerald-300 mb-1.5">
-                    Prix Heures Creuses (€ / kWh) *
+                    {t('tariffs.hcRateLabel')}
                   </label>
                   <input
                     type="number"
@@ -376,7 +376,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
 
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Abonnement mensuel (€ / mois)
+                {t('tariffs.subLabel')}
               </label>
               <input
                 type="number"
@@ -395,10 +395,10 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-medium text-slate-200 flex items-center gap-1.5">
                   <Clock className="h-3.5 w-3.5 text-emerald-400" />
-                  Plages d&apos;Heures Creuses (gère le passage à minuit)
+                  {t('tariffs.hcSlotsTitle')}
                 </span>
                 <div className="flex flex-wrap gap-1.5">
-                  {HC_PRESETS.map((preset) => (
+                  {hcPresets.map((preset) => (
                     <button
                       key={preset.label}
                       type="button"
@@ -414,7 +414,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
               <div className="space-y-2">
                 {form.hcSlots.map((slot, idx) => (
                   <div key={idx} className="flex items-center gap-2">
-                    <span className="text-xs text-slate-400">De</span>
+                    <span className="text-xs text-slate-400">{t('tariffs.from')}</span>
                     <input
                       type="time"
                       value={slot.start}
@@ -425,7 +425,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                       }}
                       className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-white"
                     />
-                    <span className="text-xs text-slate-400">à</span>
+                    <span className="text-xs text-slate-400">{t('tariffs.to')}</span>
                     <input
                       type="time"
                       value={slot.end}
@@ -462,7 +462,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                   }
                   className="text-xs text-indigo-400 hover:text-indigo-300 font-medium"
                 >
-                  + Ajouter une plage horaire
+                  {t('tariffs.addSlot')}
                 </button>
               </div>
             </div>
@@ -480,14 +480,14 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
               onClick={() => setShowForm(false)}
               className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800"
             >
-              Annuler
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={saving}
               className="rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-5 py-2 text-xs font-medium text-white"
             >
-              {saving ? 'Enregistrement...' : 'Enregistrer le tarif'}
+              {saving ? t('common.saving') : t('tariffs.saveBtn')}
             </button>
           </div>
         </form>
@@ -496,11 +496,11 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       {/* Frise chronologique des tarifs */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-3">
-          {sortedTariffs.map((t) => {
-            const isCurrent = activeTariff?.id === t.id;
+          {sortedTariffs.map((tariffItem) => {
+            const isCurrent = activeTariff?.id === tariffItem.id;
             return (
               <div
-                key={t.id}
+                key={tariffItem.id}
                 className={`rounded-2xl border p-5 transition ${
                   isCurrent
                     ? 'border-emerald-500/40 bg-emerald-950/10'
@@ -510,47 +510,49 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-semibold text-white">{t.label}</h3>
+                      <h3 className="text-sm font-semibold text-white">{tariffItem.label}</h3>
                       <span
                         className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
-                          t.mode === 'HP_HC'
+                          tariffItem.mode === 'HP_HC'
                             ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
                             : 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'
                         }`}
                       >
-                        {t.mode === 'HP_HC' ? 'HP / HC' : 'BASE'}
+                        {tariffItem.mode === 'HP_HC' ? 'HP / HC' : 'BASE'}
                       </span>
                       {isCurrent && (
                         <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-300">
-                          Tarif actif
+                          {t('tariffs.activeBadge')}
                         </span>
                       )}
                     </div>
                     <p className="mt-1 text-xs text-slate-400 flex items-center gap-1.5">
                       <Calendar className="h-3.5 w-3.5" />
-                      Du <span className="text-slate-200 font-mono">{t.startDate}</span>{' '}
-                      {t.endDate ? (
+                      {t('tariffs.fromDate')}{' '}
+                      <span className="text-slate-200 font-mono">{tariffItem.startDate}</span>{' '}
+                      {tariffItem.endDate ? (
                         <>
-                          au <span className="text-slate-200 font-mono">{t.endDate}</span>
+                          {t('tariffs.toDate')}{' '}
+                          <span className="text-slate-200 font-mono">{tariffItem.endDate}</span>
                         </>
                       ) : (
-                        <span className="text-emerald-400">(en cours)</span>
+                        <span className="text-emerald-400">{t('tariffs.ongoing')}</span>
                       )}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-1.5">
                     <button
-                      onClick={() => startEdit(t)}
+                      onClick={() => startEdit(tariffItem)}
                       className="rounded-lg border border-slate-700 bg-slate-800/80 p-2 text-slate-300 hover:text-white"
-                      title="Modifier"
+                      title={t('common.edit')}
                     >
                       <Edit3 className="h-3.5 w-3.5" />
                     </button>
                     <button
-                      onClick={() => handleDelete(t.id)}
+                      onClick={() => handleDelete(tariffItem.id)}
                       className="rounded-lg border border-slate-700 bg-slate-800/80 p-2 text-rose-400 hover:bg-rose-500/15"
-                      title="Supprimer"
+                      title={t('common.delete')}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -558,39 +560,39 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-4 text-xs">
-                  {t.mode === 'BASE' ? (
+                  {tariffItem.mode === 'BASE' ? (
                     <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2">
-                      <span className="text-slate-400">Prix unique : </span>
+                      <span className="text-slate-400">{t('tariffs.uniquePrice')} </span>
                       <span className="font-mono font-semibold text-white">
-                        {(t.baseRateEur ?? 0).toFixed(4)} €/kWh
+                        {(tariffItem.baseRateEur ?? 0).toFixed(4)} €/kWh
                       </span>
                     </div>
                   ) : (
                     <>
                       <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2">
-                        <span className="text-amber-300">HP : </span>
+                        <span className="text-amber-300">{t('tariffs.hpShort')} </span>
                         <span className="font-mono font-semibold text-white">
-                          {(t.hpRateEur ?? 0).toFixed(4)} €/kWh
+                          {(tariffItem.hpRateEur ?? 0).toFixed(4)} €/kWh
                         </span>
                       </div>
                       <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2">
-                        <span className="text-emerald-300">HC : </span>
+                        <span className="text-emerald-300">{t('tariffs.hcShort')} </span>
                         <span className="font-mono font-semibold text-white">
-                          {(t.hcRateEur ?? 0).toFixed(4)} €/kWh
+                          {(tariffItem.hcRateEur ?? 0).toFixed(4)} €/kWh
                         </span>
                       </div>
                       <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2 text-slate-300">
-                        Plages HC :{' '}
+                        {t('tariffs.hcSlotsList')}{' '}
                         <span className="font-mono">
-                          {t.hcSlots.map((s) => `${s.start}–${s.end}`).join(', ')}
+                          {tariffItem.hcSlots.map((s) => `${s.start}–${s.end}`).join(', ')}
                         </span>
                       </div>
                     </>
                   )}
                   <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2 text-slate-400">
-                    Abonnement :{' '}
+                    {t('tariffs.subscription')}{' '}
                     <span className="font-mono text-slate-200">
-                      {(t.monthlySubscriptionEur ?? 0).toFixed(2)} €/mois
+                      {(tariffItem.monthlySubscriptionEur ?? 0).toFixed(2)} {t('common.perMonth')}
                     </span>
                   </div>
                 </div>
@@ -603,18 +605,19 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 h-fit space-y-4">
           <div className="flex items-center gap-2">
             <Scale className="h-4 w-4 text-indigo-400" />
-            <h3 className="text-sm font-semibold text-white">Simulateur Base vs HP/HC</h3>
+            <h3 className="text-sm font-semibold text-white">{t('tariffs.simTitle')}</h3>
           </div>
           <p className="text-xs text-slate-400">
-            Comparaison sur vos{' '}
-            <span className="text-white font-semibold">{comparator.totalKwh.toFixed(2)} kWh</span>{' '}
-            mesurés sur la période ({comparator.exactFromBuckets ? 'horodatage réel' : 'estimation 35% HC'}).
+            {t('tariffs.simDesc', {
+              kwh: comparator.totalKwh.toFixed(2),
+              mode: comparator.exactFromBuckets ? t('tariffs.simExact') : t('tariffs.simEst35'),
+            })}
           </p>
 
           <div className="space-y-2.5 text-xs">
             <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 flex justify-between items-center">
               <div>
-                <div className="font-medium text-indigo-300">Option Base</div>
+                <div className="font-medium text-indigo-300">{t('tariffs.simBaseLabel')}</div>
                 <div className="text-[11px] text-slate-500">
                   {comparator.baseRate.toFixed(4)} €/kWh
                 </div>
@@ -626,10 +629,14 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
 
             <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 flex justify-between items-center">
               <div>
-                <div className="font-medium text-emerald-300">Option HP / HC</div>
+                <div className="font-medium text-emerald-300">{t('tariffs.simHpHcLabel')}</div>
                 <div className="text-[11px] text-slate-500">
-                  {comparator.hcPct.toFixed(0)}% HC ({comparator.hcRate.toFixed(4)}€) ·{' '}
-                  {(100 - comparator.hcPct).toFixed(0)}% HP ({comparator.hpRate.toFixed(4)}€)
+                  {t('tariffs.simSubSplit', {
+                    hcPct: comparator.hcPct.toFixed(0),
+                    hcRate: comparator.hcRate.toFixed(4),
+                    hpPct: (100 - comparator.hcPct).toFixed(0),
+                    hpRate: comparator.hpRate.toFixed(4),
+                  })}
                 </div>
               </div>
               <div className="text-base font-bold font-mono text-white">
@@ -642,13 +649,11 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
             <Euro className="h-4 w-4 text-indigo-400 shrink-0" />
             {comparator.diff > 0.01 ? (
               <span className="text-emerald-300">
-                Le mode HP/HC économiserait{' '}
-                <strong>{comparator.diff.toFixed(2)} €</strong> sur cette période.
+                {t('tariffs.simSavingsHpHc', { diff: comparator.diff.toFixed(2) })}
               </span>
             ) : (
               <span className="text-indigo-200">
-                L&apos;option <strong>Base</strong> est plus avantageuse de{' '}
-                <strong>{Math.abs(comparator.diff).toFixed(2)} €</strong> sur cette période.
+                {t('tariffs.simSavingsBase', { diff: Math.abs(comparator.diff).toFixed(2) })}
               </span>
             )}
           </div>

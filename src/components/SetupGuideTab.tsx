@@ -19,6 +19,7 @@ import {
   Info,
 } from 'lucide-react';
 import { BackupRestoreCard } from '@/components/BackupRestoreCard';
+import { useI18n } from '@/components/I18nProvider';
 import type { DashboardPayload, GoogleHomeMode, TabId } from '@/types';
 
 interface SetupGuideTabProps {
@@ -28,6 +29,7 @@ interface SetupGuideTabProps {
 }
 
 export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabProps) {
+  const { t } = useI18n();
   const { env } = data;
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [googleGuideMode, setGoogleGuideMode] = useState<GoogleHomeMode>(
@@ -180,10 +182,10 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
       {/* Checklist dynamique */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
         <h2 className="text-base font-semibold text-white mb-1">
-          État de la configuration actuelle
+          {t('guide.checklistTitle')}
         </h2>
         <p className="text-xs text-slate-400 mb-4">
-          Détection automatique des variables d&apos;environnement sur votre instance Vercel ou locale.
+          {t('guide.checklistSub')}
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -220,10 +222,10 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
           </div>
           <div>
             <h3 className="text-sm font-semibold text-white">
-              Étape 1 — Créer le projet dédié sur Tuya IoT Platform (iot.tuya.com)
+              {t('guide.step1Title')}
             </h3>
             <p className="text-xs text-slate-400">
-              Plan gratuit « IoT Core » suffisant largement pour un relevé batch toutes les 30 min.
+              {t('guide.step1Sub')}
             </p>
           </div>
         </div>
@@ -271,10 +273,10 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
           </div>
           <div>
             <h3 className="text-sm font-semibold text-white">
-              Étape 2 — Créer la base Neon Postgres &amp; pousser le schéma
+              {t('guide.step2Title')}
             </h3>
             <p className="text-xs text-slate-400">
-              Tier gratuit 500 Mo sur neon.tech ou via l&apos;onglet Storage de Vercel.
+              {t('guide.step2Sub')}
             </p>
           </div>
         </div>
@@ -319,10 +321,10 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
           </div>
           <div>
             <h3 className="text-sm font-semibold text-white">
-              Étape 3 — Planifier la collecte toutes les 30 minutes avec cron-job.org
+              {t('guide.step3Title')}
             </h3>
             <p className="text-xs text-slate-400">
-              Contourne la limite à 1 cron/jour du plan Hobby de Vercel de façon 100% gratuite.
+              {t('guide.step3Sub')}
             </p>
           </div>
         </div>
@@ -387,12 +389,10 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
             </div>
             <div>
               <h3 className="text-sm font-semibold text-white">
-                TP-Link Kasa Cloud — Appareils, pièces/groupes &amp; kWh (100 % cloud, lecture
-                seule)
+                {t('guide.kasaTitle')}
               </h3>
               <p className="text-xs text-slate-400">
-                Connexion directe au cloud TP-Link (<code>*.tplinkcloud.com</code>) compatible Vercel
-                serverless · zéro découverte locale LAN et zéro commande d&apos;allumage/extinction.
+                {t('guide.kasaSub')}
               </p>
             </div>
           </div>
@@ -404,8 +404,8 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
               }`}
           >
             {env.kasaConfigured
-              ? `Configuré (${env.kasaRegion.toUpperCase()})`
-              : 'Optionnel — non configuré'}
+              ? `${t('common.configured')} (${env.kasaRegion.toUpperCase()})`
+              : t('guide.optionalNotConfigured')}
           </span>
         </div>
 
@@ -415,12 +415,12 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
           className="group rounded-xl border border-slate-800/90 bg-slate-950/40 p-4"
         >
           <summary className="cursor-pointer select-none text-xs font-medium text-teal-300 hover:text-teal-200 flex items-center justify-between gap-2">
-            <span>Déroulé pas-à-pas &amp; variables .env.local TP-Link Kasa Cloud</span>
+            <span>{t('guide.kasaSummary')}</span>
             <span className="text-[11px] text-slate-400 group-open:hidden">
-              Cliquer pour déplier
+              {t('guide.clickToExpand')}
             </span>
             <span className="text-[11px] text-slate-400 hidden group-open:inline">
-              Cliquer pour replier
+              {t('guide.clickToCollapse')}
             </span>
           </summary>
 
@@ -489,7 +489,7 @@ KASA_REGION="eu" # eu, us, ap ou global`}
                   onClick={() => onNavigateTab('systems')}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 px-3 py-1.5 text-xs font-medium text-white transition"
                 >
-                  Synchroniser Kasa dans Systèmes
+                  {t('guide.syncKasaSystems')}
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
                 <button
@@ -497,7 +497,7 @@ KASA_REGION="eu" # eu, us, ap ou global`}
                   onClick={() => onNavigateTab('rooms')}
                   className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
                 >
-                  Synchroniser pièces Kasa
+                  {t('guide.syncKasaRooms')}
                   <ArrowRight className="h-3.5 w-3.5 text-teal-400" />
                 </button>
               </div>
@@ -518,11 +518,10 @@ KASA_REGION="eu" # eu, us, ap ou global`}
             </div>
             <div>
               <h3 className="text-sm font-semibold text-white">
-                Siemens Home Connect — Déroulé portail développeur &amp; OAuth 2.0 (100 % lecture seule)
+                {t('guide.hcTitle')}
               </h3>
               <p className="text-xs text-slate-400">
-                Suivi des programmes actifs, temps restant, porte ouverte et températures four /
-                réfrigérateur / congélateur sans impacter Climat ni Ouvertures.
+                {t('guide.hcSub')}
               </p>
             </div>
           </div>
@@ -539,12 +538,12 @@ KASA_REGION="eu" # eu, us, ap ou global`}
                     : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
                     }`}
                 >
-                  Session OAuth : {env.homeConnectConnected ? 'Connectée' : 'À autoriser'}
+                  Session OAuth : {env.homeConnectConnected ? t('common.connected') : t('common.readyOAuth')}
                 </span>
               </>
             ) : (
               <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-0.5 text-[10px] font-semibold text-slate-400">
-                Optionnel — non configuré
+                {t('guide.optionalNotConfigured')}
               </span>
             )}
           </div>
@@ -556,12 +555,12 @@ KASA_REGION="eu" # eu, us, ap ou global`}
           className="group rounded-xl border border-slate-800/90 bg-slate-950/40 p-4"
         >
           <summary className="cursor-pointer select-none text-xs font-medium text-cyan-300 hover:text-cyan-200 flex items-center justify-between gap-2">
-            <span>Déroulé complet portail développeur Siemens / BSH &amp; OAuth 2.0</span>
+            <span>{t('guide.hcSummary')}</span>
             <span className="text-[11px] text-slate-400 group-open:hidden">
-              Cliquer pour déplier
+              {t('guide.clickToExpand')}
             </span>
             <span className="text-[11px] text-slate-400 hidden group-open:inline">
-              Cliquer pour replier
+              {t('guide.clickToCollapse')}
             </span>
           </summary>
 
@@ -795,7 +794,7 @@ SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
                 onClick={() => onNavigateTab('systems')}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 px-3 py-1.5 text-xs font-medium text-white transition"
               >
-                Connecter / synchroniser dans Systèmes
+                {t('guide.syncHcSystems')}
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -815,13 +814,10 @@ SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
             </div>
             <div>
               <h3 className="text-sm font-semibold text-white">
-                Somfy Kit de connectivité — Volets, stores &amp; pièces (100 % Cloud Overkiz,
-                lecture seule)
+                {t('guide.somfyTitle')}
               </h3>
               <p className="text-xs text-slate-400">
-                Connexion Overkiz Cloud (<code>ha101-1.overkiz.com</code>) compatible Vercel ·
-                volets/stores regroupés avec les moteurs tubulaires Tuya dans{' '}
-                <strong>Volets &amp; Stores</strong>.
+                {t('guide.somfySub')}
               </p>
             </div>
           </div>
@@ -833,8 +829,8 @@ SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
               }`}
           >
             {env.somfyConfigured
-              ? `Configuré (${env.somfyRegion.toUpperCase()})`
-              : 'Optionnel — non configuré'}
+              ? `${t('common.configured')} (${env.somfyRegion.toUpperCase()})`
+              : t('guide.optionalNotConfigured')}
           </span>
         </div>
 
@@ -844,12 +840,12 @@ SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
           className="group rounded-xl border border-slate-800/90 bg-slate-950/40 p-4"
         >
           <summary className="cursor-pointer select-none text-xs font-medium text-amber-300 hover:text-amber-200 flex items-center justify-between gap-2">
-            <span>Déroulé pas-à-pas Kit de connectivité Somfy, io vs RTS &amp; .env.local</span>
+            <span>{t('guide.somfySummary')}</span>
             <span className="text-[11px] text-slate-400 group-open:hidden">
-              Cliquer pour déplier
+              {t('guide.clickToExpand')}
             </span>
             <span className="text-[11px] text-slate-400 hidden group-open:inline">
-              Cliquer pour replier
+              {t('guide.clickToCollapse')}
             </span>
           </summary>
 
@@ -972,7 +968,7 @@ SOMFY_REGION="eu" # eu (Europe / France), na (Amérique du Nord) ou oc (Océanie
                   onClick={() => onNavigateTab('systems')}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 px-3 py-1.5 text-xs font-medium text-white transition"
                 >
-                  Synchroniser Somfy dans Systèmes
+                  {t('guide.syncSomfySystems')}
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
                 <button
@@ -980,7 +976,7 @@ SOMFY_REGION="eu" # eu (Europe / France), na (Amérique du Nord) ou oc (Océanie
                   onClick={() => onNavigateTab('covers')}
                   className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
                 >
-                  Ouvrir Volets &amp; Stores
+                  {t('guide.openCovers')}
                   <ArrowRight className="h-3.5 w-3.5 text-amber-400" />
                 </button>
               </div>
@@ -1001,11 +997,10 @@ SOMFY_REGION="eu" # eu (Europe / France), na (Amérique du Nord) ou oc (Océanie
             </div>
             <div>
               <h3 className="text-sm font-semibold text-white">
-                Daikin Onecta Cloud — Climatisation, PAC, consigne &amp; kWh (OAuth 2.0, lecture seule)
+                {t('guide.daikinTitle')}
               </h3>
               <p className="text-xs text-slate-400">
-                API officielle Daikin Europe (<code>api.onecta.daikineurope.com</code>) · 1 seule requête par
-                cycle pour toutes vos unités, compatible <strong>Clim &amp; PAC</strong>, <strong>Climat</strong> et <strong>Énergie</strong>.
+                {t('guide.daikinSub')}
               </p>
             </div>
           </div>
@@ -1020,10 +1015,10 @@ SOMFY_REGION="eu" # eu (Europe / France), na (Amérique du Nord) ou oc (Océanie
             }`}
           >
             {env.daikinConnected
-              ? 'OAuth connecté'
+              ? t('common.connected')
               : env.daikinConfigured
-                ? 'Configuré (OAuth à finaliser)'
-                : 'Optionnel — non configuré'}
+                ? t('common.readyOAuth')
+                : t('guide.optionalNotConfigured')}
           </span>
         </div>
 
@@ -1033,12 +1028,12 @@ SOMFY_REGION="eu" # eu (Europe / France), na (Amérique du Nord) ou oc (Océanie
           className="group rounded-xl border border-slate-800/90 bg-slate-950/40 p-4"
         >
           <summary className="cursor-pointer select-none text-xs font-medium text-blue-300 hover:text-blue-200 flex items-center justify-between gap-2">
-            <span>Déroulé pas-à-pas Portail Développeur Daikin Onecta, Redirect URI HTTPS &amp; tests locaux</span>
+            <span>{t('guide.daikinSummary')}</span>
             <span className="text-[11px] text-slate-400 group-open:hidden">
-              Cliquer pour déplier
+              {t('guide.clickToExpand')}
             </span>
             <span className="text-[11px] text-slate-400 hidden group-open:inline">
-              Cliquer pour replier
+              {t('guide.clickToCollapse')}
             </span>
           </summary>
 
@@ -1146,7 +1141,7 @@ DAIKIN_CLIENT_SECRET="votre_client_secret_daikin"
                   onClick={() => onNavigateTab('systems')}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3 py-1.5 text-xs font-medium text-white transition"
                 >
-                  Connecter Daikin dans Systèmes
+                  {t('guide.connectDaikinSystems')}
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
                 <button
@@ -1154,7 +1149,7 @@ DAIKIN_CLIENT_SECRET="votre_client_secret_daikin"
                   onClick={() => onNavigateTab('hvac')}
                   className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
                 >
-                  Ouvrir Clim &amp; PAC
+                  {t('guide.openHvac')}
                   <ArrowRight className="h-3.5 w-3.5 text-blue-400" />
                 </button>
               </div>
@@ -1175,10 +1170,10 @@ DAIKIN_CLIENT_SECRET="votre_client_secret_daikin"
             </div>
             <div>
               <h3 className="text-base font-semibold text-white">
-                X-Sense Home Security — Fumée, CO, Fuite d&apos;eau &amp; Stations (100 % lecture seule)
+                {t('guide.xsenseTitle')}
               </h3>
               <p className="text-xs text-slate-400">
-                Authentification AWS Cognito (<code>api.x-sense-iot.com</code>) · Aucune commande envoyée
+                {t('guide.xsenseSub')}
               </p>
             </div>
           </div>
@@ -1190,7 +1185,7 @@ DAIKIN_CLIENT_SECRET="votre_client_secret_daikin"
                 : 'bg-slate-800 text-slate-400'
             }`}
           >
-            {env.xsenseConfigured ? 'Configuré (.env)' : 'Optionnel'}
+            {env.xsenseConfigured ? t('common.configured') : t('guide.optionalNotConfigured')}
           </span>
         </div>
 
@@ -1200,9 +1195,9 @@ DAIKIN_CLIENT_SECRET="votre_client_secret_daikin"
           className="group rounded-xl border border-slate-800 bg-slate-950/60"
         >
           <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between text-xs font-medium text-slate-300 hover:text-white select-none">
-            <span>Déroulé pas-à-pas X-Sense Security &amp; création d&apos;un compte invité (recommandé)</span>
-            <span className="text-[11px] text-slate-500 group-open:hidden">Afficher ▾</span>
-            <span className="text-[11px] text-slate-500 hidden group-open:inline">Masquer ▴</span>
+            <span>{t('guide.xsenseSummary')}</span>
+            <span className="text-[11px] text-slate-500 group-open:hidden">{t('guide.clickToExpand')}</span>
+            <span className="text-[11px] text-slate-500 hidden group-open:inline">{t('guide.clickToCollapse')}</span>
           </summary>
 
           <div className="px-4 pb-4 pt-1 border-t border-slate-800/80 space-y-4">
@@ -1261,7 +1256,7 @@ XSENSE_PASSWORD="votre_mot_de_passe"`}
                   onClick={() => onNavigateTab('systems')}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 px-3 py-1.5 text-xs font-medium text-white transition"
                 >
-                  Synchroniser X-Sense dans Systèmes
+                  {t('guide.syncXSenseSystems')}
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
                 <button
@@ -1269,7 +1264,7 @@ XSENSE_PASSWORD="votre_mot_de_passe"`}
                   onClick={() => onNavigateTab('security')}
                   className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
                 >
-                  Ouvrir Sécurité &amp; Détecteurs
+                  {t('guide.openSecurity')}
                   <ArrowRight className="h-3.5 w-3.5 text-rose-400" />
                 </button>
               </div>
@@ -1290,11 +1285,10 @@ XSENSE_PASSWORD="votre_mot_de_passe"`}
             </div>
             <div>
               <h3 className="text-base font-semibold text-white">
-                Xiaomi Home / Mi Cloud — Capteurs, Prises, Purificateurs &amp; Pièces (lecture seule)
+                {t('guide.xiaomiTitle')}
               </h3>
               <p className="text-xs text-slate-400">
-                Connexion par QR Code Xiaomi Home (sans mot de passe) ou compte .env + 2FA · Serveur{' '}
-                <code>{env.xiaomiRegion.toUpperCase()}</code>
+                {t('guide.xiaomiSub')} (<code>{env.xiaomiRegion.toUpperCase()}</code>)
               </p>
             </div>
           </div>
@@ -1309,10 +1303,10 @@ XSENSE_PASSWORD="votre_mot_de_passe"`}
             }`}
           >
             {env.xiaomiConnected
-              ? `Connecté (${env.xiaomiRegion.toUpperCase()})`
+              ? `${t('common.connected')} (${env.xiaomiRegion.toUpperCase()})`
               : env.xiaomiConfigured
-                ? 'Configuré (.env)'
-                : 'QR Code dispo'}
+                ? t('common.configured')
+                : 'QR'}
           </span>
         </div>
 
@@ -1322,9 +1316,9 @@ XSENSE_PASSWORD="votre_mot_de_passe"`}
           className="group rounded-xl border border-slate-800 bg-slate-950/60"
         >
           <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between text-xs font-medium text-slate-300 hover:text-white select-none">
-            <span>Déroulé pas-à-pas Xiaomi Home (QR Code recommandé ou .env.local + 2FA)</span>
-            <span className="text-[11px] text-slate-500 group-open:hidden">Afficher ▾</span>
-            <span className="text-[11px] text-slate-500 hidden group-open:inline">Masquer ▴</span>
+            <span>{t('guide.xiaomiSummary')}</span>
+            <span className="text-[11px] text-slate-500 group-open:hidden">{t('guide.clickToExpand')}</span>
+            <span className="text-[11px] text-slate-500 hidden group-open:inline">{t('guide.clickToCollapse')}</span>
           </summary>
 
           <div className="px-4 pb-4 pt-1 border-t border-slate-800/80 space-y-4">
@@ -1384,7 +1378,7 @@ XIAOMI_REGION="de" # de (Europe), cn, us, sg, ru ou i2`}
                   onClick={() => onNavigateTab('systems')}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 px-3 py-1.5 text-xs font-medium text-white transition"
                 >
-                  Connecter Xiaomi Home dans Systèmes
+                  {t('guide.connectXiaomiSystems')}
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
                 <button
@@ -1392,7 +1386,7 @@ XIAOMI_REGION="de" # de (Europe), cn, us, sg, ru ou i2`}
                   onClick={() => onNavigateTab('security')}
                   className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
                 >
-                  Ouvrir Sécurité &amp; Détecteurs
+                  {t('guide.openSecurity')}
                   <ArrowRight className="h-3.5 w-3.5 text-orange-400" />
                 </button>
               </div>
@@ -1415,11 +1409,10 @@ XIAOMI_REGION="de" # de (Europe), cn, us, sg, ru ou i2`}
               </div>
               <div>
                 <h3 className="text-sm font-semibold text-white">
-                  Étape 4 (Optionnel) — Déroulé opératoire Google Home (MCP ou Nest SDM)
+                  {t('guide.googleTitle')}
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Synchronisez vos appareils Google Home / Nest en 100 % lecture seule et fusionnez
-                  les doublons Tuya sans duplication.
+                  {t('guide.googleSub')}
                 </p>
               </div>
             </div>
@@ -1857,7 +1850,7 @@ TOKEN_ENCRYPTION_KEY="" # optionnel : clé AES-256 64 car. hex`}
                     onClick={() => onNavigateTab('systems')}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 px-2.5 py-1 text-[11px] font-medium text-sky-200 transition"
                   >
-                    Ouvrir « Systèmes »
+                    {t('guide.openSystems')}
                     <ArrowRight className="h-3 w-3" />
                   </button>
                 )}

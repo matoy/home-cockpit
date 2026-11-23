@@ -13,6 +13,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { hasValidHumidityMeasurement, hasValidTempMeasurement } from '@/lib/device-utils';
+import { useI18n } from '@/components/I18nProvider';
 import { extractDaikinSummary } from '@/lib/vendors/daikin-display';
 import { extractHomeConnectSummary } from '@/lib/vendors/home-connect-display';
 import { extractSomfyDisplaySummary } from '@/lib/vendors/somfy-display';
@@ -35,19 +36,21 @@ const COMFORT_BADGE_CLASSES: Record<ComfortStatus['tone'], string> = {
   slate: 'bg-slate-700/40 text-slate-400 border-slate-600/40',
 };
 
-const RANGE_LABELS: Record<string, string> = {
-  '24h': '24 heures',
-  '7d': '7 jours',
-  '30d': '30 jours',
-  '365d': '12 mois',
-};
-
 export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabProps) {
+  const { t, intlLocale } = useI18n();
   const { kpis, roomSummaries, range, customFrom, customTo } = data;
   const rangeLabel =
     range === 'custom' && customFrom && customTo
-      ? `${new Date(customFrom).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} → ${new Date(customTo).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}`
-      : RANGE_LABELS[range] ?? range;
+      ? `${new Date(customFrom).toLocaleDateString(intlLocale, { day: '2-digit', month: '2-digit' })} → ${new Date(customTo).toLocaleDateString(intlLocale, { day: '2-digit', month: '2-digit' })}`
+      : range === '24h'
+        ? t('overview.range24h')
+        : range === '7d'
+          ? t('overview.range7d')
+          : range === '30d'
+            ? t('overview.range30d')
+            : range === '365d'
+              ? t('overview.range365d')
+              : range;
 
   return (
     <div className="space-y-6">
@@ -56,7 +59,7 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
-              Puissance Instantanée
+              {t('overview.kpiPower')}
             </span>
             <div className="rounded-lg bg-indigo-500/15 p-2 text-indigo-400">
               <Zap className="h-4 w-4" />
@@ -69,14 +72,17 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
             <span className="text-sm font-medium text-slate-400">W</span>
           </div>
           <p className="mt-2 text-xs text-slate-400">
-            {kpis.activePowerDevices} / {kpis.totalPowerDevices} prises actives (&gt; 2 W)
+            {t('overview.activePlugs', {
+              active: kpis.activePowerDevices,
+              total: kpis.totalPowerDevices,
+            })}
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
-              Énergie &amp; Coût ({rangeLabel})
+              {t('overview.kpiEnergyCost', { range: rangeLabel })}
             </span>
             <div className="rounded-lg bg-emerald-500/15 p-2 text-emerald-400">
               <Euro className="h-4 w-4" />
@@ -91,15 +97,17 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
             </span>
           </div>
           <p className="mt-2 text-xs text-slate-400">
-            Prix moyen : {kpis.effectiveRateEurPerKwh.toFixed(4)} €/kWh (hors abo.{' '}
-            {kpis.subscriptionCostEur.toFixed(2)} €)
+            {t('overview.avgPrice', {
+              rate: kpis.effectiveRateEurPerKwh.toFixed(4),
+              sub: kpis.subscriptionCostEur.toFixed(2),
+            })}
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
-              Talon de Consommation (Veille)
+              {t('overview.kpiStandby')}
             </span>
             <div className="rounded-lg bg-amber-500/15 p-2 text-amber-400">
               <Moon className="h-4 w-4" />
@@ -112,9 +120,9 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
             <span className="text-sm font-medium text-slate-400">W</span>
           </div>
           <p className="mt-2 text-xs text-slate-400">
-            Plancher nocturne (02h–05h) ≈{' '}
+            {t('overview.standbyHint')}{' '}
             <span className="text-amber-300 font-medium">
-              {kpis.standbyAnnualCostEur.toFixed(0)} €/an
+              {t('overview.standbyPerYear', { cost: kpis.standbyAnnualCostEur.toFixed(0) })}
             </span>
           </p>
         </div>
@@ -122,7 +130,7 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
-              Climat Intérieur Moyen
+              {t('overview.kpiClimate')}
             </span>
             <div className="rounded-lg bg-sky-500/15 p-2 text-sky-400">
               <Thermometer className="h-4 w-4" />
@@ -141,13 +149,13 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
               <>
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
                 <span className="text-amber-300">
-                  {kpis.climateAlertsCount} pièce(s) hors zone de confort
+                  {t('overview.roomsOutOfComfort', { count: kpis.climateAlertsCount })}
                 </span>
               </>
             ) : (
               <>
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                <span className="text-emerald-300">Toutes les pièces en zone optimale</span>
+                <span className="text-emerald-300">{t('overview.allRoomsOptimal')}</span>
               </>
             )}
           </p>
@@ -158,9 +166,9 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-base font-semibold text-white">Synthèse par Pièce</h2>
+            <h2 className="text-base font-semibold text-white">{t('overview.roomsTitle')}</h2>
             <p className="text-xs text-slate-400">
-              Cliquez sur une pièce pour filtrer les graphiques ou ajustez vos seuils dans l&apos;onglet Pièces.
+              {t('overview.roomsSubtitle')}
             </p>
           </div>
           {data.selectedRoomId !== 'all' && (
@@ -168,19 +176,19 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
               onClick={() => onSelectRoom('all')}
               className="rounded-lg border border-indigo-500/40 bg-indigo-500/15 px-3 py-1.5 text-xs font-medium text-indigo-300 hover:bg-indigo-500/25 transition"
             >
-              Afficher toutes les pièces
+              {t('overview.showAllRooms')}
             </button>
           )}
         </div>
 
         {roomSummaries.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-10 text-center">
-            <p className="text-sm text-slate-300">Aucune pièce configurée pour l&apos;instant.</p>
+            <p className="text-sm text-slate-300">{t('overview.noRooms')}</p>
             <button
               onClick={() => onNavigateTab('rooms')}
               className="mt-3 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-500"
             >
-              Créer ou synchroniser les pièces
+              {t('overview.createOrSyncRooms')}
             </button>
           </div>
         ) : (
@@ -205,7 +213,7 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                       <div>
                         <h3 className="text-sm font-semibold text-white">{rs.room.name}</h3>
                         <p className="text-[11px] text-slate-400">
-                          {rs.devices.length} appareil(s)
+                          {t('common.devicesCount', { count: rs.devices.length })}
                         </p>
                       </div>
                     </div>
@@ -223,7 +231,7 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                     <div>
                       <div className="flex items-center gap-1 text-[11px] text-slate-400">
                         <Zap className="h-3 w-3 text-indigo-400" />
-                        Puissance
+                        {t('overview.metricPower')}
                       </div>
                       <div className="mt-1 text-sm font-semibold text-white">
                         {rs.currentPowerW.toFixed(0)} W
@@ -236,20 +244,25 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                     <div>
                       <div className="flex items-center gap-1 text-[11px] text-slate-400">
                         <Thermometer className="h-3 w-3 text-emerald-400" />
-                        Temp.
+                        {t('overview.metricTemp')}
                       </div>
                       <div className="mt-1 text-sm font-semibold text-white">
                         {rs.currentTempC !== null ? `${rs.currentTempC.toFixed(1)} °C` : '—'}
                       </div>
                       <div className="text-[11px] text-slate-500">
-                        {rs.dewPointC !== null ? `Rosée ${rs.dewPointC}°C` : `Cible ${rs.room.targetTempMin}-${rs.room.targetTempMax}°`}
+                        {rs.dewPointC !== null
+                          ? t('overview.dewPoint', { value: rs.dewPointC })
+                          : t('overview.targetRange', {
+                              min: rs.room.targetTempMin,
+                              max: rs.room.targetTempMax,
+                            })}
                       </div>
                     </div>
 
                     <div>
                       <div className="flex items-center gap-1 text-[11px] text-slate-400">
                         <Droplets className="h-3 w-3 text-sky-400" />
-                        Humidité
+                        {t('overview.metricHumidity')}
                       </div>
                       <div className="mt-1 text-sm font-semibold text-white">
                         {rs.currentHumidityPct !== null ? `${rs.currentHumidityPct.toFixed(0)} %` : '—'}
@@ -304,12 +317,12 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                                   }
                                   title={
                                     dev.excludeFromTotals
-                                      ? 'En cascade : exclu du total de la pièce et de la maison'
+                                      ? t('overview.cascadeTitle')
                                       : undefined
                                   }
                                 >
                                   {dev.lastPowerW.toFixed(0)}W
-                                  {dev.excludeFromTotals ? ' (cascade)' : ''}
+                                  {dev.excludeFromTotals ? ` ${t('overview.cascadeSuffix')}` : ''}
                                 </span>
                               )}
                               {dev.lastTempC !== null && hasValidTempMeasurement(dev) && (
@@ -324,7 +337,7 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                                     dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'
                                   }
                                 >
-                                  {dev.lastContactOpen ? 'Ouvert' : 'Fermé'}
+                                  {dev.lastContactOpen ? t('common.open') : t('common.closed')}
                                 </span>
                               )}
                               {somfySummary?.cover && (
@@ -356,7 +369,7 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                                 >
                                   {hcSummary.compactText}
                                   {hcSummary.doorOpen
-                                    ? `${hcSummary.compactText ? ' · ' : ''}Porte ouverte`
+                                    ? `${hcSummary.compactText ? ' · ' : ''}${t('common.doorOpen')}`
                                     : ''}
                                 </span>
                               )}
@@ -375,7 +388,9 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                                 >
                                   {dkSummary.modeLabel}
                                   {dkSummary.targetTempC !== null ? ` (${dkSummary.targetTempC}°C)` : ''}
-                                  {dkSummary.outdoorTempC !== null ? ` · Ext ${dkSummary.outdoorTempC}°C` : ''}
+                                  {dkSummary.outdoorTempC !== null
+                                    ? ` · ${t('overview.extTemp', { value: dkSummary.outdoorTempC })}`
+                                    : ''}
                                 </span>
                               )}
                               {xsSummary && (
@@ -429,15 +444,16 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
           <div className="flex items-center gap-2.5 text-sm text-amber-200">
             <Cpu className="h-4 w-4 text-amber-400 shrink-0" />
             <span>
-              {data.devices.filter((d) => d.roomId === null).length} appareil(s) ne sont encore
-              affectés à aucune pièce.
+              {t('overview.unassignedAlert', {
+                count: data.devices.filter((d) => d.roomId === null).length,
+              })}
             </span>
           </div>
           <button
             onClick={() => onNavigateTab('devices')}
             className="rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 px-3 py-1.5 text-xs font-medium text-amber-200 transition"
           >
-            Affecter les appareils
+            {t('overview.assignDevices')}
           </button>
         </div>
       )}

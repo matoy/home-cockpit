@@ -27,6 +27,8 @@ import {
   type CoverKind,
   type CoverSummary,
 } from '@/lib/covers-utils';
+import { useI18n } from './I18nProvider';
+import type { TranslationKey } from '@/lib/i18n/dictionaries/fr';
 import type {
   CoverEventItem,
   CoverHistoryState,
@@ -51,21 +53,11 @@ interface CoverItem {
 type StateFilter = 'all' | 'open' | 'partial' | 'closed' | 'unknown';
 type KindFilter = 'all' | CoverKind;
 
-const KIND_LABELS: Record<CoverKind, string> = {
-  shutter: 'Volets',
-  blind: 'Stores / BSO',
-  awning: 'Bannes / Pergolas',
-  curtain: 'Rideaux',
-  garage: 'Garages',
-  gate: 'Portails',
-  window: 'Fenêtres',
-};
-
-function formatTimeShort(iso: string | null): string {
+function formatTimeShort(iso: string | null, intlLocale: string): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('fr-FR', {
+  return d.toLocaleString(intlLocale, {
     day: '2-digit',
     month: '2-digit',
     hour: '2-digit',
@@ -75,17 +67,21 @@ function formatTimeShort(iso: string | null): string {
 
 function formatPrevStateShort(
   state: CoverHistoryState,
-  openPct: number | null
+  openPct: number | null,
+  t: (k: TranslationKey) => string
 ): string {
-  if (state === 'closed') return openPct !== null ? `Fermé (${openPct}%)` : 'Fermé';
-  if (state === 'open') return openPct !== null ? `Ouvert (${openPct}%)` : 'Ouvert';
-  if (state === 'partial') return openPct !== null ? `Partiel (${openPct}%)` : 'Partiel';
-  return 'Inconnu';
+  if (state === 'closed') return openPct !== null ? `${t('covers.prevClosed')} (${openPct}%)` : t('covers.prevClosed');
+  if (state === 'open') return openPct !== null ? `${t('covers.prevOpen')} (${openPct}%)` : t('covers.prevOpen');
+  if (state === 'partial') return openPct !== null ? `${t('covers.prevPartial')} (${openPct}%)` : t('covers.prevPartial');
+  return t('covers.prevUnknown');
 }
 
-function formatCoverEventBadge(ev: CoverEventItem): string {
+function formatCoverEventBadge(
+  ev: CoverEventItem,
+  t: (k: TranslationKey) => string
+): string {
   if (ev.isTransition && ev.prevState !== null) {
-    const prevText = formatPrevStateShort(ev.prevState, ev.prevOpenPct);
+    const prevText = formatPrevStateShort(ev.prevState, ev.prevOpenPct, t);
     const deltaStr =
       ev.deltaPct !== null && ev.deltaPct !== 0
         ? ` · ${ev.deltaPct > 0 ? '+' : ''}${ev.deltaPct}%`
@@ -96,6 +92,16 @@ function formatCoverEventBadge(ev: CoverEventItem): string {
 }
 
 export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversTabProps) {
+  const { t, intlLocale } = useI18n();
+  const kindLabels: Record<CoverKind, string> = {
+    shutter: t('covers.kindShutter'),
+    blind: t('covers.kindBlind'),
+    awning: t('covers.kindAwning'),
+    curtain: t('covers.kindCurtain'),
+    garage: t('covers.kindGarage'),
+    gate: t('covers.kindGate'),
+    window: t('covers.kindWindow'),
+  };
   const [stateFilter, setStateFilter] = useState<StateFilter>('all');
   const [kindFilter, setKindFilter] = useState<KindFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -121,13 +127,13 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
     return items.sort((a, b) => {
       const roomA = a.room?.name ?? 'zzz';
       const roomB = b.room?.name ?? 'zzz';
-      if (roomA !== roomB) return roomA.localeCompare(roomB, 'fr');
+      if (roomA !== roomB) return roomA.localeCompare(roomB, intlLocale);
       return (a.device.customName || a.device.name).localeCompare(
         b.device.customName || b.device.name,
-        'fr'
+        intlLocale
       );
     });
-  }, [data.devices, roomById]);
+  }, [data.devices, roomById, intlLocale]);
 
   const scopedCovers = useMemo(() => {
     return allCovers.filter(({ device }) => {
@@ -234,7 +240,7 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
       } else {
         groups.set(key, {
           key,
-          roomName: item.room?.name ?? 'Sans pièce',
+          roomName: item.room?.name ?? t('common.noRoom'),
           color: item.room?.color ?? '#64748b',
           items: [item],
         });
@@ -242,7 +248,7 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
     }
 
     return [...groups.values()];
-  }, [filteredCovers]);
+  }, [filteredCovers, t]);
 
   const effectiveHistoryDeviceId =
     selectedHistoryDeviceId !== 'all' &&
@@ -270,14 +276,10 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
           <Blinds className="h-6 w-6" />
         </div>
         <h2 className="text-lg font-semibold text-white">
-          Aucun volet ou store détecté
+          {t('covers.emptyTitle')}
         </h2>
         <p className="mx-auto mt-1 max-w-xl text-sm text-slate-400">
-          Les volets roulants, stores bannes, BSO et moteurs tubulaires Tuya (
-          <code className="text-slate-300">cl</code> /{' '}
-          <code className="text-slate-300">clkg</code>) ainsi que vos équipements
-          Somfy apparaîtront automatiquement ici après synchronisation dans{' '}
-          <strong className="text-slate-200">Systèmes</strong>.
+          {t('covers.emptyDesc')}
         </p>
         <div className="mt-5 flex flex-wrap justify-center gap-3">
           <button
@@ -285,14 +287,14 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
             onClick={() => onNavigateTab('systems')}
             className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-xs font-medium text-white hover:bg-amber-500 transition"
           >
-            Aller dans Systèmes
+            {t('covers.goToSystems')}
           </button>
           <button
             type="button"
             onClick={() => onNavigateTab('guide')}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800 transition"
           >
-            Ouvrir Guide Setup
+            {t('common.openGuideSetup')}
           </button>
         </div>
       </div>
@@ -322,12 +324,12 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Équipements suivis</span>
+            <span>{t('covers.kpiMonitored')}</span>
             <Blinds className="h-4 w-4 text-amber-400" />
           </div>
           <div className="mt-2 text-2xl font-bold text-white">{stats.total}</div>
           <p className="mt-1 text-xs text-slate-400">
-            {stats.onlineCount} en ligne
+            {t('covers.onlineCount', { count: stats.onlineCount })}
             {stats.somfyCount > 0 ? ` · ${stats.somfyCount} Somfy` : ''}
             {stats.tuyaCount > 0 ? ` · ${stats.tuyaCount} Tuya` : ''}
           </p>
@@ -335,7 +337,7 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Ouverts / Partiels</span>
+            <span>{t('covers.kpiOpenPartial')}</span>
             <SlidersHorizontal
               className={`h-4 w-4 ${
                 stats.openCount + stats.partialCount > 0
@@ -348,20 +350,20 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
             {stats.openCount + stats.partialCount}
           </div>
           <p className="mt-1 text-xs text-slate-400">
-            {stats.openCount} ouverts · {stats.partialCount} intermédiaire(s)
+            {t('covers.openPartialSub', { open: stats.openCount, partial: stats.partialCount })}
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Fermés / Repliés</span>
+            <span>{t('covers.kpiClosed')}</span>
             <CheckCircle2 className="h-4 w-4 text-emerald-400" />
           </div>
           <div className="mt-2 text-2xl font-bold text-white">{stats.closedCount}</div>
           <p className="mt-1 text-xs text-slate-400">
             {stats.unknownCount > 0
-              ? `+ ${stats.unknownCount} RTS sans retour d'état`
-              : 'Position fermée confirmée'}
+              ? t('covers.rtsNoFeedback', { count: stats.unknownCount })
+              : t('covers.confirmedClosed')}
           </p>
         </div>
 
@@ -373,7 +375,7 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
           }`}
         >
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Santé &amp; Signal</span>
+            <span>{t('covers.kpiHealth')}</span>
             {stats.alertCount > 0 ? (
               <AlertTriangle className="h-4 w-4 text-rose-400" />
             ) : (
@@ -385,12 +387,16 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
               stats.alertCount > 0 ? 'text-rose-300' : 'text-emerald-300'
             }`}
           >
-            {stats.alertCount > 0 ? stats.alertCount : 'OK'}
+            {stats.alertCount > 0 ? stats.alertCount : t('covers.statusOk')}
           </div>
           <p className="mt-1 text-xs text-slate-400">
             {stats.alertCount === 0
-              ? 'Aucune alerte signal, batterie ou ligne'
-              : `${stats.offlineCount} hors ligne · ${stats.lowBatteryCount} batt. faible · ${stats.weakRssiCount} signal faible`}
+              ? t('covers.noAlerts')
+              : t('covers.alertsSub', {
+                  offline: stats.offlineCount,
+                  lowBatt: stats.lowBatteryCount,
+                  weakSignal: stats.weakRssiCount,
+                })}
           </p>
         </div>
       </div>
@@ -400,15 +406,15 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
         <div className="flex flex-wrap items-center gap-1.5">
           {(
             [
-              { id: 'all', label: `Tous (${stats.total})` },
-              { id: 'open', label: `Ouverts (${stats.openCount})` },
-              { id: 'partial', label: `Partiels (${stats.partialCount})` },
-              { id: 'closed', label: `Fermés (${stats.closedCount})` },
+              { id: 'all', label: t('covers.filterAll', { count: stats.total }) },
+              { id: 'open', label: t('covers.filterOpen', { count: stats.openCount }) },
+              { id: 'partial', label: t('covers.filterPartial', { count: stats.partialCount }) },
+              { id: 'closed', label: t('covers.filterClosed', { count: stats.closedCount }) },
               ...(stats.unknownCount > 0
                 ? [
                     {
                       id: 'unknown' as const,
-                      label: `RTS / Inconnu (${stats.unknownCount})`,
+                      label: t('covers.filterUnknown', { count: stats.unknownCount }),
                     },
                   ]
                 : []),
@@ -436,10 +442,10 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
               onChange={(e) => setKindFilter(e.target.value as KindFilter)}
               className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
             >
-              <option value="all">Tous types</option>
+              <option value="all">{t('covers.allTypes')}</option>
               {availableKinds.map((kind) => (
                 <option key={kind} value={kind}>
-                  {KIND_LABELS[kind] ?? kind}
+                  {kindLabels[kind] ?? kind}
                 </option>
               ))}
             </select>
@@ -451,7 +457,7 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Rechercher..."
+              placeholder={t('common.search')}
               className="w-44 rounded-xl border border-slate-700 bg-slate-950 py-1.5 pl-8 pr-3 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
             />
           </div>
@@ -461,14 +467,14 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
       {/* Groupes par pièce */}
       {groupedByRoom.length === 0 ? (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 text-center text-sm text-slate-400 space-y-3">
-          <div>Aucun volet ou store ne correspond aux filtres actifs.</div>
+          <div>{t('covers.noMatching')}</div>
           {hasAnyActiveFilter && (
             <button
               type="button"
               onClick={handleResetAllFilters}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3.5 py-1.5 text-xs font-medium text-slate-200 transition"
             >
-              Réinitialiser les filtres
+              {t('common.resetFilters')}
             </button>
           )}
         </div>
@@ -488,7 +494,9 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                   <Home className="h-4 w-4 text-slate-400" />
                   <h3 className="text-sm font-semibold text-white">{group.roomName}</h3>
                   <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300">
-                    {group.items.length} équipement{group.items.length > 1 ? 's' : ''}
+                    {group.items.length > 1
+                      ? t('covers.equipmentPlural', { count: group.items.length })
+                      : t('covers.equipmentSingular', { count: group.items.length })}
                   </span>
                 </div>
               </div>
@@ -521,7 +529,7 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                       onClick={() =>
                         setSelectedHistoryDeviceId(isHistorySelected ? 'all' : device.id)
                       }
-                      title="Cliquer pour filtrer l'historique ci-dessous sur cet équipement"
+                      title={t('covers.clickFilterHint')}
                       className={`cursor-pointer rounded-xl border bg-slate-950/70 p-3.5 flex flex-col justify-between gap-3 transition ${
                         isHistorySelected
                           ? 'border-amber-500 ring-1 ring-amber-500/40'
@@ -536,7 +544,7 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                             </span>
                             {!device.isOnline && (
                               <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/40 bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-medium text-rose-300">
-                                <WifiOff className="h-2.5 w-2.5" /> Hors ligne
+                                <WifiOff className="h-2.5 w-2.5" /> {t('common.offline')}
                               </span>
                             )}
                           </div>
@@ -556,7 +564,7 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                             </span>
                             {summary.moving && (
                               <span className="rounded-full bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300 animate-pulse">
-                                En mouvement
+                                {t('covers.moving')}
                               </span>
                             )}
                           </div>
@@ -574,9 +582,9 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                         {summary.openPct !== null ? (
                           <>
                             <div className="flex items-center justify-between text-[11px] text-slate-400">
-                              <span>Ouverture : {summary.openPct} %</span>
+                              <span>{t('covers.openingPct', { pct: summary.openPct })}</span>
                               <span>
-                                Fermeture : {summary.closurePct ?? 100 - summary.openPct} %
+                                {t('covers.closurePct', { pct: summary.closurePct ?? 100 - summary.openPct })}
                               </span>
                             </div>
                             <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
@@ -589,8 +597,8 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                         ) : (
                           <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/60 px-2.5 py-1.5 text-[11px] text-slate-400">
                             {summary.unidirectional
-                              ? 'Protocole RTS unidirectionnel : pas de retour de position %.'
-                              : 'Position exacte non remontée par le moteur.'}
+                              ? t('covers.rtsUnidirectional')
+                              : t('covers.positionUnknown')}
                           </div>
                         )}
                       </div>
@@ -600,13 +608,14 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                         <div className="flex flex-wrap items-center gap-2">
                           {summary.tiltPct !== null && (
                             <span className="rounded bg-slate-900 px-1.5 py-0.5 text-slate-300">
-                              Lames {summary.tiltPct}%
+                              {t('covers.tiltLabel', { pct: summary.tiltPct })}
                             </span>
                           )}
                           {(summary.rssiLevel || summary.rssiPct !== null) && (
                             <span className="rounded bg-slate-900 px-1.5 py-0.5 text-slate-300">
-                              Signal :{' '}
-                              {summary.rssiLevel ?? `${summary.rssiPct}%`}
+                              {t('covers.signalLabel', {
+                                val: summary.rssiLevel ?? `${summary.rssiPct}%`,
+                              })}
                             </span>
                           )}
                           {historyStat && historyStat.movementsCount > 0 && (
@@ -614,11 +623,13 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                               className="rounded bg-slate-900 px-1.5 py-0.5 text-amber-300/90"
                               title={
                                 historyStat.lastMovedAt
-                                  ? `Dernier changement : ${formatTimeShort(historyStat.lastMovedAt)}`
+                                  ? t('covers.lastMoveTitle', {
+                                      date: formatTimeShort(historyStat.lastMovedAt, intlLocale),
+                                    })
                                   : undefined
                               }
                             >
-                              {historyStat.movementsCount} mouv.
+                              {t('covers.movementsShort', { count: historyStat.movementsCount })}
                             </span>
                           )}
                           {summary.batteryPct !== null && (
@@ -632,12 +643,12 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                               {summary.batteryPct <= 20 && (
                                 <BatteryWarning className="h-3 w-3" />
                               )}
-                              Batt. {summary.batteryPct}%
+                              {t('covers.batteryShort', { pct: summary.batteryPct })}
                             </span>
                           )}
                         </div>
                         <span className="text-[10px] text-slate-500">
-                          {formatTimeShort(device.lastSeenAt)}
+                          {formatTimeShort(device.lastSeenAt, intlLocale)}
                         </span>
                       </div>
                     </div>
@@ -656,16 +667,16 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
             <div className="mb-4">
               <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                 <Activity className="h-4 w-4 text-amber-400" />
-                Activité des volets &amp; stores sur la période
+                {t('covers.activityTitle')}
               </h3>
               <p className="text-xs text-slate-400">
-                Nombre de mouvements détectés et de relevés en position ouverte / partielle
+                {t('covers.activitySub')}
               </p>
             </div>
 
             {coverActivitySeries.length === 0 ? (
               <div className="h-64 flex items-center justify-center text-xs text-slate-500">
-                Pas encore d&apos;historique collecté pour ces équipements sur la période.
+                {t('covers.noActivity')}
               </div>
             ) : (
               <div className="h-72 w-full">
@@ -687,13 +698,13 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                     />
                     <Bar
                       dataKey="transitionsCount"
-                      name="Mouvements / changements"
+                      name={t('covers.movementsSeries')}
                       fill="#f59e0b"
                       radius={[4, 4, 0, 0]}
                     />
                     <Bar
                       dataKey="openCount"
-                      name="Relevés ouverts"
+                      name={t('covers.openSeries')}
                       fill="#38bdf8"
                       radius={[4, 4, 0, 0]}
                     />
@@ -708,10 +719,10 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
               <div>
                 <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                   <Filter className="h-4 w-4 text-amber-400" />
-                  Historique des changements ({visibleCoverEvents.length})
+                  {t('covers.historyTitle', { count: visibleCoverEvents.length })}
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Journal horodaté des mouvements et positions relevées
+                  {t('covers.historySub')}
                 </p>
               </div>
 
@@ -721,7 +732,7 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                   onChange={(e) => setSelectedHistoryDeviceId(e.target.value)}
                   className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
                 >
-                  <option value="all">Tous les équipements</option>
+                  <option value="all">{t('covers.allEquipments')}</option>
                   {scopedCovers.map(({ device }) => (
                     <option key={device.id} value={device.id}>
                       {device.customName || device.name}
@@ -736,7 +747,7 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                     onChange={(e) => setTransitionsOnly(e.target.checked)}
                     className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-950 text-amber-500"
                   />
-                  Transitions seules
+                  {t('covers.transitionsOnly')}
                 </label>
               </div>
             </div>
@@ -745,8 +756,8 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
               {visibleCoverEvents.length === 0 ? (
                 <div className="py-12 text-center text-xs text-slate-500">
                   {transitionsOnly
-                    ? 'Aucun changement de position détecté sur cette période (décochez « Transitions seules » pour voir tous les relevés).'
-                    : 'Aucun relevé historique sur cette période.'}
+                    ? t('covers.noTransitions')
+                    : t('covers.noReadings')}
                 </div>
               ) : (
                 visibleCoverEvents.map((ev) => {
@@ -777,7 +788,7 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                             />
                             <span>{ev.roomName}</span>
                             <span>·</span>
-                            <span className="font-mono">{formatTimeShort(ev.recordedAt)}</span>
+                            <span className="font-mono">{formatTimeShort(ev.recordedAt, intlLocale)}</span>
                           </div>
                         </div>
                       </div>
@@ -785,7 +796,7 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
                       <span
                         className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold shrink-0 border ${badgeToneClass}`}
                       >
-                        {formatCoverEventBadge(ev)}
+                        {formatCoverEventBadge(ev, t)}
                       </span>
                     </div>
                   );

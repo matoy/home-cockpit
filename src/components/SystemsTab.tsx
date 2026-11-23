@@ -13,6 +13,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { VENDOR_REGISTRY } from '@/lib/vendors/registry';
+import { useI18n } from './I18nProvider';
 import type { DashboardPayload, GoogleHomeMode, HomeConnectEnv, VendorId } from '@/types';
 
 interface SystemsTabProps {
@@ -40,6 +41,7 @@ export function SystemsTab({
   onOpenXiaomiGuide,
   onOpenGoogleGuide,
 }: SystemsTabProps) {
+  const { t, intlLocale } = useI18n();
   const showKasa = data.env.kasaConfigured;
   const showHomeConnect = data.env.homeConnectConfigured;
   const showSomfy = data.env.somfyConfigured;
@@ -601,61 +603,61 @@ export function SystemsTab({
     scope: string;
     onOpenGuide?: () => void;
   }> = [
-    ...(!showKasa
-      ? [
+      ...(!showKasa
+        ? [
           {
             vendor: 'kasa' as const,
-            scope: 'Prises, multiprises & mesures kWh (100 % cloud TP-Link)',
+            scope: t('systems.scopeKasa'),
             onOpenGuide: onOpenKasaGuide,
           },
         ]
-      : []),
-    ...(!showHomeConnect
-      ? [
+        : []),
+      ...(!showHomeConnect
+        ? [
           {
             vendor: 'home_connect' as const,
-            scope: 'Électroménager Bosch / Siemens (lecture seule OAuth)',
+            scope: t('systems.scopeHc'),
             onOpenGuide: onOpenHomeConnectGuide,
           },
         ]
-      : []),
-    ...(!showSomfy
-      ? [
+        : []),
+      ...(!showSomfy
+        ? [
           {
             vendor: 'somfy' as const,
-            scope: 'Volets roulants io/RTS, stores & capteurs Overkiz',
+            scope: t('systems.scopeSomfy'),
             onOpenGuide: onOpenSomfyGuide,
           },
         ]
-      : []),
-    ...(!showDaikin
-      ? [
+        : []),
+      ...(!showDaikin
+        ? [
           {
             vendor: 'daikin' as const,
-            scope: 'Climatisations & pompes à chaleur Daikin Onecta (OAuth)',
+            scope: t('systems.scopeDaikin'),
             onOpenGuide: onOpenDaikinGuide,
           },
         ]
-      : []),
-    ...(!showXSense
-      ? [
+        : []),
+      ...(!showXSense
+        ? [
           {
             vendor: 'xsense' as const,
-            scope: 'Détecteurs fumée/CO, fuite d’eau & station SBS50',
+            scope: t('systems.scopeXSense'),
             onOpenGuide: onOpenXSenseGuide,
           },
         ]
-      : []),
-    ...(!showGoogleHomeApi
-      ? [
+        : []),
+      ...(!showGoogleHomeApi
+        ? [
           {
             vendor: 'google_home' as const,
-            scope: 'Passerelle Google Home MCP / Nest SDM (OAuth)',
+            scope: t('systems.scopeGh'),
             onOpenGuide: onOpenGoogleGuide,
           },
         ]
-      : []),
-  ];
+        : []),
+    ];
 
   return (
     <div className="space-y-6">
@@ -667,24 +669,26 @@ export function SystemsTab({
           </div>
           <div>
             <h2 className="text-sm font-semibold text-white">
-              Connexions &amp; Synchronisation des systèmes
+              {t('systems.headerTitle')}
             </h2>
             <p className="text-xs text-slate-400">
-              {connectedSystemsCount} système(s) connecté(s) · {visibleSyncCardsCount} intégration(s)
-              active(s) · {data.devices.length} appareil(s) inventorié(s)
+              {t('systems.headerSub', {
+                connected: connectedSystemsCount,
+                active: visibleSyncCardsCount,
+                devices: data.devices.length,
+              })}
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <span
-            className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${
-              data.env.mode === 'live'
+            className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${data.env.mode === 'live'
                 ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
                 : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-            }`}
+              }`}
           >
-            {data.env.mode === 'live' ? 'Mode Live · Lecture seule' : 'Mode Démo'}
+            {data.env.mode === 'live' ? t('common.liveModeReadOnly') : t('common.demoMode')}
           </span>
 
           {onOpenDevicesTab && (
@@ -694,7 +698,7 @@ export function SystemsTab({
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700/80 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
             >
               <Cpu className="h-3.5 w-3.5 text-indigo-400" />
-              Voir les appareils
+              {t('systems.viewDevicesBtn')}
             </button>
           )}
         </div>
@@ -713,25 +717,23 @@ export function SystemsTab({
                   {VENDOR_REGISTRY.tuya.label}
                 </span>
                 <span className="text-xs text-slate-400">
-                  {tuyaVendor?.devicesCount ?? systemCounts.tuya} appareil(s)
+                  {t('common.devicesCount', { count: tuyaVendor?.devicesCount ?? systemCounts.tuya })}
                 </span>
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    data.env.tuyaConfigured || data.env.mode === 'demo'
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.tuyaConfigured || data.env.mode === 'demo'
                       ? 'bg-emerald-500/15 text-emerald-300'
                       : 'bg-slate-800 text-slate-400'
-                  }`}
+                    }`}
                 >
                   {data.env.mode === 'demo'
-                    ? 'Mode Démo'
+                    ? t('common.demoMode')
                     : data.env.tuyaConfigured
-                      ? `Connecté (${data.env.tuyaRegion.toUpperCase()})`
-                      : 'Non configuré'}
+                      ? `${t('common.connected')} (${data.env.tuyaRegion.toUpperCase()})`
+                      : t('common.notConfigured')}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-2">
-                {VENDOR_REGISTRY.tuya.description}. Mesures prioritaires : W, kWh, tension, piles,
-                IP/MAC.
+                {VENDOR_REGISTRY.tuya.description}. {t('systems.tuyaDesc')}
               </p>
             </div>
           </div>
@@ -739,8 +741,10 @@ export function SystemsTab({
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
             <span className="text-[11px] text-slate-500">
               {tuyaVendor?.lastSyncedAt
-                ? `Synchro : ${new Date(tuyaVendor.lastSyncedAt).toLocaleString('fr-FR')}`
-                : 'Aucune synchronisation manuelle récente'}
+                ? t('common.syncedAt', {
+                  date: new Date(tuyaVendor.lastSyncedAt).toLocaleString(intlLocale),
+                })
+                : t('common.noRecentSync')}
             </span>
             <button
               type="button"
@@ -749,7 +753,7 @@ export function SystemsTab({
               className="flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${syncingTuya ? 'animate-spin' : ''}`} />
-              {syncingTuya ? 'Synchronisation...' : 'Synchroniser Tuya'}
+              {syncingTuya ? t('common.syncing') : t('systems.syncTuyaBtn')}
             </button>
           </div>
         </div>
@@ -766,25 +770,23 @@ export function SystemsTab({
                     {VENDOR_REGISTRY.kasa.label}
                   </span>
                   <span className="text-xs text-slate-400">
-                    {kasaVendor?.devicesCount ?? systemCounts.kasa} appareil(s)
+                    {t('common.devicesCount', { count: kasaVendor?.devicesCount ?? systemCounts.kasa })}
                   </span>
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                      data.env.kasaConfigured || data.env.mode === 'demo'
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.kasaConfigured || data.env.mode === 'demo'
                         ? 'bg-emerald-500/15 text-emerald-300'
                         : 'bg-slate-800 text-slate-400'
-                    }`}
+                      }`}
                   >
                     {data.env.mode === 'demo'
-                      ? 'Mode Démo'
+                      ? t('common.demoMode')
                       : data.env.kasaConfigured
-                        ? `Connecté (${data.env.kasaRegion.toUpperCase()})`
-                        : 'Non configuré'}
+                        ? `${t('common.connected')} (${data.env.kasaRegion.toUpperCase()})`
+                        : t('common.notConfigured')}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
-                  {VENDOR_REGISTRY.kasa.description}. Relevés W, tension et kWh en lecture seule sans
-                  accès LAN.
+                  {VENDOR_REGISTRY.kasa.description}. {t('systems.kasaDesc')}
                 </p>
                 {kasaVendor?.lastError && (
                   <p className="text-[11px] text-amber-300 mt-1.5">{kasaVendor.lastError}</p>
@@ -795,10 +797,12 @@ export function SystemsTab({
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               <span className="text-[11px] text-slate-500">
                 {kasaVendor?.lastSyncedAt
-                  ? `Synchro : ${new Date(kasaVendor.lastSyncedAt).toLocaleString('fr-FR')}`
+                  ? t('common.syncedAt', {
+                    date: new Date(kasaVendor.lastSyncedAt).toLocaleString(intlLocale),
+                  })
                   : data.env.mode === 'live' && !data.env.kasaConfigured
-                    ? 'Ajoutez KASA_EMAIL & KASA_PASSWORD (voir Guide Setup)'
-                    : '100 % cloud · zéro commande envoyée'}
+                    ? t('systems.kasaMissingEnv')
+                    : t('common.cloudZeroCmd')}
               </span>
               <div className="flex flex-wrap items-center gap-2">
                 {onOpenKasaGuide && (
@@ -806,10 +810,10 @@ export function SystemsTab({
                     type="button"
                     onClick={onOpenKasaGuide}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:text-white transition"
-                    title="Afficher le guide de configuration TP-Link Kasa Cloud"
+                    title={t('common.setupGuideBtn')}
                   >
                     <BookOpen className="h-3.5 w-3.5 text-teal-400" />
-                    Déroulé setup
+                    {t('common.setupGuideBtn')}
                   </button>
                 )}
                 <button
@@ -819,7 +823,7 @@ export function SystemsTab({
                   className="flex items-center gap-2 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${syncingKasa ? 'animate-spin' : ''}`} />
-                  {syncingKasa ? 'Synchronisation...' : 'Synchroniser Kasa'}
+                  {syncingKasa ? t('common.syncing') : t('systems.syncKasaBtn')}
                 </button>
               </div>
             </div>
@@ -839,20 +843,21 @@ export function SystemsTab({
                       {VENDOR_REGISTRY.home_connect.label}
                     </span>
                     <span className="text-xs text-slate-400">
-                      {hcVendor?.devicesCount ?? systemCounts.home_connect} appareil(s)
+                      {t('common.devicesCount', {
+                        count: hcVendor?.devicesCount ?? systemCounts.home_connect,
+                      })}
                     </span>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                        isHcConnected || data.env.mode === 'demo'
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isHcConnected || data.env.mode === 'demo'
                           ? 'bg-emerald-500/15 text-emerald-300'
                           : 'bg-slate-800 text-slate-400'
-                      }`}
+                        }`}
                     >
                       {data.env.mode === 'demo'
-                        ? 'Mode Démo'
+                        ? t('common.demoMode')
                         : isHcConnected
-                          ? `Connecté (${hcModeEnvLabel})`
-                          : 'Prêt (OAuth requis)'}
+                          ? `${t('common.connected')} (${hcModeEnvLabel})`
+                          : t('common.readyOAuth')}
                     </span>
                   </div>
 
@@ -860,19 +865,18 @@ export function SystemsTab({
                     <select
                       value={selectedHomeConnectEnv}
                       onChange={(e) => setSelectedHomeConnectEnv(e.target.value as HomeConnectEnv)}
-                      aria-label="Environnement Siemens Home Connect"
+                      aria-label={t('systems.hcEnvAria')}
                       className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 focus:border-cyan-500 focus:outline-none"
                     >
-                      <option value="prod">Production (api.home-connect.com)</option>
-                      <option value="simulator">Simulateur (simulator.home-connect.com)</option>
-                      <option value="cn">Chine (.cn)</option>
+                      <option value="prod">{t('systems.hcEnvProd')}</option>
+                      <option value="simulator">{t('systems.hcEnvSim')}</option>
+                      <option value="cn">{t('systems.hcEnvCn')}</option>
                     </select>
                   )}
                 </div>
 
                 <p className="text-xs text-slate-400 mt-2">
-                  {VENDOR_REGISTRY.home_connect.description}. Lecture seule · programme, temps
-                  restant, porte &amp; températures internes.
+                  {VENDOR_REGISTRY.home_connect.description}. {t('systems.hcDesc')}
                 </p>
 
                 {hcVendor?.lastError && (
@@ -884,8 +888,10 @@ export function SystemsTab({
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               <span className="text-[11px] text-slate-500">
                 {hcVendor?.lastSyncedAt
-                  ? `Synchro : ${new Date(hcVendor.lastSyncedAt).toLocaleString('fr-FR')}`
-                  : '100 % lecture seule · sans Control'}
+                  ? t('common.syncedAt', {
+                    date: new Date(hcVendor.lastSyncedAt).toLocaleString(intlLocale),
+                  })
+                  : t('systems.hcFooterDefault')}
               </span>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -894,10 +900,10 @@ export function SystemsTab({
                     type="button"
                     onClick={onOpenHomeConnectGuide}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:text-white transition"
-                    title="Afficher le guide de configuration Siemens Home Connect"
+                    title={t('common.setupGuideBtn')}
                   >
                     <BookOpen className="h-3.5 w-3.5 text-cyan-400" />
-                    Déroulé setup
+                    {t('common.setupGuideBtn')}
                   </button>
                 )}
 
@@ -907,7 +913,7 @@ export function SystemsTab({
                     className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 px-3.5 py-2 text-xs font-medium text-white transition"
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
-                    Connecter Home Connect ({selectedHomeConnectEnv.toUpperCase()})
+                    {t('systems.hcConnectBtn', { env: selectedHomeConnectEnv.toUpperCase() })}
                   </a>
                 ) : (
                   <>
@@ -920,7 +926,7 @@ export function SystemsTab({
                       <RefreshCw
                         className={`h-3.5 w-3.5 ${syncingHomeConnect ? 'animate-spin' : ''}`}
                       />
-                      {syncingHomeConnect ? 'Synchronisation...' : 'Synchroniser Home Connect'}
+                      {syncingHomeConnect ? t('common.syncing') : t('systems.syncHcBtn')}
                     </button>
                     {data.env.mode === 'live' && isHcConnected && (
                       <button
@@ -929,7 +935,7 @@ export function SystemsTab({
                         disabled={disconnectingHomeConnect || syncingHomeConnect}
                         className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3 py-2 text-xs text-slate-300 transition"
                       >
-                        Déconnecter
+                        {t('common.disconnect')}
                       </button>
                     )}
                   </>
@@ -951,25 +957,25 @@ export function SystemsTab({
                     {VENDOR_REGISTRY.somfy.label}
                   </span>
                   <span className="text-xs text-slate-400">
-                    {somfyVendor?.devicesCount ?? systemCounts.somfy} appareil(s)
+                    {t('common.devicesCount', {
+                      count: somfyVendor?.devicesCount ?? systemCounts.somfy,
+                    })}
                   </span>
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                      data.env.somfyConfigured || data.env.mode === 'demo'
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.somfyConfigured || data.env.mode === 'demo'
                         ? 'bg-emerald-500/15 text-emerald-300'
                         : 'bg-slate-800 text-slate-400'
-                    }`}
+                      }`}
                   >
                     {data.env.mode === 'demo'
-                      ? 'Mode Démo'
+                      ? t('common.demoMode')
                       : data.env.somfyConfigured
-                        ? `Prêt (${data.env.somfyRegion.toUpperCase()})`
-                        : 'Non configuré'}
+                        ? t('rooms.somfyReady', { region: data.env.somfyRegion.toUpperCase() })
+                        : t('common.notConfigured')}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
-                  Kit de connectivité Overkiz Cloud (volets io/RTS, stores, capteurs · 100 %
-                  lecture seule, session chiffrée).
+                  {t('systems.somfyDesc')}
                 </p>
                 {somfyVendor?.lastError && (
                   <p className="text-[11px] text-amber-300 mt-1">{somfyVendor.lastError}</p>
@@ -980,8 +986,10 @@ export function SystemsTab({
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               <span className="text-[11px] text-slate-500">
                 {somfyVendor?.lastSyncedAt
-                  ? `Synchro : ${new Date(somfyVendor.lastSyncedAt).toLocaleString('fr-FR')}`
-                  : '100 % cloud · zéro commande envoyée'}
+                  ? t('common.syncedAt', {
+                    date: new Date(somfyVendor.lastSyncedAt).toLocaleString(intlLocale),
+                  })
+                  : t('common.cloudZeroCmd')}
               </span>
               <div className="flex flex-wrap items-center gap-2">
                 {onOpenSomfyGuide && (
@@ -989,10 +997,10 @@ export function SystemsTab({
                     type="button"
                     onClick={onOpenSomfyGuide}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:text-white transition"
-                    title="Afficher le guide de configuration Somfy Kit de connectivité"
+                    title={t('common.setupGuideBtn')}
                   >
                     <BookOpen className="h-3.5 w-3.5 text-amber-400" />
-                    Déroulé setup
+                    {t('common.setupGuideBtn')}
                   </button>
                 )}
                 <button
@@ -1002,7 +1010,7 @@ export function SystemsTab({
                   className="flex items-center gap-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${syncingSomfy ? 'animate-spin' : ''}`} />
-                  {syncingSomfy ? 'Synchronisation...' : 'Synchroniser Somfy'}
+                  {syncingSomfy ? t('common.syncing') : t('systems.syncSomfyBtn')}
                 </button>
               </div>
             </div>
@@ -1020,25 +1028,25 @@ export function SystemsTab({
                   {VENDOR_REGISTRY.daikin.label}
                 </span>
                 <span className="text-xs text-slate-400">
-                  {daikinVendor?.devicesCount ?? systemCounts.daikin} appareil(s)
+                  {t('common.devicesCount', {
+                    count: daikinVendor?.devicesCount ?? systemCounts.daikin,
+                  })}
                 </span>
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    isDkConnected || data.env.mode === 'demo'
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isDkConnected || data.env.mode === 'demo'
                       ? 'bg-emerald-500/15 text-emerald-300'
                       : 'bg-slate-800 text-slate-400'
-                  }`}
+                    }`}
                 >
                   {data.env.mode === 'demo'
-                    ? 'Mode Démo'
+                    ? t('common.demoMode')
                     : isDkConnected
-                      ? 'Connecté (OAuth)'
-                      : 'Prêt (OAuth requis)'}
+                      ? t('systems.daikinConnectedOAuth')
+                      : t('common.readyOAuth')}
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                {VENDOR_REGISTRY.daikin.description}. Quota 200 req/jour respecté (1 appel /
-                collecte).
+                {VENDOR_REGISTRY.daikin.description}. {t('systems.daikinDesc')}
               </p>
               {daikinVendor?.lastError && (
                 <p className="text-[11px] text-amber-300">{daikinVendor.lastError}</p>
@@ -1051,8 +1059,8 @@ export function SystemsTab({
                     className="text-[11px] font-medium text-blue-300 hover:text-blue-200 underline underline-offset-2"
                   >
                     {showDaikinLocalBox
-                      ? 'Masquer la validation manuelle (localhost)'
-                      : 'Tester en local (http://localhost) : coller l’URL ou le code OAuth'}
+                      ? t('systems.daikinLocalHide')
+                      : t('systems.daikinLocalShow')}
                   </button>
                   {showDaikinLocalBox && (
                     <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/70 p-2.5">
@@ -1060,7 +1068,7 @@ export function SystemsTab({
                         type="text"
                         value={daikinExchangeInput}
                         onChange={(e) => setDaikinExchangeInput(e.target.value)}
-                        placeholder="Collez l'URL complète de retour (?code=...) ou le code"
+                        placeholder={t('systems.daikinExchangePlaceholder')}
                         className="flex-1 min-w-[200px] rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
                       />
                       <button
@@ -1069,7 +1077,7 @@ export function SystemsTab({
                         onClick={() => void handleExchangeDaikinCode()}
                         className="rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 px-3 py-1.5 text-[11px] font-medium text-white transition"
                       >
-                        {exchangingDaikin ? 'Validation...' : 'Valider'}
+                        {exchangingDaikin ? t('common.validating') : t('common.validate')}
                       </button>
                     </div>
                   )}
@@ -1080,8 +1088,10 @@ export function SystemsTab({
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               <span className="text-[11px] text-slate-500">
                 {daikinVendor?.lastSyncedAt
-                  ? `Synchro : ${new Date(daikinVendor.lastSyncedAt).toLocaleString('fr-FR')}`
-                  : '100 % lecture seule · 1 requête/cycle'}
+                  ? t('common.syncedAt', {
+                    date: new Date(daikinVendor.lastSyncedAt).toLocaleString(intlLocale),
+                  })
+                  : t('systems.daikinFooterDefault')}
               </span>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -1090,10 +1100,10 @@ export function SystemsTab({
                     type="button"
                     onClick={onOpenDaikinGuide}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:text-white transition"
-                    title="Afficher le déroulé pas-à-pas Daikin Onecta"
+                    title={t('common.setupGuideBtn')}
                   >
                     <BookOpen className="h-3.5 w-3.5 text-blue-400" />
-                    Déroulé setup
+                    {t('common.setupGuideBtn')}
                   </button>
                 )}
 
@@ -1103,7 +1113,7 @@ export function SystemsTab({
                     className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3.5 py-2 text-xs font-medium text-white transition"
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
-                    Connecter Daikin (OAuth)
+                    {t('systems.daikinConnectBtn')}
                   </a>
                 ) : (
                   <>
@@ -1116,7 +1126,7 @@ export function SystemsTab({
                       <RefreshCw
                         className={`h-3.5 w-3.5 ${syncingDaikin ? 'animate-spin' : ''}`}
                       />
-                      {syncingDaikin ? 'Synchronisation...' : 'Synchroniser Daikin'}
+                      {syncingDaikin ? t('common.syncing') : t('systems.syncDaikinBtn')}
                     </button>
                     {data.env.mode === 'live' && isDkConnected && (
                       <button
@@ -1125,7 +1135,7 @@ export function SystemsTab({
                         disabled={disconnectingDaikin || syncingDaikin}
                         className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3 py-2 text-xs text-slate-300 transition"
                       >
-                        Déconnecter
+                        {t('common.disconnect')}
                       </button>
                     )}
                   </>
@@ -1146,25 +1156,25 @@ export function SystemsTab({
                   {VENDOR_REGISTRY.xsense.label}
                 </span>
                 <span className="text-xs text-slate-400">
-                  {xsenseVendor?.devicesCount ?? systemCounts.xsense} appareil(s)
+                  {t('common.devicesCount', {
+                    count: xsenseVendor?.devicesCount ?? systemCounts.xsense,
+                  })}
                 </span>
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    data.env.mode === 'demo' || xsenseVendor?.connected || data.env.xsenseConfigured
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.mode === 'demo' || xsenseVendor?.connected || data.env.xsenseConfigured
                       ? 'bg-emerald-500/15 text-emerald-300'
                       : 'bg-slate-800 text-slate-400'
-                  }`}
+                    }`}
                 >
                   {data.env.mode === 'demo'
-                    ? 'Mode Démo'
+                    ? t('common.demoMode')
                     : xsenseVendor?.connected || data.env.xsenseConfigured
-                      ? 'Cloud actif'
-                      : 'Non configuré'}
+                      ? t('systems.xsenseActive')
+                      : t('common.notConfigured')}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-1.5">
-                Détecteurs fumée/CO, capteurs fuite d&apos;eau, stations SBS50 &amp; thermo-hygromètres
-                X-Sense (100 % lecture seule · compte invité conseillé).
+                {t('systems.xsenseDesc')}
               </p>
               {xsenseVendor?.lastError && (
                 <p className="text-[11px] text-amber-300 mt-1">{xsenseVendor.lastError}</p>
@@ -1174,8 +1184,10 @@ export function SystemsTab({
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               <span className="text-[11px] text-slate-500">
                 {xsenseVendor?.lastSyncedAt
-                  ? `Synchro : ${new Date(xsenseVendor.lastSyncedAt).toLocaleString('fr-FR')}`
-                  : '100 % lecture seule'}
+                  ? t('common.syncedAt', {
+                    date: new Date(xsenseVendor.lastSyncedAt).toLocaleString(intlLocale),
+                  })
+                  : t('systems.xsenseFooterDefault')}
               </span>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -1186,7 +1198,7 @@ export function SystemsTab({
                     className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:text-white transition"
                   >
                     <BookOpen className="h-3.5 w-3.5 text-rose-400" />
-                    Déroulé setup
+                    {t('common.setupGuideBtn')}
                   </button>
                 )}
                 <button
@@ -1196,7 +1208,7 @@ export function SystemsTab({
                   className="inline-flex items-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${syncingXSense ? 'animate-spin' : ''}`} />
-                  {syncingXSense ? 'Synchronisation...' : 'Synchroniser X-Sense'}
+                  {syncingXSense ? t('common.syncing') : t('systems.syncXSenseBtn')}
                 </button>
               </div>
             </div>
@@ -1214,29 +1226,29 @@ export function SystemsTab({
                   {VENDOR_REGISTRY.xiaomi.label}
                 </span>
                 <span className="text-xs text-slate-400">
-                  {xiaomiVendor?.devicesCount ?? systemCounts.xiaomi} appareil(s)
+                  {t('common.devicesCount', {
+                    count: xiaomiVendor?.devicesCount ?? systemCounts.xiaomi,
+                  })}
                 </span>
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    data.env.mode === 'demo' || isXiaomiConnected
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.mode === 'demo' || isXiaomiConnected
                       ? 'bg-emerald-500/15 text-emerald-300'
                       : data.env.xiaomiConfigured
                         ? 'bg-amber-500/15 text-amber-300'
                         : 'bg-slate-800 text-slate-400'
-                  }`}
+                    }`}
                 >
                   {data.env.mode === 'demo'
-                    ? 'Mode Démo'
+                    ? t('common.demoMode')
                     : isXiaomiConnected
-                      ? `Connecté (${xiaomiRegion.toUpperCase()})`
+                      ? `${t('common.connected')} (${xiaomiRegion.toUpperCase()})`
                       : data.env.xiaomiConfigured
-                        ? 'Connexion requise (2FA/QR)'
-                        : 'QR Code ou .env'}
+                        ? t('systems.xiaomiReqAuth')
+                        : t('systems.xiaomiQrOrEnv')}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-1.5">
-                Synchronise capteurs climat/fuite/ouverture, prises, purificateurs PM2.5 et pièces
-                Xiaomi Home en 100 % lecture seule.
+                {t('systems.xiaomiDesc')}
               </p>
               {xiaomiVendor?.lastError && (
                 <p className="text-[11px] text-amber-300 mt-1">{xiaomiVendor.lastError}</p>
@@ -1249,14 +1261,14 @@ export function SystemsTab({
                     <select
                       value={xiaomiRegion}
                       onChange={(e) => setXiaomiRegion(e.target.value)}
-                      aria-label="Serveur Mi Cloud"
+                      aria-label={t('systems.xiaomiServerAria')}
                       className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 focus:border-orange-500 focus:outline-none"
                     >
-                      <option value="de">Europe (de)</option>
-                      <option value="cn">Chine (cn)</option>
-                      <option value="us">États-Unis (us)</option>
-                      <option value="sg">Singapour (sg)</option>
-                      <option value="ru">Russie (ru)</option>
+                      <option value="de">{t('systems.xiaomiRegionDe')}</option>
+                      <option value="cn">{t('systems.xiaomiRegionCn')}</option>
+                      <option value="us">{t('systems.xiaomiRegionUs')}</option>
+                      <option value="sg">{t('systems.xiaomiRegionSg')}</option>
+                      <option value="ru">{t('systems.xiaomiRegionRu')}</option>
                     </select>
                     <button
                       type="button"
@@ -1265,14 +1277,14 @@ export function SystemsTab({
                       className="inline-flex items-center gap-1.5 rounded-lg border border-orange-500/40 bg-orange-500/15 hover:bg-orange-500/25 px-2.5 py-1 text-[11px] font-medium text-orange-200 transition"
                     >
                       <QrCode className="h-3.5 w-3.5" />
-                      {xiaomiStartingQr ? 'Génération...' : 'Scanner QR Code Xiaomi'}
+                      {xiaomiStartingQr ? t('systems.xiaomiQrGenerating') : t('systems.xiaomiQrScanBtn')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowXiaomiAuthBox((v) => !v)}
                       className="text-[11px] text-slate-400 hover:text-slate-200 underline underline-offset-2"
                     >
-                      {showXiaomiAuthBox ? 'Masquer options' : 'Connexion compte / 2FA'}
+                      {showXiaomiAuthBox ? t('systems.xiaomiHideOpts') : t('systems.xiaomiAccountOpts')}
                     </button>
                   </div>
 
@@ -1286,18 +1298,17 @@ export function SystemsTab({
                       />
                       <div className="space-y-1.5 text-[11px] text-slate-300 flex-1 min-w-[180px]">
                         <p className="font-medium text-orange-200">
-                          Scannez avec l&apos;application mobile Xiaomi Home
+                          {t('systems.xiaomiQrTitle')}
                         </p>
                         <p className="text-slate-400">
-                          Dans Xiaomi Home : <strong>Profil → Scanner</strong> (en haut à droite),
-                          puis confirmez la connexion. Attente automatique…
+                          {t('systems.xiaomiQrHelp')}
                         </p>
                         <button
                           type="button"
                           onClick={() => setXiaomiQrData(null)}
                           className="text-slate-400 hover:text-white underline"
                         >
-                          Annuler le QR
+                          {t('systems.xiaomiQrCancel')}
                         </button>
                       </div>
                     </div>
@@ -1311,14 +1322,14 @@ export function SystemsTab({
                             type="text"
                             value={xiaomiUsername}
                             onChange={(e) => setXiaomiUsername(e.target.value)}
-                            placeholder="E-mail / ID Xiaomi (ou .env)"
+                            placeholder={t('systems.xiaomiUserPlaceholder')}
                             className="flex-1 min-w-[150px] rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white placeholder:text-slate-500"
                           />
                           <input
                             type="password"
                             value={xiaomiPassword}
                             onChange={(e) => setXiaomiPassword(e.target.value)}
-                            placeholder="Mot de passe (ou .env)"
+                            placeholder={t('systems.xiaomiPassPlaceholder')}
                             className="flex-1 min-w-[140px] rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white placeholder:text-slate-500"
                           />
                           <button
@@ -1327,7 +1338,7 @@ export function SystemsTab({
                             onClick={() => void handleXiaomiCredentialLogin()}
                             className="rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-40 px-3 py-1.5 text-[11px] font-medium text-white transition"
                           >
-                            {xiaomiLoggingIn ? 'Connexion...' : 'Connecter'}
+                            {xiaomiLoggingIn ? t('systems.xiaomiConnecting') : t('systems.xiaomiConnectBtn')}
                           </button>
                         </div>
                       ) : (
@@ -1336,7 +1347,7 @@ export function SystemsTab({
                             type="text"
                             value={xiaomi2faCode}
                             onChange={(e) => setXiaomi2faCode(e.target.value)}
-                            placeholder="Code 2FA reçu par e-mail / SMS"
+                            placeholder={t('systems.xiaomi2faPlaceholder')}
                             className="flex-1 min-w-[180px] rounded-lg border border-orange-500/40 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white placeholder:text-slate-500"
                           />
                           <button
@@ -1345,7 +1356,7 @@ export function SystemsTab({
                             onClick={() => void handleXiaomiVerify2fa()}
                             className="rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-40 px-3 py-1.5 text-[11px] font-medium text-white transition"
                           >
-                            {xiaomiVerifying2fa ? 'Validation...' : 'Valider 2FA'}
+                            {xiaomiVerifying2fa ? t('common.validating') : t('systems.xiaomi2faValidateBtn')}
                           </button>
                         </div>
                       )}
@@ -1358,8 +1369,10 @@ export function SystemsTab({
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               <span className="text-[11px] text-slate-500">
                 {xiaomiVendor?.lastSyncedAt
-                  ? `Synchro : ${new Date(xiaomiVendor.lastSyncedAt).toLocaleString('fr-FR')}`
-                  : '100 % lecture seule · QR / 2FA'}
+                  ? t('common.syncedAt', {
+                    date: new Date(xiaomiVendor.lastSyncedAt).toLocaleString(intlLocale),
+                  })
+                  : t('systems.xiaomiFooterDefault')}
               </span>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -1370,7 +1383,7 @@ export function SystemsTab({
                     className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:text-white transition"
                   >
                     <BookOpen className="h-3.5 w-3.5 text-orange-400" />
-                    Déroulé setup
+                    {t('common.setupGuideBtn')}
                   </button>
                 )}
                 {(data.env.mode === 'demo' || isXiaomiConnected) && (
@@ -1383,7 +1396,7 @@ export function SystemsTab({
                     <RefreshCw
                       className={`h-3.5 w-3.5 ${syncingXiaomi ? 'animate-spin' : ''}`}
                     />
-                    {syncingXiaomi ? 'Synchronisation...' : 'Synchroniser Xiaomi'}
+                    {syncingXiaomi ? t('common.syncing') : t('systems.syncXiaomiBtn')}
                   </button>
                 )}
                 {data.env.mode === 'live' && isXiaomiConnected && (
@@ -1393,7 +1406,7 @@ export function SystemsTab({
                     disabled={disconnectingXiaomi || syncingXiaomi}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3 py-2 text-xs text-slate-300 transition"
                   >
-                    Déconnecter
+                    {t('common.disconnect')}
                   </button>
                 )}
               </div>
@@ -1414,22 +1427,23 @@ export function SystemsTab({
                       {VENDOR_REGISTRY.google_home.label}
                     </span>
                     <span className="text-xs text-slate-400">
-                      {ghVendor?.devicesCount ?? systemCounts.google_home} appareil(s)
+                      {t('common.devicesCount', {
+                        count: ghVendor?.devicesCount ?? systemCounts.google_home,
+                      })}
                     </span>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                        isGhConnected
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isGhConnected
                           ? 'bg-emerald-500/15 text-emerald-300'
                           : 'bg-slate-800 text-slate-400'
-                      }`}
+                        }`}
                     >
                       {data.env.mode === 'demo'
-                        ? 'Mode Démo'
+                        ? t('common.demoMode')
                         : isGhConnected
-                          ? `Connecté (${(ghVendor?.mode ?? selectedGoogleMode).toString().toUpperCase()})`
+                          ? `${t('common.connected')} (${(ghVendor?.mode ?? selectedGoogleMode).toString().toUpperCase()})`
                           : data.env.googleHomeConfigured
-                            ? 'Prêt (OAuth requis)'
-                            : 'OAuth non configuré'}
+                            ? t('common.readyOAuth')
+                            : t('common.oauthNotConfigured')}
                     </span>
                   </div>
 
@@ -1437,18 +1451,17 @@ export function SystemsTab({
                     <select
                       value={selectedGoogleMode}
                       onChange={(e) => setSelectedGoogleMode(e.target.value as GoogleHomeMode)}
-                      aria-label="Mode API Google Home"
+                      aria-label={t('systems.ghModeAria')}
                       className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 focus:border-sky-500 focus:outline-none"
                     >
-                      <option value="mcp">Mode Home MCP (tous appareils)</option>
-                      <option value="sdm">Mode Nest SDM (Nest)</option>
+                      <option value="mcp">{t('systems.ghModeMcp')}</option>
+                      <option value="sdm">{t('systems.ghModeSdm')}</option>
                     </select>
                   )}
                 </div>
 
                 <p className="text-xs text-slate-400 mt-2">
-                  {VENDOR_REGISTRY.google_home.description}. Fusionnez les doublons Tuya sans
-                  duplication.
+                  {VENDOR_REGISTRY.google_home.description}. {t('systems.ghDesc')}
                 </p>
 
                 {ghVendor?.lastError && (
@@ -1460,10 +1473,12 @@ export function SystemsTab({
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               <span className="text-[11px] text-slate-500">
                 {ghVendor?.lastSyncedAt
-                  ? `Synchro : ${new Date(ghVendor.lastSyncedAt).toLocaleString('fr-FR')}`
+                  ? t('common.syncedAt', {
+                    date: new Date(ghVendor.lastSyncedAt).toLocaleString(intlLocale),
+                  })
                   : data.env.mode === 'live' && !data.env.googleHomeConfigured
-                    ? 'Ajoutez GOOGLE_CLIENT_ID / SECRET (voir Guide Setup)'
-                    : 'Lecture seule · zéro commande envoyée'}
+                    ? t('systems.ghMissingEnv')
+                    : t('common.readOnlyZeroCmd')}
               </span>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -1472,10 +1487,10 @@ export function SystemsTab({
                     type="button"
                     onClick={onOpenGoogleGuide}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:text-white transition"
-                    title="Afficher le déroulé opératoire pas-à-pas Google Home"
+                    title={t('common.setupGuideBtn')}
                   >
                     <BookOpen className="h-3.5 w-3.5 text-sky-400" />
-                    Déroulé setup
+                    {t('common.setupGuideBtn')}
                   </button>
                 )}
                 {data.env.mode === 'live' && !isGhConnected ? (
@@ -1484,7 +1499,7 @@ export function SystemsTab({
                     className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 px-3.5 py-2 text-xs font-medium text-white transition"
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
-                    Connecter Google Home ({selectedGoogleMode.toUpperCase()})
+                    {t('systems.ghConnectBtn', { mode: selectedGoogleMode.toUpperCase() })}
                   </a>
                 ) : (
                   <>
@@ -1495,7 +1510,7 @@ export function SystemsTab({
                       className="inline-flex items-center gap-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
                     >
                       <RefreshCw className={`h-3.5 w-3.5 ${syncingGoogle ? 'animate-spin' : ''}`} />
-                      {syncingGoogle ? 'Synchronisation...' : 'Synchroniser Google Home'}
+                      {syncingGoogle ? t('common.syncing') : t('systems.syncGhBtn')}
                     </button>
                     {data.env.mode === 'live' && isGhConnected && (
                       <button
@@ -1504,7 +1519,7 @@ export function SystemsTab({
                         disabled={disconnectingGoogle || syncingGoogle}
                         className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3 py-2 text-xs text-slate-300 transition"
                       >
-                        Déconnecter
+                        {t('common.disconnect')}
                       </button>
                     )}
                   </>
@@ -1517,11 +1532,10 @@ export function SystemsTab({
 
       {syncMessage && (
         <div
-          className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-xs ${
-            syncMessage.ok
+          className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-xs ${syncMessage.ok
               ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
               : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-          }`}
+            }`}
         >
           {syncMessage.ok ? (
             <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -1537,14 +1551,13 @@ export function SystemsTab({
         <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h3 className="text-sm font-semibold text-white">Autres systèmes disponibles</h3>
+              <h3 className="text-sm font-semibold text-white">{t('systems.otherTitle')}</h3>
               <p className="text-xs text-slate-400">
-                Ces intégrations optionnelles ne sont pas encore configurées dans{' '}
-                <code className="text-slate-300">.env.local</code> / variables d’environnement.
+                {t('systems.otherSub')}
               </p>
             </div>
             <span className="rounded-full border border-slate-700 bg-slate-950/60 px-2.5 py-0.5 text-[11px] text-slate-300">
-              {availableUnconfiguredSystems.length} système(s) disponible(s)
+              {t('systems.otherCount', { count: availableUnconfiguredSystems.length })}
             </span>
           </div>
 
@@ -1564,7 +1577,7 @@ export function SystemsTab({
                         {meta.label}
                       </span>
                       <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-400">
-                        Non configuré
+                        {t('common.notConfigured')}
                       </span>
                     </div>
                     <p className="text-xs text-slate-400">{item.scope}</p>
@@ -1577,7 +1590,7 @@ export function SystemsTab({
                       className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:text-white transition"
                     >
                       <BookOpen className="h-3.5 w-3.5 text-indigo-400" />
-                      Configurer (Guide Setup)
+                      {t('systems.configureGuideBtn')}
                     </button>
                   )}
                 </div>
@@ -1591,7 +1604,7 @@ export function SystemsTab({
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
         <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
           <Clock className="h-4 w-4 text-slate-400" />
-          Historique récent des collectes (toutes les 30 min)
+          {t('systems.logsTitle')}
         </h3>
         <div className="space-y-2 max-h-56 overflow-y-auto">
           {data.logs.map((log) => (
@@ -1601,12 +1614,11 @@ export function SystemsTab({
             >
               <div className="flex items-center gap-2.5">
                 <span
-                  className={`h-2 w-2 rounded-full ${
-                    log.status === 'success' ? 'bg-emerald-400' : 'bg-rose-400'
-                  }`}
+                  className={`h-2 w-2 rounded-full ${log.status === 'success' ? 'bg-emerald-400' : 'bg-rose-400'
+                    }`}
                 />
                 <span className="font-mono text-slate-300">
-                  {new Date(log.executedAt).toLocaleString('fr-FR')}
+                  {new Date(log.executedAt).toLocaleString(intlLocale)}
                 </span>
                 <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] uppercase text-slate-300">
                   {log.trigger}
@@ -1615,8 +1627,11 @@ export function SystemsTab({
               <div className="text-slate-400">
                 {log.status === 'success' ? (
                   <span>
-                    {log.readingsInserted} mesures enregistrées ({log.devicesCount} appareils) ·{' '}
-                    {log.durationMs ?? 0} ms
+                    {t('systems.logReadingsRow', {
+                      readings: log.readingsInserted,
+                      devices: log.devicesCount,
+                      ms: log.durationMs ?? 0,
+                    })}
                   </span>
                 ) : (
                   <span className="text-rose-300">{log.errorMessage}</span>
@@ -1627,5 +1642,16 @@ export function SystemsTab({
         </div>
       </div>
     </div>
+  );
+}
+                ) : (
+  <span className="text-rose-300">{log.errorMessage}</span>
+)}
+              </div >
+            </div >
+          ))}
+        </div >
+      </div >
+    </div >
   );
 }

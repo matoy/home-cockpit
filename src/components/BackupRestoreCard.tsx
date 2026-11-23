@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   Upload,
 } from 'lucide-react';
+import { useI18n } from './I18nProvider';
 import type {
   BackupImportMode,
   BackupImportResult,
@@ -26,50 +27,18 @@ interface BackupRestoreCardProps {
   onRefresh?: () => Promise<void>;
 }
 
-const METRICS_RANGE_OPTIONS: Array<{
-  value: BackupMetricsRange;
-  label: string;
-  hint: string;
-}> = [
-  {
-    value: 'none',
-    label: 'Configuration uniquement (sans métriques)',
-    hint: 'Pièces, appareils, liaisons, tarifs, automations et paramètres vendeurs.',
-  },
-  {
-    value: '30d',
-    label: 'Configuration + 30 derniers jours',
-    hint: 'Idéal pour un transfert léger avec historique récent.',
-  },
-  {
-    value: '90d',
-    label: 'Configuration + 90 derniers jours',
-    hint: 'Bon équilibre taille / historique trimestriel.',
-  },
-  {
-    value: '365d',
-    label: 'Configuration + 1 an',
-    hint: 'Permet la comparaison saisonnière complète.',
-  },
-  {
-    value: 'all',
-    label: 'Archive complète (toutes métriques & journaux)',
-    hint: 'Sauvegarde intégrale compressée en Gzip niveau 9.',
-  },
-];
-
 function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 o';
-  if (bytes < 1024) return `${bytes} o`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} Mo`;
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function formatDateFr(iso: string | null | undefined): string {
+function formatDateLocal(iso: string | null | undefined, intlLocale: string): string {
   if (!iso) return '—';
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return iso;
-  return parsed.toLocaleString('fr-FR', {
+  return parsed.toLocaleString(intlLocale, {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
@@ -82,6 +51,38 @@ function parseFilenameFromHeader(headerValue: string | null): string | null {
 }
 
 export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
+  const { t, intlLocale } = useI18n();
+  const metricsRangeOptions: Array<{
+    value: BackupMetricsRange;
+    label: string;
+    hint: string;
+  }> = [
+    {
+      value: 'none',
+      label: t('backup.rangeNoneLabel'),
+      hint: t('backup.rangeNoneHint'),
+    },
+    {
+      value: '30d',
+      label: t('backup.range30dLabel'),
+      hint: t('backup.range30dHint'),
+    },
+    {
+      value: '90d',
+      label: t('backup.range90dLabel'),
+      hint: t('backup.range90dHint'),
+    },
+    {
+      value: '365d',
+      label: t('backup.range365dLabel'),
+      hint: t('backup.range365dHint'),
+    },
+    {
+      value: 'all',
+      label: t('backup.rangeAllLabel'),
+      hint: t('backup.rangeAllHint'),
+    },
+  ];
   // --- Export state ---
   const [exportRange, setExportRange] = useState<BackupMetricsRange>('none');
   const [exportEncryptedSessions, setExportEncryptedSessions] = useState(false);
@@ -123,7 +124,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
 
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error ?? `Erreur HTTP ${response.status} lors de l’export.`);
+        throw new Error(body?.error ?? t('backup.exportHttpError', { status: response.status }));
       }
 
       const blob = await response.blob();
@@ -156,7 +157,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
         stats,
       });
     } catch (err) {
-      setExportError(err instanceof Error ? err.message : 'Erreur lors de l’export.');
+      setExportError(err instanceof Error ? err.message : t('backup.exportGenericError'));
     } finally {
       setExportLoading(false);
     }
@@ -203,7 +204,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
 
       if (!response.ok || !payload?.ok || !payload.preview) {
         throw new Error(
-          payload?.error ?? `Archive invalide ou illisible (HTTP ${response.status}).`
+          payload?.error ?? t('backup.invalidArchiveError', { status: response.status })
         );
       }
 
@@ -213,7 +214,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
       setImportMetrics(hasMetricsOrLogs);
       setImportEncryptedSessions(false);
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Échec de l’analyse de l’archive.');
+      setImportError(err instanceof Error ? err.message : t('backup.previewGenericError'));
     } finally {
       setPreviewLoading(false);
     }
@@ -222,7 +223,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
   async function handleRunImport() {
     if (!selectedFile || !preview) return;
     if (importMode === 'replace' && !confirmReplace) {
-      setImportError('Veuillez cocher la confirmation avant d’écraser la configuration actuelle.');
+      setImportError(t('backup.confirmReplaceError'));
       return;
     }
 
@@ -249,7 +250,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
       } | null;
 
       if (!response.ok || !payload?.ok || !payload.result) {
-        throw new Error(payload?.error ?? `Échec de l’importation (HTTP ${response.status}).`);
+        throw new Error(payload?.error ?? t('backup.importHttpError', { status: response.status }));
       }
 
       setImportResult(payload.result);
@@ -258,7 +259,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
         await onRefresh();
       }
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Erreur lors de la restauration.');
+      setImportError(err instanceof Error ? err.message : t('backup.importGenericError'));
     } finally {
       setImportLoading(false);
     }
@@ -279,27 +280,25 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
           </div>
           <div>
             <h3 className="text-sm font-semibold text-white">
-              Sauvegarde &amp; Restauration compressée (.json.gz)
+              {t('backup.title')}
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Exportez vos pièces, appareils, liaisons multi-vendeurs, tarifs, automations et
-              paramètres (plus l’historique de métriques au choix) dans une archive Gzip compacte,
-              puis restaurez-la en mode Fusion ou Remplacement.
+              {t('backup.subtitle')}
             </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
           <span className="rounded-lg border border-slate-800 bg-slate-950/70 px-2.5 py-1">
-            {data.rooms.length} pièce(s)
+            {t('backup.badgeRooms', { count: data.rooms.length })}
           </span>
           <span className="rounded-lg border border-slate-800 bg-slate-950/70 px-2.5 py-1">
-            {data.devices.length} appareil(s)
+            {t('backup.badgeDevices', { count: data.devices.length })}
           </span>
           <span className="rounded-lg border border-slate-800 bg-slate-950/70 px-2.5 py-1">
-            {data.tariffs.length} tarif(s)
+            {t('backup.badgeTariffs', { count: data.tariffs.length })}
           </span>
           <span className="rounded-lg border border-slate-800 bg-slate-950/70 px-2.5 py-1">
-            {data.automations.rules.length} automation(s)
+            {t('backup.badgeAutomations', { count: data.automations.rules.length })}
           </span>
         </div>
       </div>
@@ -310,7 +309,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
           <div className="flex items-center gap-2">
             <Download className="h-4 w-4 text-emerald-400" />
             <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-200">
-              Exporter une sauvegarde
+              {t('backup.exportSectionTitle')}
             </h4>
           </div>
 
@@ -319,7 +318,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
               htmlFor="backup-metrics-range"
               className="block text-xs font-medium text-slate-300"
             >
-              Contenu de l’archive
+              {t('backup.archiveContentLabel')}
             </label>
             <select
               id="backup-metrics-range"
@@ -327,14 +326,14 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
               onChange={(e) => setExportRange(e.target.value as BackupMetricsRange)}
               className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
             >
-              {METRICS_RANGE_OPTIONS.map((opt) => (
+              {metricsRangeOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
               ))}
             </select>
             <p className="text-[11px] text-slate-400">
-              {METRICS_RANGE_OPTIONS.find((opt) => opt.value === exportRange)?.hint}
+              {metricsRangeOptions.find((opt) => opt.value === exportRange)?.hint}
             </p>
           </div>
 
@@ -347,12 +346,10 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
             />
             <span className="text-xs text-slate-300 leading-relaxed">
               <span className="font-medium text-slate-200">
-                Inclure les sessions chiffrées (même instance)
+                {t('backup.includeSessionsTitle')}
               </span>
               <span className="block text-[11px] text-slate-400 mt-0.5">
-                Décoché par défaut pour ne jamais exporter vos jetons OAuth/X-Sense/Xiaomi. À
-                cocher uniquement pour restaurer sur une instance partageant le même secret
-                chiffrement (<code className="text-slate-300">.env.local</code> jamais inclus).
+                {t('backup.includeSessionsHint')}
               </span>
             </span>
           </label>
@@ -366,12 +363,12 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
             {exportLoading ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Compression Gzip en cours…
+                {t('backup.exportingBtn')}
               </>
             ) : (
               <>
                 <Download className="h-4 w-4" />
-                Télécharger la sauvegarde (.json.gz)
+                {t('backup.exportBtn')}
               </>
             )}
           </button>
@@ -386,15 +383,21 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
             <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs text-emerald-200 space-y-1">
               <div className="flex items-center gap-1.5 font-semibold">
                 <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-                Archive générée : {exportSuccess.filename} ({formatBytes(exportSuccess.bytes)})
+                {t('backup.exportSuccess', {
+                  filename: exportSuccess.filename,
+                  size: formatBytes(exportSuccess.bytes),
+                })}
               </div>
               {exportSuccess.stats && (
                 <p className="text-[11px] text-emerald-200/80">
-                  {exportSuccess.stats.rooms} pièce(s), {exportSuccess.stats.devices} appareil(s),{' '}
-                  {exportSuccess.stats.deviceVendorLinks} liaison(s),{' '}
-                  {exportSuccess.stats.tariffPeriods} tarif(s),{' '}
-                  {exportSuccess.stats.automations} automation(s),{' '}
-                  {exportSuccess.stats.metricReadings.toLocaleString('fr-FR')} métrique(s).
+                  {t('backup.exportStatsLine', {
+                    rooms: exportSuccess.stats.rooms,
+                    devices: exportSuccess.stats.devices,
+                    links: exportSuccess.stats.deviceVendorLinks,
+                    tariffs: exportSuccess.stats.tariffPeriods,
+                    automations: exportSuccess.stats.automations,
+                    metrics: exportSuccess.stats.metricReadings.toLocaleString(intlLocale),
+                  })}
                 </p>
               )}
             </div>
@@ -407,7 +410,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
             <div className="flex items-center gap-2">
               <Upload className="h-4 w-4 text-indigo-400" />
               <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-200">
-                Importer / Restaurer une archive
+                {t('backup.importSectionTitle')}
               </h4>
             </div>
             {(selectedFile || preview || importResult) && (
@@ -417,7 +420,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
                 className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-200"
               >
                 <RefreshCw className="h-3 w-3" />
-                Réinitialiser
+                {t('backup.resetBtn')}
               </button>
             )}
           </div>
@@ -440,17 +443,16 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
                 <div className="space-y-0.5">
                   <div className="text-xs font-semibold text-white">{selectedFile.name}</div>
                   <div className="text-[11px] text-slate-400">
-                    {formatBytes(selectedFile.size)} · Cliquer pour choisir un autre fichier
+                    {t('backup.selectedFileSub', { size: formatBytes(selectedFile.size) })}
                   </div>
                 </div>
               ) : (
                 <div className="space-y-0.5">
                   <div className="text-xs font-medium text-slate-200">
-                    Sélectionner un fichier <code className="text-indigo-300">.json.gz</code> ou{' '}
-                    <code className="text-indigo-300">.json</code>
+                    {t('backup.selectFileTitle')}
                   </div>
                   <div className="text-[11px] text-slate-400">
-                    Aperçu automatique avant toute modification (max 35 Mo compressés).
+                    {t('backup.selectFileSub')}
                   </div>
                 </div>
               )}
@@ -460,7 +462,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
           {previewLoading && (
             <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-300">
               <Loader2 className="h-4 w-4 animate-spin text-indigo-400 shrink-0" />
-              Décompression et vérification de l’archive…
+              {t('backup.analyzing')}
             </div>
           )}
 
@@ -468,8 +470,13 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
             <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/70 p-3.5">
               <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
                 <span>
-                  Exportée le <strong className="text-slate-200">{formatDateFr(preview.exportedAt)}</strong>{' '}
-                  ({preview.sourceMode === 'demo' ? 'Démo' : 'Live'})
+                  {t('backup.exportedAtLabel', {
+                    date: formatDateLocal(preview.exportedAt, intlLocale),
+                    mode:
+                      preview.sourceMode === 'demo'
+                        ? t('backup.sourceDemo')
+                        : t('backup.sourceLive'),
+                  })}
                 </span>
                 <span>
                   {formatBytes(preview.compressedBytes)} → {formatBytes(preview.uncompressedBytes)}
@@ -478,27 +485,27 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
                 <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-2.5 py-1.5">
-                  <div className="text-slate-400">Pièces</div>
+                  <div className="text-slate-400">{t('backup.statRooms')}</div>
                   <div className="font-semibold text-white">{preview.stats.rooms}</div>
                 </div>
                 <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-2.5 py-1.5">
-                  <div className="text-slate-400">Appareils</div>
+                  <div className="text-slate-400">{t('backup.statDevices')}</div>
                   <div className="font-semibold text-white">{preview.stats.devices}</div>
                 </div>
                 <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-2.5 py-1.5">
-                  <div className="text-slate-400">Liaisons</div>
+                  <div className="text-slate-400">{t('backup.statLinks')}</div>
                   <div className="font-semibold text-white">{preview.stats.deviceVendorLinks}</div>
                 </div>
                 <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-2.5 py-1.5">
-                  <div className="text-slate-400">Tarifs / Auto</div>
+                  <div className="text-slate-400">{t('backup.statTariffsAuto')}</div>
                   <div className="font-semibold text-white">
                     {preview.stats.tariffPeriods} / {preview.stats.automations}
                   </div>
                 </div>
                 <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-2.5 py-1.5 col-span-2">
-                  <div className="text-slate-400">Métriques</div>
+                  <div className="text-slate-400">{t('backup.statMetrics')}</div>
                   <div className="font-semibold text-white">
-                    {preview.stats.metricReadings.toLocaleString('fr-FR')}
+                    {preview.stats.metricReadings.toLocaleString(intlLocale)}
                     {preview.stats.metricsDateMin && preview.stats.metricsDateMax && (
                       <span className="block font-normal text-[10px] text-slate-400">
                         {preview.stats.metricsDateMin.slice(0, 10)} →{' '}
@@ -508,11 +515,11 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
                   </div>
                 </div>
                 <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-2.5 py-1.5">
-                  <div className="text-slate-400">Vendeurs</div>
+                  <div className="text-slate-400">{t('backup.statVendors')}</div>
                   <div className="font-semibold text-white">{preview.stats.vendorConnections}</div>
                 </div>
                 <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-2.5 py-1.5">
-                  <div className="text-slate-400">Journaux</div>
+                  <div className="text-slate-400">{t('backup.statLogs')}</div>
                   <div className="font-semibold text-white">{preview.stats.collectionLogs}</div>
                 </div>
               </div>
@@ -530,7 +537,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
 
               {/* Options d'importation */}
               <div className="space-y-2 pt-1">
-                <div className="text-xs font-medium text-slate-200">Mode de restauration</div>
+                <div className="text-xs font-medium text-slate-200">{t('backup.restoreModeTitle')}</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <label
                     className={`rounded-xl border p-2.5 text-xs cursor-pointer transition ${
@@ -550,11 +557,10 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
                         }}
                         className="text-indigo-500 focus:ring-indigo-500"
                       />
-                      Fusionner (Upsert)
+                      {t('backup.mergeTitle')}
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1">
-                      Ajoute ou met à jour sans supprimer les données existantes et déduplique les
-                      métriques.
+                      {t('backup.mergeDesc')}
                     </p>
                   </label>
 
@@ -573,10 +579,10 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
                         onChange={() => setImportMode('replace')}
                         className="text-rose-500 focus:ring-rose-500"
                       />
-                      Remplacer tout
+                      {t('backup.replaceTitle')}
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1">
-                      Réinitialise pièces, appareils, liaisons et tarifs selon l’archive.
+                      {t('backup.replaceDesc')}
                     </p>
                   </label>
                 </div>
@@ -594,7 +600,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
                     className="h-3.5 w-3.5 rounded border-slate-700 bg-slate-950 text-indigo-500"
                   />
                   <span>
-                    Importer les métriques et journaux ({preview.stats.metricReadings} mesure(s))
+                    {t('backup.importMetricsLabel', { count: preview.stats.metricReadings })}
                   </span>
                 </label>
 
@@ -607,7 +613,9 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
                       className="h-3.5 w-3.5 rounded border-slate-700 bg-slate-950 text-indigo-500"
                     />
                     <span>
-                      Restaurer aussi les sessions chiffrées ({preview.stats.encryptedSessionsCount})
+                      {t('backup.importSessionsLabel', {
+                        count: preview.stats.encryptedSessionsCount,
+                      })}
                     </span>
                   </label>
                 )}
@@ -617,13 +625,15 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
                     <div className="flex items-start gap-2 text-[11px] text-rose-200">
                       <ShieldAlert className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
                       <span>
-                        Le mode <strong>Remplacer tout</strong> supprime la configuration actuelle (
-                        {preview.currentStats.rooms} pièce(s), {preview.currentStats.devices}{' '}
-                        appareil(s)
-                        {importMetrics
-                          ? `, ${preview.currentStats.metricReadings.toLocaleString('fr-FR')} métrique(s)`
-                          : ' — les métriques des appareils conservés seront préservées'}
-                        ).
+                        {t('backup.replaceWarningPrefix', {
+                          rooms: preview.currentStats.rooms,
+                          devices: preview.currentStats.devices,
+                          metricsClause: importMetrics
+                            ? t('backup.replaceMetricsDrop', {
+                                count: preview.currentStats.metricReadings.toLocaleString(intlLocale),
+                              })
+                            : t('backup.replaceMetricsKeep'),
+                        })}
                       </span>
                     </div>
                     <label className="flex items-center gap-2 text-xs text-rose-100 cursor-pointer font-medium">
@@ -633,7 +643,7 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
                         onChange={(e) => setConfirmReplace(e.target.checked)}
                         className="h-3.5 w-3.5 rounded border-rose-500/50 bg-slate-950 text-rose-500"
                       />
-                      Je confirme vouloir écraser la configuration actuelle
+                      {t('backup.confirmReplaceCheck')}
                     </label>
                   </div>
                 )}
@@ -652,14 +662,14 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
                 {importLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Restauration en cours…
+                    {t('backup.importingBtn')}
                   </>
                 ) : (
                   <>
                     <Upload className="h-4 w-4" />
                     {importMode === 'replace'
-                      ? 'Remplacer et restaurer l’archive'
-                      : 'Fusionner l’archive'}
+                      ? t('backup.replaceSubmitBtn')
+                      : t('backup.mergeSubmitBtn')}
                   </>
                 )}
               </button>
@@ -679,13 +689,18 @@ export function BackupRestoreCard({ data, onRefresh }: BackupRestoreCardProps) {
                 {importResult.message}
               </div>
               <p className="text-[11px] text-emerald-200/80">
-                Pièces : {importResult.imported.rooms} · Appareils : {importResult.imported.devices}{' '}
-                · Liaisons : {importResult.imported.deviceVendorLinks} · Tarifs :{' '}
-                {importResult.imported.tariffPeriods} · Automations :{' '}
-                {importResult.imported.automations} · Métriques :{' '}
-                {importResult.imported.metricReadings}
+                {t('backup.importStatsLine', {
+                  rooms: importResult.imported.rooms,
+                  devices: importResult.imported.devices,
+                  links: importResult.imported.deviceVendorLinks,
+                  tariffs: importResult.imported.tariffPeriods,
+                  automations: importResult.imported.automations,
+                  metrics: importResult.imported.metricReadings,
+                })}
                 {importResult.skippedMetricsDuplicates > 0 &&
-                  ` (${importResult.skippedMetricsDuplicates} doublon(s) ignoré(s))`}
+                  t('backup.duplicatesSkipped', {
+                    count: importResult.skippedMetricsDuplicates,
+                  })}
               </p>
             </div>
           )}

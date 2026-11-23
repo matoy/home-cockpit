@@ -30,6 +30,7 @@ import {
   isXiaomiSecurityOrHomeDevice,
   type XiaomiDeviceSummary,
 } from '@/lib/vendors/xiaomi-display';
+import { useI18n } from './I18nProvider';
 import type { DashboardPayload, DeviceRecord, RoomRecord, TabId } from '@/types';
 
 interface SecurityTabProps {
@@ -63,11 +64,11 @@ const ALARM_BADGE_CLASSES: Record<XSenseAlarmTone, string> = {
   slate: 'border-slate-700 bg-slate-800/80 text-slate-300',
 };
 
-function formatTimeShort(iso: string | null): string {
+function formatTimeShort(iso: string | null, intlLocale: string): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('fr-FR', {
+  return d.toLocaleString(intlLocale, {
     day: '2-digit',
     month: '2-digit',
     hour: '2-digit',
@@ -95,6 +96,7 @@ export function SecurityTab({
   onNavigateTab,
   onResetGlobalFilters,
 }: SecurityTabProps) {
+  const { t, intlLocale } = useI18n();
   const [filter, setFilter] = useState<SecurityFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -141,10 +143,10 @@ export function SecurityTab({
       if (a.isAlert !== b.isAlert) return a.isAlert ? -1 : 1;
       return (a.device.customName || a.device.name).localeCompare(
         b.device.customName || b.device.name,
-        'fr'
+        intlLocale
       );
     });
-  }, [roomScopedAll, roomById]);
+  }, [roomScopedAll, roomById, intlLocale]);
 
   const kpis = useMemo(() => {
     const total = allItems.length;
@@ -250,14 +252,14 @@ export function SecurityTab({
       } else {
         groups.set(key, {
           key,
-          title: item.room ? item.room.name : 'Non assignés à une pièce',
+          title: item.room ? item.room.name : t('security.unassignedRoom'),
           color: item.room?.color ?? '#64748b',
           items: [item],
         });
       }
     }
-    return Array.from(groups.values()).sort((a, b) => a.title.localeCompare(b.title, 'fr'));
-  }, [filteredItems]);
+    return Array.from(groups.values()).sort((a, b) => a.title.localeCompare(b.title, intlLocale));
+  }, [filteredItems, intlLocale, t]);
 
   const hasGlobalScope =
     data.selectedSystem !== 'all' || data.selectedRoomId !== 'all';
@@ -274,7 +276,7 @@ export function SecurityTab({
           }`}
         >
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Statut Sécurité</span>
+            <span>{t('security.kpiStatus')}</span>
             {kpis.activeAlerts > 0 ? (
               <ShieldAlert className="h-4 w-4 text-rose-400" />
             ) : (
@@ -288,50 +290,50 @@ export function SecurityTab({
               }`}
             >
               {kpis.activeAlerts > 0
-                ? `${kpis.activeAlerts} alerte(s)`
-                : 'Aucune alerte'}
+                ? t('security.alertsCount', { count: kpis.activeAlerts })
+                : t('security.noAlert')}
             </span>
           </div>
           <p className="mt-1 text-[11px] text-slate-400">
-            {kpis.online} / {kpis.total} équipement(s) en ligne · 100 % lecture seule
+            {t('security.statusSub', { online: kpis.online, total: kpis.total })}
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Détecteurs Sécurité</span>
+            <span>{t('security.kpiDetectors')}</span>
             <Flame className="h-4 w-4 text-rose-400" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-white">
               {kpis.smokeCoCount + kpis.waterLeakCount}
             </span>
-            <span className="text-xs text-slate-400">actifs</span>
+            <span className="text-xs text-slate-400">{t('security.activeUnit')}</span>
           </div>
           <p className="mt-1 text-[11px] text-slate-400">
-            {kpis.smokeCoCount} fumée / CO · {kpis.waterLeakCount} fuite d&apos;eau
+            {t('security.detectorsSub', { smoke: kpis.smokeCoCount, leak: kpis.waterLeakCount })}
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Stations &amp; Maison</span>
+            <span>{t('security.kpiStations')}</span>
             <Sparkles className="h-4 w-4 text-orange-400" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-white">
               {kpis.stationsAndHomeCount}
             </span>
-            <span className="text-xs text-slate-400">unités</span>
+            <span className="text-xs text-slate-400">{t('security.unitsWord')}</span>
           </div>
           <p className="mt-1 text-[11px] text-slate-400">
-            Stations SBS50, purificateurs PM2.5 &amp; équipements Xiaomi
+            {t('security.stationsSub')}
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Batteries capteurs</span>
+            <span>{t('security.kpiBatteries')}</span>
             <Battery
               className={`h-4 w-4 ${
                 kpis.lowBatteryCount > 0 ? 'text-amber-400' : 'text-emerald-400'
@@ -342,12 +344,12 @@ export function SecurityTab({
             <span className="text-2xl font-bold text-white">
               {kpis.avgBatteryPct !== null ? `${kpis.avgBatteryPct} %` : '—'}
             </span>
-            <span className="text-xs text-slate-400">moy.</span>
+            <span className="text-xs text-slate-400">{t('security.avgWord')}</span>
           </div>
           <p className="mt-1 text-[11px] text-slate-400">
             {kpis.lowBatteryCount > 0
-              ? `${kpis.lowBatteryCount} batterie(s) faible(s) (< 20 %)`
-              : `${kpis.batteryCount} capteur(s) sur pile OK`}
+              ? t('security.lowBatteriesSub', { count: kpis.lowBatteryCount })
+              : t('security.okBatteriesSub', { count: kpis.batteryCount })}
           </p>
         </div>
       </div>
@@ -357,12 +359,12 @@ export function SecurityTab({
         <div className="flex flex-wrap items-center gap-1.5">
           {(
             [
-              ['all', `Tous (${allItems.length})`],
-              ['smoke_co', `Fumée & CO (${kpis.smokeCoCount})`],
-              ['water_leak', `Fuite d'eau (${kpis.waterLeakCount})`],
-              ['stations', 'Stations & X-Sense'],
-              ['xiaomi_home', 'Xiaomi Home'],
-              ['low_battery', `Batterie faible (${kpis.lowBatteryCount})`],
+              ['all', t('security.filterAll', { count: allItems.length })],
+              ['smoke_co', t('security.filterSmokeCo', { count: kpis.smokeCoCount })],
+              ['water_leak', t('security.filterWaterLeak', { count: kpis.waterLeakCount })],
+              ['stations', t('security.filterStations')],
+              ['xiaomi_home', t('security.filterXiaomi')],
+              ['low_battery', t('security.filterLowBattery', { count: kpis.lowBatteryCount })],
             ] as Array<[SecurityFilter, string]>
           ).map(([key, label]) => (
             <button
@@ -386,7 +388,7 @@ export function SecurityTab({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Rechercher détecteur, modèle, IP..."
+            placeholder={t('security.searchPlaceholder')}
             className="w-full rounded-xl border border-slate-800 bg-slate-950 pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
           />
         </div>
@@ -398,8 +400,8 @@ export function SecurityTab({
           <ShieldCheck className="h-8 w-8 text-slate-500 mx-auto" />
           <p className="text-sm font-medium text-slate-200">
             {allItems.length === 0
-              ? 'Aucun détecteur X-Sense ou appareil Xiaomi Home dans le périmètre actuel.'
-              : 'Aucun équipement ne correspond aux critères de recherche.'}
+              ? t('security.emptyNone')
+              : t('security.emptyNoMatch')}
           </p>
           <div className="flex flex-wrap justify-center gap-2">
             {hasGlobalScope && onResetGlobalFilters && (
@@ -408,7 +410,7 @@ export function SecurityTab({
                 onClick={onResetGlobalFilters}
                 className="rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3.5 py-2 text-xs font-medium text-slate-200 transition"
               >
-                Réinitialiser les filtres
+                {t('common.resetFilters')}
               </button>
             )}
             <button
@@ -416,7 +418,7 @@ export function SecurityTab({
               onClick={() => onNavigateTab('systems')}
               className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-3.5 py-2 text-xs font-medium text-white transition"
             >
-              Configurer X-Sense &amp; Xiaomi Home
+              {t('security.configureBtn')}
             </button>
           </div>
         </div>
@@ -462,7 +464,7 @@ export function SecurityTab({
                             </h4>
                           </div>
                           <p className="text-[11px] text-slate-400 mt-0.5 truncate">
-                            {xsense?.unitTypeLabel ?? xiaomi?.unitTypeLabel ?? device.productName ?? 'Capteur'}
+                            {xsense?.unitTypeLabel ?? xiaomi?.unitTypeLabel ?? device.productName ?? t('security.defaultSensor')}
                             {device.productName ? ` · ${device.productName}` : ''}
                           </p>
                         </div>
@@ -510,7 +512,7 @@ export function SecurityTab({
                             ) : (
                               <WifiOff className="h-3 w-3" />
                             )}
-                            {device.isOnline ? 'En ligne' : 'Hors ligne'}
+                            {device.isOnline ? t('common.online') : t('common.offline')}
                           </span>
                         </div>
                       </div>
@@ -521,7 +523,7 @@ export function SecurityTab({
                           <div className="rounded-xl bg-slate-950/70 border border-slate-800/80 p-2.5">
                             <span className="text-[10px] text-slate-500 flex items-center gap-1">
                               <Thermometer className="h-3 w-3 text-amber-400" />
-                              Temp.
+                              {t('security.tempLabel')}
                             </span>
                             <p className="text-sm font-semibold text-white mt-0.5">
                               {device.lastTempC.toFixed(1)} °C
@@ -532,7 +534,7 @@ export function SecurityTab({
                           <div className="rounded-xl bg-slate-950/70 border border-slate-800/80 p-2.5">
                             <span className="text-[10px] text-slate-500 flex items-center gap-1">
                               <Droplets className="h-3 w-3 text-sky-400" />
-                              Humidité
+                              {t('security.humidityLabel')}
                             </span>
                             <p className="text-sm font-semibold text-white mt-0.5">
                               {Math.round(device.lastHumidityPct)} %
@@ -541,7 +543,7 @@ export function SecurityTab({
                         )}
                         {xsense?.coPpm !== null && xsense?.coPpm !== undefined && (
                           <div className="rounded-xl bg-slate-950/70 border border-slate-800/80 p-2.5">
-                            <span className="text-[10px] text-slate-500">CO (ppm)</span>
+                            <span className="text-[10px] text-slate-500">{t('security.coPpmLabel')}</span>
                             <p className="text-sm font-semibold text-white mt-0.5">
                               {xsense.coPpm} ppm
                             </p>
@@ -551,7 +553,7 @@ export function SecurityTab({
                           <div className="rounded-xl bg-slate-950/70 border border-slate-800/80 p-2.5">
                             <span className="text-[10px] text-slate-500 flex items-center gap-1">
                               <Wind className="h-3 w-3 text-emerald-400" />
-                              PM2.5
+                              {t('security.pm25Label')}
                             </span>
                             <p className="text-sm font-semibold text-white mt-0.5">
                               {xiaomi.pm25} µg/m³
@@ -560,7 +562,7 @@ export function SecurityTab({
                         )}
                         {device.lastPowerW !== null && (
                           <div className="rounded-xl bg-slate-950/70 border border-slate-800/80 p-2.5">
-                            <span className="text-[10px] text-slate-500">Puissance</span>
+                            <span className="text-[10px] text-slate-500">{t('security.powerLabel')}</span>
                             <p className="text-sm font-semibold text-amber-300 mt-0.5">
                               {Math.round(device.lastPowerW)} W
                             </p>
@@ -568,13 +570,13 @@ export function SecurityTab({
                         )}
                         {device.lastContactOpen !== null && (
                           <div className="rounded-xl bg-slate-950/70 border border-slate-800/80 p-2.5">
-                            <span className="text-[10px] text-slate-500">Ouverture</span>
+                            <span className="text-[10px] text-slate-500">{t('security.openingLabel')}</span>
                             <p
                               className={`text-sm font-semibold mt-0.5 ${
                                 device.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'
                               }`}
                             >
-                              {device.lastContactOpen ? 'Ouvert' : 'Fermé'}
+                              {device.lastContactOpen ? t('common.open') : t('common.closed')}
                             </p>
                           </div>
                         )}
@@ -582,7 +584,7 @@ export function SecurityTab({
                           <div className="rounded-xl bg-slate-950/70 border border-slate-800/80 p-2.5">
                             <span className="text-[10px] text-slate-500 flex items-center gap-1">
                               <Battery className="h-3 w-3" />
-                              Batterie
+                              {t('security.batteryLabel')}
                             </span>
                             <p
                               className={`text-sm font-semibold mt-0.5 ${
@@ -606,17 +608,17 @@ export function SecurityTab({
                         )}
                         {xiaomi?.mode && (
                           <span className="rounded-lg bg-slate-950/80 border border-slate-800 px-2 py-0.5">
-                            Mode {xiaomi.mode}
+                            {t('security.modePrefix', { mode: xiaomi.mode })}
                           </span>
                         )}
                         {xiaomi?.filterLifePct !== null && xiaomi?.filterLifePct !== undefined && (
                           <span className="rounded-lg bg-slate-950/80 border border-slate-800 px-2 py-0.5">
-                            Filtre {xiaomi.filterLifePct} %
+                            {t('security.filterPrefix', { pct: xiaomi.filterLifePct })}
                           </span>
                         )}
                         {xiaomi?.vacuumState && (
                           <span className="rounded-lg bg-slate-950/80 border border-slate-800 px-2 py-0.5">
-                            Robot : {xiaomi.vacuumState}
+                            {t('security.robotPrefix', { state: xiaomi.vacuumState })}
                           </span>
                         )}
                         {rssi !== null && (
@@ -632,9 +634,9 @@ export function SecurityTab({
                             ? device.ipAddress
                             : device.macAddress
                               ? device.macAddress
-                              : 'Capteur Cloud'}
+                              : t('security.cloudSensor')}
                         </span>
-                        <span className="shrink-0">{formatTimeShort(device.lastSeenAt)}</span>
+                        <span className="shrink-0">{formatTimeShort(device.lastSeenAt, intlLocale)}</span>
                       </div>
                     </div>
                   );

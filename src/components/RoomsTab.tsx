@@ -20,6 +20,7 @@ import {
   Droplets,
 } from 'lucide-react';
 import { VENDOR_REGISTRY } from '@/lib/vendors/registry';
+import { useI18n } from './I18nProvider';
 import type {
   ComfortStatus,
   DashboardPayload,
@@ -58,6 +59,7 @@ export function RoomsTab({
   onOpenRoomDevices,
   onOpenGoogleGuide,
 }: RoomsTabProps) {
+  const { t, intlLocale } = useI18n();
   // Synchronisation par système
   const [syncingTarget, setSyncingTarget] = useState<'tuya' | 'kasa' | 'somfy' | 'xiaomi' | 'google_home' | 'all' | null>(null);
   const [selectedGoogleMode, setSelectedGoogleMode] = useState<GoogleHomeMode>(
@@ -149,17 +151,17 @@ export function RoomsTab({
       });
       const json = (await res.json()) as { message?: string; error?: string };
       if (!res.ok) {
-        throw new Error(json.error || 'Échec de synchronisation des pièces.');
+        throw new Error(json.error || t('rooms.syncError'));
       }
       setSyncMessage({
         ok: true,
-        text: json.message || 'Pièces synchronisées avec succès.',
+        text: json.message || t('rooms.syncDone'),
       });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur lors de la synchronisation.',
+        text: err instanceof Error ? err.message : t('rooms.syncError'),
       });
     } finally {
       setSyncingTarget(null);
@@ -192,7 +194,7 @@ export function RoomsTab({
     e.preventDefault();
     const trimmedName = roomName.trim();
     if (!trimmedName) {
-      setRoomFeedback({ ok: false, text: 'Le nom de la pièce est requis.' });
+      setRoomFeedback({ ok: false, text: t('rooms.nameRequired') });
       return;
     }
 
@@ -207,14 +209,14 @@ export function RoomsTab({
       !Number.isFinite(parsedHumMin) ||
       !Number.isFinite(parsedHumMax)
     ) {
-      setRoomFeedback({ ok: false, text: 'Veuillez saisir des valeurs numériques valides.' });
+      setRoomFeedback({ ok: false, text: t('rooms.invalidNumbers') });
       return;
     }
 
     if (parsedTempMin > parsedTempMax) {
       setRoomFeedback({
         ok: false,
-        text: 'La température min doit être inférieure ou égale à la température max.',
+        text: t('rooms.invalidTempOrder'),
       });
       return;
     }
@@ -222,7 +224,7 @@ export function RoomsTab({
     if (parsedHumMin < 0 || parsedHumMax > 100 || parsedHumMin > parsedHumMax) {
       setRoomFeedback({
         ok: false,
-        text: "L'humidité cible doit être comprise entre 0 et 100 % (min ≤ max).",
+        text: t('rooms.invalidHumidityRange'),
       });
       return;
     }
@@ -246,20 +248,20 @@ export function RoomsTab({
       });
       const json = (await res.json()) as { error?: string };
       if (!res.ok) {
-        throw new Error(json.error || "Échec de l'enregistrement de la pièce.");
+        throw new Error(json.error || t('rooms.saveError'));
       }
 
       await onRefresh();
       if (isEditing) {
-        setRoomFeedback({ ok: true, text: `Pièce « ${trimmedName} » mise à jour.` });
+        setRoomFeedback({ ok: true, text: t('rooms.updated', { name: trimmedName }) });
       } else {
         resetRoomForm();
-        setRoomFeedback({ ok: true, text: `Pièce « ${trimmedName} » créée.` });
+        setRoomFeedback({ ok: true, text: t('rooms.created', { name: trimmedName }) });
       }
     } catch (err) {
       setRoomFeedback({
         ok: false,
-        text: err instanceof Error ? err.message : "Erreur lors de l'enregistrement.",
+        text: err instanceof Error ? err.message : t('rooms.saveError'),
       });
     } finally {
       setSavingRoom(false);
@@ -272,7 +274,7 @@ export function RoomsTab({
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       setRoomFeedback({
         ok: false,
-        text: json.error || 'Échec de la suppression de la pièce.',
+        text: json.error || t('rooms.deleteError'),
       });
       return;
     }
@@ -289,11 +291,10 @@ export function RoomsTab({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-white">
-              Synchronisation des pièces depuis vos systèmes
+              {t('rooms.syncSectionTitle')}
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              100 % lecture seule · importe les pièces manquantes et met à jour l&apos;affectation
-              des appareils sans écraser vos couleurs ni vos cibles °C / %.
+              {t('rooms.syncSectionSub')}
             </p>
           </div>
           {(showKasa || showSomfy || showXiaomi || showGoogleHomeApi) && (
@@ -304,7 +305,7 @@ export function RoomsTab({
               className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${syncingTarget === 'all' ? 'animate-spin' : ''}`} />
-              {syncingTarget === 'all' ? 'Synchronisation...' : 'Tout synchroniser'}
+              {syncingTarget === 'all' ? t('common.syncing') : t('rooms.syncAllBtn')}
             </button>
           )}
         </div>
@@ -326,23 +327,24 @@ export function RoomsTab({
                     }`}
                 >
                   {data.env.mode === 'demo'
-                    ? 'Mode Démo'
+                    ? t('common.demoMode')
                     : data.env.tuyaConfigured
-                      ? `Connecté (${data.env.tuyaRegion.toUpperCase()})`
-                      : 'Non configuré'}
+                      ? `${t('common.connected')} (${data.env.tuyaRegion.toUpperCase()})`
+                      : t('common.notConfigured')}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-2">
-                Importe vos espaces / pièces Smart Life &amp; Tuya et rattache les appareils Tuya
-                correspondants (prioritaire sur Google Home).
+                {t('rooms.tuyaSyncDesc')}
               </p>
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               <span className="text-[11px] text-slate-500">
                 {tuyaVendor?.lastSyncedAt
-                  ? `Synchro : ${new Date(tuyaVendor.lastSyncedAt).toLocaleString('fr-FR')}`
-                  : 'Aucune synchronisation récente'}
+                  ? t('common.syncedAt', {
+                      date: new Date(tuyaVendor.lastSyncedAt).toLocaleString(intlLocale),
+                    })
+                  : t('common.noRecentSync')}
               </span>
               <button
                 type="button"
@@ -353,7 +355,7 @@ export function RoomsTab({
                 <RefreshCw
                   className={`h-3.5 w-3.5 ${syncingTarget === 'tuya' ? 'animate-spin' : ''}`}
                 />
-                {syncingTarget === 'tuya' ? 'Synchronisation...' : 'Synchroniser pièces Tuya'}
+                {syncingTarget === 'tuya' ? t('common.syncing') : t('rooms.syncTuyaBtn')}
               </button>
             </div>
           </div>
@@ -375,15 +377,14 @@ export function RoomsTab({
                       }`}
                   >
                     {data.env.mode === 'demo'
-                      ? 'Mode Démo'
+                      ? t('common.demoMode')
                       : data.env.kasaConfigured
-                        ? `Connecté (${data.env.kasaRegion.toUpperCase()})`
-                        : 'Non configuré'}
+                        ? `${t('common.connected')} (${data.env.kasaRegion.toUpperCase()})`
+                        : t('common.notConfigured')}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
-                  Importe les pièces et groupes TP-Link Kasa Cloud (100 % cloud, lecture seule) et
-                  rattache vos appareils Kasa.
+                  {t('rooms.kasaSyncDesc')}
                 </p>
                 {kasaVendor?.lastError && (
                   <p className="text-[11px] text-amber-300 mt-1">{kasaVendor.lastError}</p>
@@ -393,8 +394,10 @@ export function RoomsTab({
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <span className="text-[11px] text-slate-500">
                   {kasaVendor?.lastSyncedAt
-                    ? `Synchro : ${new Date(kasaVendor.lastSyncedAt).toLocaleString('fr-FR')}`
-                    : '100 % cloud · zéro accès local requis'}
+                    ? t('common.syncedAt', {
+                        date: new Date(kasaVendor.lastSyncedAt).toLocaleString(intlLocale),
+                      })
+                    : t('rooms.kasaNoLocal')}
                 </span>
                 <button
                   type="button"
@@ -405,7 +408,7 @@ export function RoomsTab({
                   <RefreshCw
                     className={`h-3.5 w-3.5 ${syncingTarget === 'kasa' ? 'animate-spin' : ''}`}
                   />
-                  {syncingTarget === 'kasa' ? 'Synchronisation...' : 'Synchroniser pièces Kasa'}
+                  {syncingTarget === 'kasa' ? t('common.syncing') : t('rooms.syncKasaBtn')}
                 </button>
               </div>
             </div>
@@ -428,15 +431,14 @@ export function RoomsTab({
                       }`}
                   >
                     {data.env.mode === 'demo'
-                      ? 'Mode Démo'
+                      ? t('common.demoMode')
                       : data.env.somfyConfigured
-                        ? `Prêt (${data.env.somfyRegion.toUpperCase()})`
-                        : 'Non configuré'}
+                        ? t('rooms.somfyReady', { region: data.env.somfyRegion.toUpperCase() })
+                        : t('common.notConfigured')}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
-                  Importe les pièces TaHoma / Kit de connectivité Somfy Cloud (100 % cloud,
-                  lecture seule) et rattache vos volets / stores / capteurs.
+                  {t('rooms.somfySyncDesc')}
                 </p>
                 {somfyVendor?.lastError && (
                   <p className="text-[11px] text-amber-300 mt-1">{somfyVendor.lastError}</p>
@@ -446,8 +448,10 @@ export function RoomsTab({
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <span className="text-[11px] text-slate-500">
                   {somfyVendor?.lastSyncedAt
-                    ? `Synchro : ${new Date(somfyVendor.lastSyncedAt).toLocaleString('fr-FR')}`
-                    : '100 % cloud · zéro commande envoyée'}
+                    ? t('common.syncedAt', {
+                        date: new Date(somfyVendor.lastSyncedAt).toLocaleString(intlLocale),
+                      })
+                    : t('common.cloudZeroCmd')}
                 </span>
                 <button
                   type="button"
@@ -458,7 +462,7 @@ export function RoomsTab({
                   <RefreshCw
                     className={`h-3.5 w-3.5 ${syncingTarget === 'somfy' ? 'animate-spin' : ''}`}
                   />
-                  {syncingTarget === 'somfy' ? 'Synchronisation...' : 'Synchroniser pièces Somfy'}
+                  {syncingTarget === 'somfy' ? t('common.syncing') : t('rooms.syncSomfyBtn')}
                 </button>
               </div>
             </div>
@@ -482,15 +486,14 @@ export function RoomsTab({
                     }`}
                   >
                     {data.env.mode === 'demo'
-                      ? 'Mode Démo'
+                      ? t('common.demoMode')
                       : data.env.xiaomiConnected
-                        ? `Connecté (${data.env.xiaomiRegion.toUpperCase()})`
-                        : 'Connexion QR / 2FA requise'}
+                        ? `${t('common.connected')} (${data.env.xiaomiRegion.toUpperCase()})`
+                        : t('rooms.xiaomiQrRequired')}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
-                  Importe les pièces configurées dans Xiaomi Home ({data.env.xiaomiRegion.toUpperCase()})
-                  en lecture seule et rattache vos capteurs / appareils Mi Home.
+                  {t('rooms.xiaomiSyncDesc', { region: data.env.xiaomiRegion.toUpperCase() })}
                 </p>
                 {xiaomiVendor?.lastError && (
                   <p className="text-[11px] text-amber-300 mt-1">{xiaomiVendor.lastError}</p>
@@ -500,8 +503,10 @@ export function RoomsTab({
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <span className="text-[11px] text-slate-500">
                   {xiaomiVendor?.lastSyncedAt
-                    ? `Synchro : ${new Date(xiaomiVendor.lastSyncedAt).toLocaleString('fr-FR')}`
-                    : '100 % cloud · zéro commande envoyée'}
+                    ? t('common.syncedAt', {
+                        date: new Date(xiaomiVendor.lastSyncedAt).toLocaleString(intlLocale),
+                      })
+                    : t('common.cloudZeroCmd')}
                 </span>
                 <button
                   type="button"
@@ -512,7 +517,7 @@ export function RoomsTab({
                   <RefreshCw
                     className={`h-3.5 w-3.5 ${syncingTarget === 'xiaomi' ? 'animate-spin' : ''}`}
                   />
-                  {syncingTarget === 'xiaomi' ? 'Synchronisation...' : 'Synchroniser pièces Xiaomi'}
+                  {syncingTarget === 'xiaomi' ? t('common.syncing') : t('rooms.syncXiaomiBtn')}
                 </button>
               </div>
             </div>
@@ -536,12 +541,12 @@ export function RoomsTab({
                         }`}
                     >
                       {data.env.mode === 'demo'
-                        ? 'Mode Démo'
+                        ? t('common.demoMode')
                         : isGhConnected
-                          ? `Connecté (${(ghVendor?.mode ?? selectedGoogleMode).toString().toUpperCase()})`
+                          ? `${t('common.connected')} (${(ghVendor?.mode ?? selectedGoogleMode).toString().toUpperCase()})`
                           : data.env.googleHomeConfigured
-                            ? 'Prêt (OAuth requis)'
-                            : 'OAuth non configuré'}
+                            ? t('common.readyOAuth')
+                            : t('common.oauthNotConfigured')}
                     </span>
                   </div>
 
@@ -549,17 +554,16 @@ export function RoomsTab({
                     <select
                       value={selectedGoogleMode}
                       onChange={(e) => setSelectedGoogleMode(e.target.value as GoogleHomeMode)}
-                      aria-label="Mode API Google Home"
+                      aria-label={t('systems.ghModeAria')}
                       className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-200 focus:border-sky-500 focus:outline-none"
                     >
-                      <option value="mcp">Mode Home MCP (tous appareils)</option>
-                      <option value="sdm">Mode Nest SDM (Nest)</option>
+                      <option value="mcp">{t('systems.ghModeMcp')}</option>
+                      <option value="sdm">{t('systems.ghModeSdm')}</option>
                     </select>
                   )}
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
-                  Importe les pièces Google Home / Nest ({selectedGoogleMode.toUpperCase()}) et
-                  complète les appareils non encore assignés.
+                  {t('rooms.ghSyncDesc', { mode: selectedGoogleMode.toUpperCase() })}
                 </p>
                 {ghVendor?.lastError && (
                   <p className="text-[11px] text-rose-300 mt-1">{ghVendor.lastError}</p>
@@ -569,8 +573,10 @@ export function RoomsTab({
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <span className="text-[11px] text-slate-500">
                   {ghVendor?.lastSyncedAt
-                    ? `Synchro : ${new Date(ghVendor.lastSyncedAt).toLocaleString('fr-FR')}`
-                    : 'Lecture seule · zéro commande envoyée'}
+                    ? t('common.syncedAt', {
+                        date: new Date(ghVendor.lastSyncedAt).toLocaleString(intlLocale),
+                      })
+                    : t('common.readOnlyZeroCmd')}
                 </span>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -579,10 +585,10 @@ export function RoomsTab({
                       type="button"
                       onClick={onOpenGoogleGuide}
                       className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:text-white transition"
-                      title="Afficher le déroulé opératoire pas-à-pas Google Home"
+                      title={t('common.setupGuideBtn')}
                     >
                       <BookOpen className="h-3.5 w-3.5 text-sky-400" />
-                      Déroulé setup
+                      {t('common.setupGuideBtn')}
                     </button>
                   )}
 
@@ -592,7 +598,7 @@ export function RoomsTab({
                       className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 px-3 py-1.5 text-xs font-medium text-white transition"
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
-                      Connecter Google Home ({selectedGoogleMode.toUpperCase()})
+                      {t('rooms.ghConnectBtn', { mode: selectedGoogleMode.toUpperCase() })}
                     </a>
                   ) : (
                     <button
@@ -605,8 +611,8 @@ export function RoomsTab({
                         className={`h-3.5 w-3.5 ${syncingTarget === 'google_home' ? 'animate-spin' : ''}`}
                       />
                       {syncingTarget === 'google_home'
-                        ? 'Synchronisation...'
-                        : 'Synchroniser pièces Google Home'}
+                        ? t('common.syncing')
+                        : t('rooms.syncGhBtn')}
                     </button>
                   )}
                 </div>
@@ -646,12 +652,12 @@ export function RoomsTab({
               {editingRoomId !== null ? (
                 <>
                   <Pencil className="h-4 w-4 text-indigo-400" />
-                  Modifier la pièce
+                  {t('rooms.editRoomTitle')}
                 </>
               ) : (
                 <>
                   <Home className="h-4 w-4 text-indigo-400" />
-                  Ajouter une pièce
+                  {t('rooms.addRoomTitle')}
                 </>
               )}
             </h3>
@@ -660,20 +666,20 @@ export function RoomsTab({
                 type="button"
                 onClick={resetRoomForm}
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2 py-1 text-[11px] text-slate-300 transition"
-                title="Revenir au mode ajout"
+                title={t('rooms.returnAddTitle')}
               >
                 <X className="h-3.5 w-3.5" />
-                Annuler
+                {t('common.cancel')}
               </button>
             )}
           </div>
 
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Nom de la pièce</label>
+            <label className="block text-xs text-slate-400 mb-1">{t('rooms.nameLabel')}</label>
             <input
               type="text"
               required
-              placeholder="ex: Buanderie, Garage..."
+              placeholder={t('rooms.namePlaceholder')}
               value={roomName}
               onChange={(e) => setRoomName(e.target.value)}
               className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
@@ -681,7 +687,7 @@ export function RoomsTab({
           </div>
 
           <div>
-            <label className="block text-xs text-slate-400 mb-1.5">Couleur sur les graphiques</label>
+            <label className="block text-xs text-slate-400 mb-1.5">{t('rooms.colorLabel')}</label>
             <div className="flex flex-wrap items-center gap-2">
               {(ROOM_COLORS.includes(roomColor) ? ROOM_COLORS : [...ROOM_COLORS, roomColor]).map((c) => (
                 <button
@@ -694,7 +700,7 @@ export function RoomsTab({
                 />
               ))}
               <label
-                title="Couleur personnalisée"
+                title={t('rooms.customColorTitle')}
                 className="relative inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-dashed border-slate-500 bg-slate-950 text-[11px] font-semibold text-slate-300 hover:border-white transition overflow-hidden"
               >
                 <span>+</span>
@@ -703,7 +709,7 @@ export function RoomsTab({
                   value={/^#[0-9a-fA-F]{6}$/.test(roomColor) ? roomColor : '#3b82f6'}
                   onChange={(e) => setRoomColor(e.target.value)}
                   className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                  aria-label="Couleur personnalisée"
+                  aria-label={t('rooms.customColorTitle')}
                 />
               </label>
             </div>
@@ -711,7 +717,7 @@ export function RoomsTab({
 
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
-              <label className="block text-slate-400 mb-1">Temp. cible min (°C)</label>
+              <label className="block text-slate-400 mb-1">{t('rooms.tempMinLabel')}</label>
               <input
                 type="number"
                 step="0.5"
@@ -721,7 +727,7 @@ export function RoomsTab({
               />
             </div>
             <div>
-              <label className="block text-slate-400 mb-1">Temp. cible max (°C)</label>
+              <label className="block text-slate-400 mb-1">{t('rooms.tempMaxLabel')}</label>
               <input
                 type="number"
                 step="0.5"
@@ -731,7 +737,7 @@ export function RoomsTab({
               />
             </div>
             <div>
-              <label className="block text-slate-400 mb-1">Humidité min (%)</label>
+              <label className="block text-slate-400 mb-1">{t('rooms.humMinLabel')}</label>
               <input
                 type="number"
                 min={0}
@@ -742,7 +748,7 @@ export function RoomsTab({
               />
             </div>
             <div>
-              <label className="block text-slate-400 mb-1">Humidité max (%)</label>
+              <label className="block text-slate-400 mb-1">{t('rooms.humMaxLabel')}</label>
               <input
                 type="number"
                 min={0}
@@ -778,7 +784,7 @@ export function RoomsTab({
                 className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 text-xs font-medium text-white transition"
               >
                 <Save className="h-4 w-4" />
-                {savingRoom ? 'Enregistrement...' : 'Enregistrer'}
+                {savingRoom ? t('common.saving') : t('common.save')}
               </button>
               <button
                 type="button"
@@ -786,7 +792,7 @@ export function RoomsTab({
                 disabled={savingRoom}
                 className="rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-slate-300 transition"
               >
-                Annuler
+                {t('common.cancel')}
               </button>
             </div>
           ) : (
@@ -796,7 +802,7 @@ export function RoomsTab({
               className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-4 py-2 text-xs font-medium text-white transition"
             >
               <Plus className="h-4 w-4" />
-              {savingRoom ? 'Création...' : 'Créer la pièce'}
+              {savingRoom ? t('rooms.creating') : t('rooms.createBtn')}
             </button>
           )}
         </form>
@@ -806,11 +812,14 @@ export function RoomsTab({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-semibold text-white">
-                Pièces configurées ({filteredRooms.length}
-                {searchQuery.trim() ? ` / ${data.rooms.length}` : ''})
+                {t('rooms.configuredTitle', {
+                  count: searchQuery.trim()
+                    ? `${filteredRooms.length} / ${data.rooms.length}`
+                    : filteredRooms.length,
+                })}
               </h3>
               <p className="text-[11px] text-slate-400">
-                Cliquez sur une pièce pour modifier sa couleur et ses cibles de confort
+                {t('rooms.configuredSub')}
               </p>
             </div>
 
@@ -820,15 +829,15 @@ export function RoomsTab({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filtrer les pièces..."
-                aria-label="Filtrer les pièces"
+                placeholder={t('rooms.searchPlaceholder')}
+                aria-label={t('rooms.searchAria')}
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 pl-8 pr-8 py-1.5 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  title="Effacer la recherche"
+                  title={t('common.clearSearch')}
                   className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:bg-slate-800 hover:text-white"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -841,8 +850,8 @@ export function RoomsTab({
             <div className="rounded-xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-10 text-center text-xs text-slate-400 space-y-2">
               <div>
                 {data.rooms.length === 0
-                  ? 'Aucune pièce configurée pour le moment.'
-                  : 'Aucune pièce ne correspond à votre recherche.'}
+                  ? t('rooms.emptyNone')
+                  : t('rooms.emptyNoMatch')}
               </div>
               {searchQuery ? (
                 <button
@@ -850,7 +859,7 @@ export function RoomsTab({
                   onClick={() => setSearchQuery('')}
                   className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 text-[11px] text-slate-200 hover:bg-slate-700"
                 >
-                  Réinitialiser le filtre
+                  {t('common.resetFilter')}
                 </button>
               ) : null}
             </div>
@@ -888,18 +897,22 @@ export function RoomsTab({
                           <div className="text-xs font-semibold text-white flex flex-wrap items-center gap-1.5">
                             <span className="truncate">{r.name}</span>
                             <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-normal text-slate-300">
-                              {count} app.
+                              {t('common.deviceShortCount', { count })}
                             </span>
                             {isEditing && (
                               <span className="inline-flex items-center gap-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 px-2 py-0.5 text-[10px] font-medium text-indigo-300">
                                 <Pencil className="h-2.5 w-2.5" />
-                                En édition
+                                {t('rooms.editingBadge')}
                               </span>
                             )}
                           </div>
                           <div className="text-[11px] text-slate-400 mt-0.5">
-                            Cibles : {r.targetTempMin}–{r.targetTempMax}°C · {r.targetHumidityMin}–
-                            {r.targetHumidityMax}%
+                            {t('rooms.targetsSummary', {
+                              tMin: r.targetTempMin,
+                              tMax: r.targetTempMax,
+                              hMin: r.targetHumidityMin,
+                              hMax: r.targetHumidityMax,
+                            })}
                           </div>
                         </div>
                       </div>
@@ -918,7 +931,7 @@ export function RoomsTab({
                     <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
                       <div className="flex flex-wrap items-center gap-1">
                         {systems.length === 0 ? (
-                          <span className="text-[10px] text-slate-500">Aucun appareil rattaché</span>
+                          <span className="text-[10px] text-slate-500">{t('rooms.noDevicesLinked')}</span>
                         ) : (
                           systems.map((sys) => {
                             const meta = VENDOR_REGISTRY[sys];
@@ -967,7 +980,7 @@ export function RoomsTab({
                         }}
                         className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-200 transition"
                       >
-                        Voir appareils
+                        {t('rooms.viewDevicesBtn')}
                         <ArrowRight className="h-3 w-3 text-indigo-400" />
                       </button>
 
@@ -978,7 +991,7 @@ export function RoomsTab({
                           void handleDeleteRoom(r.id);
                         }}
                         className="rounded-lg p-1.5 text-slate-500 hover:bg-rose-500/15 hover:text-rose-400 transition"
-                        title="Supprimer la pièce"
+                        title={t('rooms.deleteRoomTitle')}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>

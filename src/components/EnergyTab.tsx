@@ -17,6 +17,7 @@ import {
   YAxis,
 } from 'recharts';
 import { Zap, Euro, Activity, Layers } from 'lucide-react';
+import { useI18n } from '@/components/I18nProvider';
 import type { DashboardPayload } from '@/types';
 
 interface EnergyTabProps {
@@ -38,6 +39,7 @@ const DEVICE_PALETTE = [
 ];
 
 export function EnergyTab({ data }: EnergyTabProps) {
+  const { t } = useI18n();
   const [metric, setMetric] = useState<MetricType>('energy');
   const [groupBy, setGroupBy] = useState<GroupBy>('room');
 
@@ -79,13 +81,13 @@ export function EnergyTab({ data }: EnergyTabProps) {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-slate-400 mr-1 flex items-center gap-1.5">
-            <Activity className="h-3.5 w-3.5" /> Métrique :
+            <Activity className="h-3.5 w-3.5" /> {t('energy.metricLabel')}
           </span>
           {(
             [
-              { id: 'energy', label: 'Énergie (kWh)' },
-              { id: 'power', label: 'Puissance moyenne (W)' },
-              { id: 'cost', label: 'Coût estimé (€)' },
+              { id: 'energy', label: t('energy.metricEnergy') },
+              { id: 'power', label: t('energy.metricPower') },
+              { id: 'cost', label: t('energy.metricCost') },
             ] as const
           ).map((item) => (
             <button
@@ -104,7 +106,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
 
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-slate-400 mr-1 flex items-center gap-1.5">
-            <Layers className="h-3.5 w-3.5" /> Ventilation :
+            <Layers className="h-3.5 w-3.5" /> {t('energy.breakdownLabel')}
           </span>
           <button
             onClick={() => setGroupBy('room')}
@@ -114,7 +116,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
                 : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
             }`}
           >
-            Par Pièce
+            {t('energy.byRoom')}
           </button>
           <button
             onClick={() => setGroupBy('device')}
@@ -124,7 +126,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
                 : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
             }`}
           >
-            Par Appareil
+            {t('energy.byDevice')}
           </button>
         </div>
       </div>
@@ -134,28 +136,32 @@ export function EnergyTab({ data }: EnergyTabProps) {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className="text-sm font-semibold text-white">
-              Évolution {metric === 'energy' ? 'de la consommation (kWh)' : metric === 'power' ? 'de la puissance (W)' : 'du coût (€)'}{' '}
-              {groupBy === 'room' ? 'par pièce' : 'par appareil'}
+              {metric === 'energy'
+                ? t('energy.chartTitleEnergy')
+                : metric === 'power'
+                  ? t('energy.chartTitlePower')
+                  : t('energy.chartTitleCost')}{' '}
+              {groupBy === 'room' ? t('energy.chartSubRoom') : t('energy.chartSubDevice')}
             </h3>
             <p className="text-xs text-slate-400">
-              {data.timeSeries.length} points agrégés sur la période sélectionnée
+              {t('energy.pointsAggregated', { count: data.timeSeries.length })}
             </p>
           </div>
           <div className="text-right">
             <div className="text-sm font-semibold text-white">
-              Total :{' '}
+              {t('energy.totalLabel')}{' '}
               {metric === 'energy'
                 ? `${data.kpis.periodEnergyKwh.toFixed(2)} kWh`
                 : metric === 'cost'
                   ? `${data.kpis.periodCostEur.toFixed(2)} €`
-                  : `${data.kpis.currentPowerW.toFixed(0)} W actuels`}
+                  : t('energy.currentWatts', { watts: data.kpis.currentPowerW.toFixed(0) })}
             </div>
           </div>
         </div>
 
         {chartData.length === 0 || seriesKeys.length === 0 ? (
           <div className="flex h-72 items-center justify-center text-sm text-slate-500">
-            Aucune donnée énergétique disponible pour cette sélection.
+            {t('energy.noData')}
           </div>
         ) : (
           <div className="h-80 w-full">
@@ -220,13 +226,15 @@ export function EnergyTab({ data }: EnergyTabProps) {
         {/* Donut chart */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <h3 className="text-sm font-semibold text-white mb-1">
-            Répartition {groupBy === 'room' ? 'par pièce' : 'par appareil'}
+            {t('energy.shareTitle', {
+              scope: groupBy === 'room' ? t('energy.chartSubRoom') : t('energy.chartSubDevice'),
+            })}
           </h3>
-          <p className="text-xs text-slate-400 mb-4">Part relative de l&apos;énergie totale (kWh)</p>
+          <p className="text-xs text-slate-400 mb-4">{t('energy.shareSubtitle')}</p>
 
           {breakdown.length === 0 ? (
             <div className="h-56 flex items-center justify-center text-xs text-slate-500">
-              Pas de données
+              {t('common.noData')}
             </div>
           ) : (
             <div className="h-60 w-full">
@@ -274,9 +282,9 @@ export function EnergyTab({ data }: EnergyTabProps) {
         {/* Top consommateurs */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <h3 className="text-sm font-semibold text-white mb-1">
-            Classement des consommateurs
+            {t('energy.rankingTitle')}
           </h3>
-          <p className="text-xs text-slate-400 mb-4">Énergie, coût et pic de puissance</p>
+          <p className="text-xs text-slate-400 mb-4">{t('energy.rankingSubtitle')}</p>
 
           <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
             {breakdown.map((item, idx) => {
@@ -293,10 +301,10 @@ export function EnergyTab({ data }: EnergyTabProps) {
                       <span className="font-medium text-slate-200 truncate">{item.name}</span>
                       {item.excludeFromTotals && (
                         <span
-                          title="Appareil en cascade : affiché pour info mais exclu des totaux"
+                          title={t('energy.cascadeTitle')}
                           className="rounded border border-amber-500/30 bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-amber-300 shrink-0"
                         >
-                          Cascade
+                          {t('energy.cascadeBadge')}
                         </span>
                       )}
                       {item.roomName && (
@@ -318,9 +326,12 @@ export function EnergyTab({ data }: EnergyTabProps) {
                     />
                   </div>
                   <div className="flex justify-between text-[10px] text-slate-500">
-                    <span>Part : {item.sharePct.toFixed(1)}%</span>
+                    <span>{t('energy.sharePct', { pct: item.sharePct.toFixed(1) })}</span>
                     <span>
-                      Moy : {item.avgPowerW.toFixed(0)} W · Max : {item.maxPowerW.toFixed(0)} W
+                      {t('energy.avgMaxPower', {
+                        avg: item.avgPowerW.toFixed(0),
+                        max: item.maxPowerW.toFixed(0),
+                      })}
                     </span>
                   </div>
                 </div>
@@ -333,11 +344,11 @@ export function EnergyTab({ data }: EnergyTabProps) {
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-1">
-              <h3 className="text-sm font-semibold text-white">Ventilation Tarifaire</h3>
+              <h3 className="text-sm font-semibold text-white">{t('energy.tariffBreakdownTitle')}</h3>
               <Euro className="h-4 w-4 text-emerald-400" />
             </div>
             <p className="text-xs text-slate-400 mb-4">
-              Calcul dynamique selon l&apos;historique de vos tarifs configurés
+              {t('energy.tariffBreakdownSubtitle')}
             </p>
 
             <div className="space-y-3">
@@ -345,7 +356,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
                 <>
                   <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 flex items-center justify-between">
                     <div>
-                      <div className="text-xs font-medium text-amber-200">Heures Pleines (HP)</div>
+                      <div className="text-xs font-medium text-amber-200">{t('energy.hpLabel')}</div>
                       <div className="text-[11px] text-amber-300/70">
                         {data.kpis.hpEnergyKwh.toFixed(2)} kWh
                       </div>
@@ -357,7 +368,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
 
                   <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 flex items-center justify-between">
                     <div>
-                      <div className="text-xs font-medium text-emerald-200">Heures Creuses (HC)</div>
+                      <div className="text-xs font-medium text-emerald-200">{t('energy.hcLabel')}</div>
                       <div className="text-[11px] text-emerald-300/70">
                         {data.kpis.hcEnergyKwh.toFixed(2)} kWh
                       </div>
@@ -372,7 +383,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
               {data.kpis.baseEnergyKwh > 0 && (
                 <div className="rounded-xl border border-indigo-500/25 bg-indigo-500/10 p-3 flex items-center justify-between">
                   <div>
-                    <div className="text-xs font-medium text-indigo-200">Tarif Base</div>
+                    <div className="text-xs font-medium text-indigo-200">{t('energy.baseLabel')}</div>
                     <div className="text-[11px] text-indigo-300/70">
                       {data.kpis.baseEnergyKwh.toFixed(2)} kWh
                     </div>
@@ -387,20 +398,20 @@ export function EnergyTab({ data }: EnergyTabProps) {
 
           <div className="mt-4 pt-4 border-t border-slate-800 space-y-1.5 text-xs">
             <div className="flex justify-between text-slate-400">
-              <span>Prix moyen effectif :</span>
+              <span>{t('energy.effectiveRateLabel')}</span>
               <span className="font-mono text-white font-medium">
                 {data.kpis.effectiveRateEurPerKwh.toFixed(4)} €/kWh
               </span>
             </div>
             <div className="flex justify-between text-slate-400">
-              <span>Abonnement proratisé :</span>
+              <span>{t('energy.proratedSubLabel')}</span>
               <span className="font-mono text-slate-300">
                 +{data.kpis.subscriptionCostEur.toFixed(2)} €
               </span>
             </div>
             <div className="flex justify-between text-slate-200 font-semibold pt-1">
               <span className="flex items-center gap-1">
-                <Zap className="h-3.5 w-3.5 text-indigo-400" /> Total estimé facture :
+                <Zap className="h-3.5 w-3.5 text-indigo-400" /> {t('energy.estimatedTotalLabel')}
               </span>
               <span className="text-emerald-400">
                 {(data.kpis.periodCostEur + data.kpis.subscriptionCostEur).toFixed(2)} €
