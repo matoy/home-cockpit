@@ -18,14 +18,16 @@ import {
   ArrowRight,
   Info,
 } from 'lucide-react';
+import { BackupRestoreCard } from '@/components/BackupRestoreCard';
 import type { DashboardPayload, GoogleHomeMode, TabId } from '@/types';
 
 interface SetupGuideTabProps {
   data: DashboardPayload;
   onNavigateTab?: (tab: TabId) => void;
+  onRefresh?: () => Promise<void>;
 }
 
-export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
+export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabProps) {
   const { env } = data;
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [googleGuideMode, setGoogleGuideMode] = useState<GoogleHomeMode>(
@@ -206,6 +208,9 @@ export function SetupGuideTab({ data, onNavigateTab }: SetupGuideTabProps) {
           ))}
         </div>
       </div>
+
+      {/* Sauvegarde & Restauration compressée (.json.gz) */}
+      <BackupRestoreCard data={data} onRefresh={onRefresh} />
 
       {/* Étape 1 : Tuya IoT Cloud */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-4">

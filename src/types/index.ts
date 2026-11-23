@@ -510,3 +510,64 @@ export interface DashboardPayload {
   automations: AutomationsPayload;
   logs: CollectionLogRecord[];
 }
+
+export type BackupMetricsRange = 'none' | '30d' | '90d' | '365d' | 'all';
+
+export type BackupImportMode = 'merge' | 'replace';
+
+export interface BackupStats {
+  rooms: number;
+  devices: number;
+  deviceVendorLinks: number;
+  tariffPeriods: number;
+  automations: number;
+  vendorConnections: number;
+  encryptedSessionsCount: number;
+  metricReadings: number;
+  collectionLogs: number;
+  metricsDateMin: string | null;
+  metricsDateMax: string | null;
+}
+
+export interface BackupPreviewResponse {
+  format: 'home-cockpit-backup';
+  version: number;
+  exportedAt: string;
+  sourceMode: 'live' | 'demo';
+  compressed: boolean;
+  compressedBytes: number;
+  uncompressedBytes: number;
+  options: {
+    includeMetrics: boolean;
+    metricsRange: BackupMetricsRange;
+    includeEncryptedSessions: boolean;
+  };
+  stats: BackupStats;
+  currentStats: {
+    rooms: number;
+    devices: number;
+    deviceVendorLinks: number;
+    tariffPeriods: number;
+    automations: number;
+    metricReadings: number;
+  };
+  warnings: string[];
+}
+
+export interface BackupImportResult {
+  mode: BackupImportMode;
+  targetMode: 'live' | 'demo';
+  imported: {
+    rooms: number;
+    devices: number;
+    deviceVendorLinks: number;
+    tariffPeriods: number;
+    automations: number;
+    vendorConnections: number;
+    metricReadings: number;
+    collectionLogs: number;
+  };
+  skippedMetricsDuplicates: number;
+  warnings: string[];
+  message: string;
+}

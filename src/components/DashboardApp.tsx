@@ -325,6 +325,15 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     setActiveTab('devices');
   }
 
+  function handleOpenBackupSection() {
+    setActiveTab('guide');
+    setTimeout(() => {
+      document
+        .getElementById('setup-backup-restore')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  }
+
   const lastLog = data.logs[0];
   const activeSystem = data.selectedSystem;
   const systemScopedDevices =
@@ -751,6 +760,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             onOpenDaikinGuide={data.env.daikinConfigured ? handleOpenDaikinGuide : undefined}
             onOpenXSenseGuide={handleOpenXSenseGuide}
             onOpenXiaomiGuide={handleOpenXiaomiGuide}
+            onOpenBackupSection={handleOpenBackupSection}
           />
         )}
         {activeTab === 'rooms' && (
@@ -764,7 +774,13 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
         {activeTab === 'tariffs' && (
           <TariffsTab data={data} onRefresh={() => fetchDashboard(range, roomId)} />
         )}
-        {activeTab === 'guide' && <SetupGuideTab data={data} onNavigateTab={setActiveTab} />}
+        {activeTab === 'guide' && (
+          <SetupGuideTab
+            data={data}
+            onNavigateTab={setActiveTab}
+            onRefresh={() => fetchDashboard(range, roomId)}
+          />
+        )}
       </main>
     </div>
   );

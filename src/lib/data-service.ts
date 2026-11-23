@@ -316,7 +316,7 @@ function mapDbAutomation(row: typeof automations.$inferSelect): AutomationRecord
 
 let schemaInitPromise: Promise<void> | null = null;
 
-async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
+export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
   if (!schemaInitPromise) {
     schemaInitPromise = (async () => {
       await db.execute(sql`

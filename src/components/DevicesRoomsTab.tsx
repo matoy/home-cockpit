@@ -23,6 +23,7 @@ import {
   BookOpen,
   ArrowRight,
   QrCode,
+  Archive,
 } from 'lucide-react';
 import { VENDOR_IDS, VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import { extractDaikinSummary } from '@/lib/vendors/daikin-display';
@@ -53,6 +54,7 @@ interface DevicesRoomsTabProps {
   onOpenDaikinGuide?: () => void;
   onOpenXSenseGuide?: () => void;
   onOpenXiaomiGuide?: () => void;
+  onOpenBackupSection?: () => void;
 }
 
 const SCALE_OPTIONS = [
@@ -128,6 +130,7 @@ export function DevicesRoomsTab({
   onOpenDaikinGuide,
   onOpenXSenseGuide,
   onOpenXiaomiGuide,
+  onOpenBackupSection,
 }: DevicesRoomsTabProps) {
   const showKasa = data.env.kasaConfigured;
   const showHomeConnect = data.env.homeConnectConfigured;
@@ -2234,6 +2237,18 @@ export function DevicesRoomsTab({
                   </span>
                 )}
               </button>
+
+              {onOpenBackupSection && (
+                <button
+                  type="button"
+                  onClick={onOpenBackupSection}
+                  title="Exporter ou importer une sauvegarde compressée (.json.gz)"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700/80 px-3 py-1.5 text-xs font-medium text-slate-200 transition shrink-0"
+                >
+                  <Archive className="h-3.5 w-3.5 text-indigo-400" />
+                  Export / Import
+                </button>
+              )}
 
               <button
                 type="button"
