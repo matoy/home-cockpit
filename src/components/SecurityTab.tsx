@@ -413,7 +413,7 @@ export function SecurityTab({
             )}
             <button
               type="button"
-              onClick={() => onNavigateTab('devices')}
+              onClick={() => onNavigateTab('systems')}
               className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-3.5 py-2 text-xs font-medium text-white transition"
             >
               Configurer X-Sense &amp; Xiaomi Home

@@ -1,6 +1,10 @@
 import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { signHomeConnectOAuthState } from '@/lib/vendors/crypto-store';
+import {
+  normalizeOAuthReturnTab,
+  signHomeConnectOAuthState,
+  type OAuthReturnTab,
+} from '@/lib/vendors/crypto-store';
 import {
   buildHomeConnectAuthorizeUrl,
   getHomeConnectConfig,
@@ -19,7 +23,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const rawEnv = searchParams.get('env');
   const rawReturnTab = searchParams.get('returnTab');
-  const returnTab: 'devices' | 'rooms' = rawReturnTab === 'rooms' ? 'rooms' : 'devices';
+  const returnTab: OAuthReturnTab = normalizeOAuthReturnTab(rawReturnTab);
   const cfg = getHomeConnectConfig();
   const env: HomeConnectEnv =
     rawEnv === 'prod' || rawEnv === 'simulator' || rawEnv === 'cn' ? rawEnv : cfg.defaultEnv;

@@ -281,10 +281,10 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
         <div className="mt-5 flex flex-wrap justify-center gap-3">
           <button
             type="button"
-            onClick={() => onNavigateTab('devices')}
+            onClick={() => onNavigateTab('systems')}
             className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-500 transition"
           >
-            Aller dans Appareils
+            Aller dans Systèmes
           </button>
           <button
             type="button"

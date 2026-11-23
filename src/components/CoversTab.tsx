@@ -277,15 +277,15 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
           <code className="text-slate-300">cl</code> /{' '}
           <code className="text-slate-300">clkg</code>) ainsi que vos équipements
           Somfy apparaîtront automatiquement ici après synchronisation dans{' '}
-          <strong className="text-slate-200">Appareils</strong>.
+          <strong className="text-slate-200">Systèmes</strong>.
         </p>
         <div className="mt-5 flex flex-wrap justify-center gap-3">
           <button
             type="button"
-            onClick={() => onNavigateTab('devices')}
+            onClick={() => onNavigateTab('systems')}
             className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-xs font-medium text-white hover:bg-amber-500 transition"
           >
-            Aller dans Appareils
+            Aller dans Systèmes
           </button>
           <button
             type="button"

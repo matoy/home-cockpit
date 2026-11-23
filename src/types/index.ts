@@ -35,6 +35,7 @@ export type TabId =
   | 'automations'
   | 'devices'
   | 'rooms'
+  | 'systems'
   | 'tariffs'
   | 'guide';
 

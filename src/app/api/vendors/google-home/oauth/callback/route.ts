@@ -1,7 +1,11 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { saveGoogleHomeConnection } from '@/lib/data-service';
-import { verifyOAuthState } from '@/lib/vendors/crypto-store';
+import {
+  normalizeOAuthReturnTab,
+  verifyOAuthState,
+  type OAuthReturnTab,
+} from '@/lib/vendors/crypto-store';
 import { exchangeGoogleCodeForTokens } from '@/lib/vendors/google-home-client';
 
 function getPublicOrigin(request: Request): string {
@@ -14,7 +18,7 @@ function getPublicOrigin(request: Request): string {
 function redirectWithError(
   origin: string,
   message: string,
-  returnTab: 'devices' | 'rooms' = 'devices'
+  returnTab: OAuthReturnTab = 'systems'
 ): NextResponse {
   const url = new URL('/', origin);
   url.searchParams.set('tab', returnTab);
@@ -31,8 +35,7 @@ export async function GET(request: Request) {
   const code = searchParams.get('code');
   const stateParam = searchParams.get('state');
   const decodedState = verifyOAuthState(stateParam);
-  const returnTab: 'devices' | 'rooms' =
-    decodedState?.returnTab === 'rooms' ? 'rooms' : 'devices';
+  const returnTab: OAuthReturnTab = normalizeOAuthReturnTab(decodedState?.returnTab);
 
   if (oauthError) {
     return redirectWithError(

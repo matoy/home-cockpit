@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { saveDaikinConnection } from '@/lib/data-service';
-import { verifyDaikinOAuthState } from '@/lib/vendors/crypto-store';
+import { normalizeOAuthReturnTab, verifyDaikinOAuthState } from '@/lib/vendors/crypto-store';
 import { exchangeDaikinCodeForTokens, getDaikinConfig } from '@/lib/vendors/daikin-client';
 
 function getPublicOrigin(request: Request): string {
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   const oauthError = searchParams.get('error');
 
   const signedState = verifyDaikinOAuthState(stateParam);
-  const returnTab = signedState?.returnTab === 'rooms' ? 'rooms' : 'devices';
+  const returnTab = normalizeOAuthReturnTab(signedState?.returnTab);
 
   const failRedirect = (message: string) => {
     const url = new URL('/', origin);

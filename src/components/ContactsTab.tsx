@@ -72,12 +72,22 @@ export function ContactsTab({ data, onNavigateTab }: ContactsTabProps) {
           Synchronisez vos appareils depuis Tuya Cloud (ou vérifiez le mapping Data Point{' '}
           <code>doorcontact_state</code> dans l&apos;Inspecteur DP d&apos;un capteur).
         </p>
-        <button
-          onClick={() => onNavigateTab('devices')}
-          className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-medium text-white transition"
-        >
-          Ouvrir Appareils
-        </button>
+        <div className="flex flex-wrap justify-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => onNavigateTab('systems')}
+            className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-medium text-white transition"
+          >
+            Ouvrir Systèmes
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigateTab('devices')}
+            className="rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-4 py-2 text-xs font-medium text-slate-200 transition"
+          >
+            Ouvrir Appareils
+          </button>
+        </div>
       </div>
     );
   }

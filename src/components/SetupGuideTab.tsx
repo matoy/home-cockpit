@@ -486,10 +486,10 @@ KASA_REGION="eu" # eu, us, ap ou global`}
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => onNavigateTab('devices')}
+                  onClick={() => onNavigateTab('systems')}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 px-3 py-1.5 text-xs font-medium text-white transition"
                 >
-                  Synchroniser Kasa dans Appareils
+                  Synchroniser Kasa dans Systèmes
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
                 <button
@@ -792,10 +792,10 @@ SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => onNavigateTab('devices')}
+                onClick={() => onNavigateTab('systems')}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 px-3 py-1.5 text-xs font-medium text-white transition"
               >
-                Connecter / synchroniser dans Appareils
+                Connecter / synchroniser dans Systèmes
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -969,10 +969,10 @@ SOMFY_REGION="eu" # eu (Europe / France), na (Amérique du Nord) ou oc (Océanie
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => onNavigateTab('devices')}
+                  onClick={() => onNavigateTab('systems')}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 px-3 py-1.5 text-xs font-medium text-white transition"
                 >
-                  Synchroniser Somfy dans Appareils
+                  Synchroniser Somfy dans Systèmes
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
                 <button
@@ -1143,10 +1143,10 @@ DAIKIN_CLIENT_SECRET="votre_client_secret_daikin"
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => onNavigateTab('devices')}
+                  onClick={() => onNavigateTab('systems')}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3 py-1.5 text-xs font-medium text-white transition"
                 >
-                  Connecter Daikin dans Appareils
+                  Connecter Daikin dans Systèmes
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
                 <button
@@ -1258,10 +1258,10 @@ XSENSE_PASSWORD="votre_mot_de_passe"`}
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => onNavigateTab('devices')}
+                  onClick={() => onNavigateTab('systems')}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 px-3 py-1.5 text-xs font-medium text-white transition"
                 >
-                  Synchroniser X-Sense dans Appareils
+                  Synchroniser X-Sense dans Systèmes
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
                 <button
@@ -1381,10 +1381,10 @@ XIAOMI_REGION="de" # de (Europe), cn, us, sg, ru ou i2`}
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => onNavigateTab('devices')}
+                  onClick={() => onNavigateTab('systems')}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 px-3 py-1.5 text-xs font-medium text-white transition"
                 >
-                  Connecter Xiaomi Home dans Appareils
+                  Connecter Xiaomi Home dans Systèmes
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
                 <button
@@ -1854,17 +1854,17 @@ TOKEN_ENCRYPTION_KEY="" # optionnel : clé AES-256 64 car. hex`}
                 {onNavigateTab && (
                   <button
                     type="button"
-                    onClick={() => onNavigateTab('devices')}
+                    onClick={() => onNavigateTab('systems')}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 px-2.5 py-1 text-[11px] font-medium text-sky-200 transition"
                   >
-                    Ouvrir « Appareils »
+                    Ouvrir « Systèmes »
                     <ArrowRight className="h-3 w-3" />
                   </button>
                 )}
               </div>
               <ol className="list-decimal list-inside space-y-1.5 text-xs text-slate-300 leading-relaxed">
                 <li>
-                  Rendez-vous dans l&apos;onglet <strong>Appareils</strong>, carte{' '}
+                  Rendez-vous dans l&apos;onglet <strong>Systèmes</strong>, carte{' '}
                   <strong>Google Home</strong>.
                 </li>
                 <li>

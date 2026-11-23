@@ -21,6 +21,7 @@ import {
   Blinds,
   Wind,
   ShieldAlert,
+  Plug,
 } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
 import { EnergyTab } from './EnergyTab';
@@ -37,6 +38,7 @@ import { AutomationsTab } from './AutomationsTab';
 import { TariffsTab } from './TariffsTab';
 import { DevicesRoomsTab } from './DevicesRoomsTab';
 import { RoomsTab } from './RoomsTab';
+import { SystemsTab } from './SystemsTab';
 import { SetupGuideTab } from './SetupGuideTab';
 import type { DashboardPayload, SystemFilter, TabId, TimeRange } from '@/types';
 
@@ -97,13 +99,18 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     const dkStatus = params.get('dk');
     const dkError = params.get('dk_error');
 
-    if (tabParam === 'devices') {
+    if (tabParam === 'systems') {
+      setActiveTab('systems');
+    } else if (tabParam === 'devices') {
       setActiveTab('devices');
     } else if (tabParam === 'rooms') {
       setActiveTab('rooms');
+    } else if (ghStatus || ghError || hcStatus || hcError || dkStatus || dkError) {
+      setActiveTab('systems');
     }
     if (ghStatus === 'connected') {
-      const targetLabel = tabParam === 'rooms' ? 'Pièces' : 'Appareils';
+      const targetLabel =
+        tabParam === 'rooms' ? 'Pièces' : tabParam === 'devices' ? 'Appareils' : 'Systèmes';
       setToast(
         `Google Home connecté (${(ghMode || 'mcp').toUpperCase()}). Cliquez sur « Synchroniser » dans ${targetLabel}.`
       );
@@ -121,7 +128,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
       setTimeout(() => setToast(null), 7000);
     } else if (dkStatus === 'connected') {
       setToast(
-        'Daikin Onecta connecté. Cliquez sur « Synchroniser Daikin » dans Appareils.'
+        'Daikin Onecta connecté. Cliquez sur « Synchroniser Daikin » dans Systèmes.'
       );
       setTimeout(() => setToast(null), 6000);
     } else if (dkError) {
@@ -265,6 +272,17 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     }, 60);
   }
 
+  function handleOpenKasaGuide() {
+    setActiveTab('guide');
+    setTimeout(() => {
+      const detailsEl = document.getElementById('setup-kasa-details');
+      if (detailsEl instanceof HTMLDetailsElement) detailsEl.open = true;
+      document
+        .getElementById('setup-kasa-cloud')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  }
+
   function handleOpenHomeConnectGuide() {
     setActiveTab('guide');
     setTimeout(() => {
@@ -335,6 +353,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
   }
 
   const lastLog = data.logs[0];
+  const connectedSystemsCount = data.vendors.filter((v) => v.connected).length;
   const activeSystem = data.selectedSystem;
   const systemScopedDevices =
     activeSystem === 'all'
@@ -422,6 +441,12 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     },
     { id: 'devices', label: 'Appareils', icon: Cpu },
     { id: 'rooms', label: 'Pièces', icon: Home },
+    {
+      id: 'systems',
+      label: 'Systèmes',
+      icon: Plug,
+      badge: connectedSystemsCount > 0 ? connectedSystemsCount : undefined,
+    },
     { id: 'tariffs', label: 'Tarifs kWh', icon: Euro },
     { id: 'guide', label: 'Guide Setup', icon: BookOpen },
   ];
@@ -752,14 +777,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             onRefresh={() => fetchDashboard(range, roomId)}
             initialRoomFilter={devicesRoomFilter}
             onOpenRoomsTab={() => setActiveTab('rooms')}
-            onOpenGoogleGuide={data.env.googleHomeApiEnabled ? handleOpenGoogleGuide : undefined}
-            onOpenHomeConnectGuide={
-              data.env.homeConnectConfigured ? handleOpenHomeConnectGuide : undefined
-            }
-            onOpenSomfyGuide={data.env.somfyConfigured ? handleOpenSomfyGuide : undefined}
-            onOpenDaikinGuide={data.env.daikinConfigured ? handleOpenDaikinGuide : undefined}
-            onOpenXSenseGuide={handleOpenXSenseGuide}
-            onOpenXiaomiGuide={handleOpenXiaomiGuide}
+            onOpenSystemsTab={() => setActiveTab('systems')}
             onOpenBackupSection={handleOpenBackupSection}
           />
         )}
@@ -769,6 +787,20 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
             onRefresh={() => fetchDashboard(range, roomId)}
             onOpenRoomDevices={handleOpenRoomDevices}
             onOpenGoogleGuide={data.env.googleHomeApiEnabled ? handleOpenGoogleGuide : undefined}
+          />
+        )}
+        {activeTab === 'systems' && (
+          <SystemsTab
+            data={data}
+            onRefresh={() => fetchDashboard(range, roomId)}
+            onOpenDevicesTab={() => setActiveTab('devices')}
+            onOpenKasaGuide={handleOpenKasaGuide}
+            onOpenHomeConnectGuide={handleOpenHomeConnectGuide}
+            onOpenSomfyGuide={handleOpenSomfyGuide}
+            onOpenDaikinGuide={handleOpenDaikinGuide}
+            onOpenXSenseGuide={handleOpenXSenseGuide}
+            onOpenXiaomiGuide={handleOpenXiaomiGuide}
+            onOpenGoogleGuide={handleOpenGoogleGuide}
           />
         )}
         {activeTab === 'tariffs' && (

@@ -1,6 +1,10 @@
 import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { signOAuthState } from '@/lib/vendors/crypto-store';
+import {
+  normalizeOAuthReturnTab,
+  signOAuthState,
+  type OAuthReturnTab,
+} from '@/lib/vendors/crypto-store';
 import {
   buildGoogleOAuthAuthorizeUrl,
   getGoogleHomeConfig,
@@ -19,7 +23,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const rawMode = searchParams.get('mode');
   const rawReturnTab = searchParams.get('returnTab');
-  const returnTab: 'devices' | 'rooms' = rawReturnTab === 'rooms' ? 'rooms' : 'devices';
+  const returnTab: OAuthReturnTab = normalizeOAuthReturnTab(rawReturnTab);
   const cfg = getGoogleHomeConfig();
   const mode: GoogleHomeMode =
     rawMode === 'mcp' || rawMode === 'sdm' ? rawMode : cfg.defaultMode;

@@ -1,6 +1,10 @@
 import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { signDaikinOAuthState } from '@/lib/vendors/crypto-store';
+import {
+  normalizeOAuthReturnTab,
+  signDaikinOAuthState,
+  type OAuthReturnTab,
+} from '@/lib/vendors/crypto-store';
 import { buildDaikinAuthorizeUrl, getDaikinConfig } from '@/lib/vendors/daikin-client';
 
 function getPublicOrigin(request: Request): string {
@@ -14,7 +18,7 @@ export async function GET(request: Request) {
   const origin = getPublicOrigin(request);
   const { searchParams } = new URL(request.url);
   const rawReturnTab = searchParams.get('returnTab');
-  const returnTab: 'devices' | 'rooms' = rawReturnTab === 'rooms' ? 'rooms' : 'devices';
+  const returnTab: OAuthReturnTab = normalizeOAuthReturnTab(rawReturnTab);
   const cfg = getDaikinConfig();
 
   try {

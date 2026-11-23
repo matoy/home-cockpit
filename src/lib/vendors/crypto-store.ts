@@ -51,10 +51,18 @@ export function decryptSecret(encoded: string | null | undefined): string | null
   }
 }
 
+export type OAuthReturnTab = 'systems' | 'devices' | 'rooms';
+
+export function normalizeOAuthReturnTab(raw: unknown): OAuthReturnTab {
+  if (raw === 'rooms') return 'rooms';
+  if (raw === 'devices') return 'devices';
+  return 'systems';
+}
+
 export interface SignedOAuthState {
   nonce: string;
   mode: GoogleHomeMode;
-  returnTab?: 'devices' | 'rooms';
+  returnTab?: OAuthReturnTab;
 }
 
 function signHmacPayload(payload: object): string {
@@ -110,7 +118,7 @@ export function verifyOAuthState(token: string | null | undefined): SignedOAuthS
     return {
       nonce: parsed.nonce,
       mode: parsed.mode,
-      returnTab: parsed.returnTab === 'rooms' ? 'rooms' : 'devices',
+      returnTab: normalizeOAuthReturnTab(parsed.returnTab),
     };
   }
   return null;
@@ -119,7 +127,7 @@ export function verifyOAuthState(token: string | null | undefined): SignedOAuthS
 export interface SignedHomeConnectOAuthState {
   nonce: string;
   env: HomeConnectEnv;
-  returnTab?: 'devices' | 'rooms';
+  returnTab?: OAuthReturnTab;
 }
 
 /**
@@ -145,7 +153,7 @@ export function verifyHomeConnectOAuthState(
     return {
       nonce: parsed.nonce,
       env: parsed.env,
-      returnTab: parsed.returnTab === 'rooms' ? 'rooms' : 'devices',
+      returnTab: normalizeOAuthReturnTab(parsed.returnTab),
     };
   }
   return null;
@@ -153,7 +161,7 @@ export function verifyHomeConnectOAuthState(
 
 export interface SignedDaikinOAuthState {
   nonce: string;
-  returnTab?: 'devices' | 'rooms';
+  returnTab?: OAuthReturnTab;
   redirectUri?: string;
 }
 
@@ -175,7 +183,7 @@ export function verifyDaikinOAuthState(
   if (typeof parsed.nonce === 'string' && parsed.nonce.length >= 8) {
     return {
       nonce: parsed.nonce,
-      returnTab: parsed.returnTab === 'rooms' ? 'rooms' : 'devices',
+      returnTab: normalizeOAuthReturnTab(parsed.returnTab),
       redirectUri: typeof parsed.redirectUri === 'string' ? parsed.redirectUri : undefined,
     };
   }
