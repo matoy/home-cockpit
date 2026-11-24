@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createManualDevice, deleteManualDevice, updateDevice } from '@/lib/data-service';
+import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
+import { asRecord } from '@/lib/utils';
 import { isValidVendorId } from '@/lib/vendors/registry';
 import type { DeviceCategory, DpConfig, EnergyMode, VendorId } from '@/types';
 
@@ -11,30 +13,61 @@ const VALID_CATEGORIES = new Set<DeviceCategory>([
   'other',
 ]);
 
+const VALID_ENERGY_MODES = new Set<EnergyMode>(['hybrid', 'add_ele', 'integration']);
+
 function parseSystemsParam(raw: unknown): VendorId[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const filtered = raw.filter((item): item is VendorId => isValidVendorId(item));
   return filtered.length > 0 ? filtered : undefined;
 }
 
+function validateBoundedString(
+  raw: unknown,
+  maxLen: number,
+  fieldLabel: string
+): { value: string | null; error?: string } {
+  if (raw === null || raw === '') return { value: null };
+  if (typeof raw !== 'string') {
+    return { value: null, error: `${fieldLabel} invalide.` };
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) return { value: null };
+  if (trimmed.length > maxLen) {
+    return { value: null, error: `${fieldLabel} ne doit pas dépasser ${maxLen} caractères.` };
+  }
+  return { value: trimmed };
+}
+
 export async function POST(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
-    const name = typeof body.name === 'string' ? body.name.trim() : '';
-    if (!name) {
+    const nameCheck = validateBoundedString(body.name, 120, 'Le nom de l’appareil');
+    if (nameCheck.error) {
+      return NextResponse.json({ error: nameCheck.error }, { status: 400 });
+    }
+    if (!nameCheck.value) {
       return NextResponse.json({ error: 'Le nom de l’appareil est requis.' }, { status: 400 });
     }
 
-    const customName =
-      typeof body.customName === 'string' && body.customName.trim() ? body.customName.trim() : null;
-    const productName =
-      typeof body.productName === 'string' && body.productName.trim()
-        ? body.productName.trim()
-        : null;
-    const ipAddress =
-      typeof body.ipAddress === 'string' && body.ipAddress.trim() ? body.ipAddress.trim() : null;
-    const macAddress =
-      typeof body.macAddress === 'string' && body.macAddress.trim() ? body.macAddress.trim() : null;
+    const customNameCheck = validateBoundedString(body.customName, 120, 'Le nom personnalisé');
+    if (customNameCheck.error) {
+      return NextResponse.json({ error: customNameCheck.error }, { status: 400 });
+    }
+    const productNameCheck = validateBoundedString(body.productName, 120, 'Le nom produit');
+    if (productNameCheck.error) {
+      return NextResponse.json({ error: productNameCheck.error }, { status: 400 });
+    }
+    const ipCheck = validateBoundedString(body.ipAddress, 64, 'L’adresse IP');
+    if (ipCheck.error) {
+      return NextResponse.json({ error: ipCheck.error }, { status: 400 });
+    }
+    const macCheck = validateBoundedString(body.macAddress, 32, 'L’adresse MAC');
+    if (macCheck.error) {
+      return NextResponse.json({ error: macCheck.error }, { status: 400 });
+    }
 
     let roomId: number | null = null;
     if (body.roomId !== undefined && body.roomId !== null && body.roomId !== '') {
@@ -56,15 +89,15 @@ export async function POST(request: Request) {
     const systems = parseSystemsParam(body.systems) ?? [primaryVendor];
 
     const device = await createManualDevice({
-      name,
-      customName,
-      productName,
+      name: nameCheck.value,
+      customName: customNameCheck.value,
+      productName: productNameCheck.value,
       roomId,
       category,
       primaryVendor,
       systems,
-      ipAddress,
-      macAddress,
+      ipAddress: ipCheck.value,
+      macAddress: macCheck.value,
       isOnline: typeof body.isOnline === 'boolean' ? body.isOnline : true,
       isMonitored: typeof body.isMonitored === 'boolean' ? body.isMonitored : true,
       excludeFromTotals:
@@ -73,59 +106,136 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ device }, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erreur création appareil';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse('api/devices POST', err, 'Erreur création appareil');
   }
 }
 
 export async function PATCH(request: Request) {
-  try {
-    const body = (await request.json()) as {
-      id?: string;
-      name?: string;
-      customName?: string | null;
-      productName?: string | null;
-      ipAddress?: string | null;
-      macAddress?: string | null;
-      roomId?: number | null;
-      category?: DeviceCategory;
-      isOnline?: boolean;
-      isMonitored?: boolean;
-      excludeFromTotals?: boolean;
-      energyMode?: EnergyMode;
-      dpConfig?: DpConfig;
-      primaryVendor?: VendorId;
-      systems?: VendorId[];
-    };
+  const authError = await requireApiAuth();
+  if (authError) return authError;
 
-    if (!body.id) {
+  try {
+    const rawBody = await request.json();
+    const body = asRecord(rawBody);
+    if (!body) {
+      return NextResponse.json({ error: 'Corps JSON invalide.' }, { status: 400 });
+    }
+
+    const id = typeof body.id === 'string' ? body.id.trim() : '';
+    if (!id) {
       return NextResponse.json({ error: 'Identifiant appareil requis' }, { status: 400 });
     }
 
-    const { id, name, primaryVendor, systems, category, ...rest } = body;
-    const updates: Parameters<typeof updateDevice>[1] = { ...rest };
+    const updates: Parameters<typeof updateDevice>[1] = {};
 
-    if (name !== undefined) {
-      const trimmed = typeof name === 'string' ? name.trim() : '';
-      if (!trimmed) {
-        return NextResponse.json({ error: 'Le nom de l’appareil ne peut pas être vide.' }, { status: 400 });
+    if (body.name !== undefined) {
+      const nameCheck = validateBoundedString(body.name, 120, 'Le nom de l’appareil');
+      if (nameCheck.error) {
+        return NextResponse.json({ error: nameCheck.error }, { status: 400 });
       }
-      updates.name = trimmed;
+      if (!nameCheck.value) {
+        return NextResponse.json(
+          { error: 'Le nom de l’appareil ne peut pas être vide.' },
+          { status: 400 }
+        );
+      }
+      updates.name = nameCheck.value;
     }
 
-    if (category !== undefined && VALID_CATEGORIES.has(category)) {
-      updates.category = category;
+    if (body.customName !== undefined) {
+      const check = validateBoundedString(body.customName, 120, 'Le nom personnalisé');
+      if (check.error) return NextResponse.json({ error: check.error }, { status: 400 });
+      updates.customName = check.value;
     }
 
-    if (primaryVendor !== undefined) {
-      if (!isValidVendorId(primaryVendor)) {
+    if (body.productName !== undefined) {
+      const check = validateBoundedString(body.productName, 120, 'Le nom produit');
+      if (check.error) return NextResponse.json({ error: check.error }, { status: 400 });
+      updates.productName = check.value;
+    }
+
+    if (body.ipAddress !== undefined) {
+      const check = validateBoundedString(body.ipAddress, 64, 'L’adresse IP');
+      if (check.error) return NextResponse.json({ error: check.error }, { status: 400 });
+      updates.ipAddress = check.value;
+    }
+
+    if (body.macAddress !== undefined) {
+      const check = validateBoundedString(body.macAddress, 32, 'L’adresse MAC');
+      if (check.error) return NextResponse.json({ error: check.error }, { status: 400 });
+      updates.macAddress = check.value;
+    }
+
+    if (body.roomId !== undefined) {
+      if (body.roomId === null || body.roomId === '') {
+        updates.roomId = null;
+      } else {
+        const roomNum = Number(body.roomId);
+        if (!Number.isInteger(roomNum) || roomNum <= 0) {
+          return NextResponse.json({ error: 'Identifiant de pièce invalide.' }, { status: 400 });
+        }
+        updates.roomId = roomNum;
+      }
+    }
+
+    if (body.category !== undefined) {
+      if (
+        typeof body.category !== 'string' ||
+        !VALID_CATEGORIES.has(body.category as DeviceCategory)
+      ) {
+        return NextResponse.json({ error: 'Catégorie appareil invalide.' }, { status: 400 });
+      }
+      updates.category = body.category as DeviceCategory;
+    }
+
+    if (body.isOnline !== undefined) {
+      if (typeof body.isOnline !== 'boolean') {
+        return NextResponse.json({ error: 'Champ isOnline invalide.' }, { status: 400 });
+      }
+      updates.isOnline = body.isOnline;
+    }
+
+    if (body.isMonitored !== undefined) {
+      if (typeof body.isMonitored !== 'boolean') {
+        return NextResponse.json({ error: 'Champ isMonitored invalide.' }, { status: 400 });
+      }
+      updates.isMonitored = body.isMonitored;
+    }
+
+    if (body.excludeFromTotals !== undefined) {
+      if (typeof body.excludeFromTotals !== 'boolean') {
+        return NextResponse.json({ error: 'Champ excludeFromTotals invalide.' }, { status: 400 });
+      }
+      updates.excludeFromTotals = body.excludeFromTotals;
+    }
+
+    if (body.energyMode !== undefined) {
+      if (
+        typeof body.energyMode !== 'string' ||
+        !VALID_ENERGY_MODES.has(body.energyMode as EnergyMode)
+      ) {
+        return NextResponse.json({ error: 'Mode énergétique invalide.' }, { status: 400 });
+      }
+      updates.energyMode = body.energyMode as EnergyMode;
+    }
+
+    if (body.dpConfig !== undefined) {
+      const dpObj = asRecord(body.dpConfig);
+      if (!dpObj) {
+        return NextResponse.json({ error: 'Configuration DP invalide.' }, { status: 400 });
+      }
+      updates.dpConfig = dpObj as DpConfig;
+    }
+
+    if (body.primaryVendor !== undefined) {
+      if (!isValidVendorId(body.primaryVendor)) {
         return NextResponse.json({ error: 'Système principal invalide.' }, { status: 400 });
       }
-      updates.primaryVendor = primaryVendor;
+      updates.primaryVendor = body.primaryVendor;
     }
 
-    if (systems !== undefined) {
-      const parsedSystems = parseSystemsParam(systems);
+    if (body.systems !== undefined) {
+      const parsedSystems = parseSystemsParam(body.systems);
       if (!parsedSystems) {
         return NextResponse.json({ error: 'Liste de systèmes invalide.' }, { status: 400 });
       }
@@ -139,12 +249,14 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({ device: updated });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erreur mise à jour appareil';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse('api/devices PATCH', err, 'Erreur mise à jour appareil');
   }
 }
 
 export async function DELETE(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id')?.trim() ?? '';
@@ -162,7 +274,6 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erreur suppression appareil';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse('api/devices DELETE', err, 'Erreur suppression appareil');
   }
 }

@@ -1,13 +1,18 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import {
+  SESSION_CLOCK_SKEW_SECONDS,
   SESSION_COOKIE_NAME,
   SESSION_FALLBACK_SALT,
-  SESSION_TOKEN_PAYLOAD,
+  SESSION_TOKEN_VERSION,
 } from '@/lib/auth-constants';
 
 const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/auth/logout', '/api/schedule/collect'];
 
-async function computeExpectedToken(appPassword: string, scheduleSecret: string): Promise<string> {
+async function computeSessionSignature(
+  message: string,
+  appPassword: string,
+  scheduleSecret: string
+): Promise<string> {
   const enc = new TextEncoder();
   const secretHashBuf = await crypto.subtle.digest(
     'SHA-256',
@@ -25,12 +30,49 @@ async function computeExpectedToken(appPassword: string, scheduleSecret: string)
     ['sign']
   );
 
-  const sigBuf = await crypto.subtle.sign('HMAC', key, enc.encode(SESSION_TOKEN_PAYLOAD));
-  const sigHex = Array.from(new Uint8Array(sigBuf))
+  const sigBuf = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+  return Array.from(new Uint8Array(sigBuf))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
+}
 
-  return `${SESSION_TOKEN_PAYLOAD}.${sigHex}`;
+async function verifyEdgeSessionToken(
+  token: string | undefined,
+  appPassword: string,
+  scheduleSecret: string,
+  nowSec = Math.floor(Date.now() / 1000)
+): Promise<boolean> {
+  if (!token) return false;
+  const parts = token.split('.');
+  if (parts.length !== 4 || parts[0] !== SESSION_TOKEN_VERSION) {
+    return false;
+  }
+
+  const iat = Number(parts[1]);
+  const exp = Number(parts[2]);
+  const sig = parts[3];
+
+  if (
+    !Number.isInteger(iat) ||
+    !Number.isInteger(exp) ||
+    iat <= 0 ||
+    exp <= iat ||
+    !sig ||
+    !/^[0-9a-f]+$/i.test(sig)
+  ) {
+    return false;
+  }
+
+  if (iat > nowSec + SESSION_CLOCK_SKEW_SECONDS || nowSec > exp) {
+    return false;
+  }
+
+  const expectedSig = await computeSessionSignature(
+    `${SESSION_TOKEN_VERSION}.${iat}.${exp}`,
+    appPassword,
+    scheduleSecret
+  );
+  return constantTimeEqual(sig.toLowerCase(), expectedSig);
 }
 
 function constantTimeEqual(a: string, b: string): boolean {
@@ -71,12 +113,13 @@ export async function middleware(request: NextRequest) {
   }
 
   const cookieToken = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-  const expectedToken = await computeExpectedToken(
+  const isValid = await verifyEdgeSessionToken(
+    cookieToken,
     appPassword,
     process.env.SCHEDULE_SECRET?.trim() ?? ''
   );
 
-  if (cookieToken && constantTimeEqual(cookieToken, expectedToken)) {
+  if (isValid) {
     return NextResponse.next();
   }
 

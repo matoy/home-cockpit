@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { saveXiaomiConnection, syncXiaomiDevices } from '@/lib/data-service';
+import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 import { verifyXiaomi2faCode } from '@/lib/vendors/xiaomi-client';
 
 export async function POST(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const body = (await request.json().catch(() => ({}))) as {
       verifyStateToken?: string;
@@ -28,8 +32,11 @@ export async function POST(request: Request) {
       ...syncRes,
     });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Échec de validation 2FA Xiaomi Home.';
-    return NextResponse.json({ error: message }, { status: 400 });
+    return apiErrorResponse(
+      'api/vendors/xiaomi/auth/verify-2fa',
+      err,
+      'Échec de validation 2FA Xiaomi Home.',
+      400
+    );
   }
 }

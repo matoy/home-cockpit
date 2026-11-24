@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDashboardData } from '@/lib/data-service';
+import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 import { VENDOR_IDS } from '@/lib/vendors/registry';
 import type { SystemFilter, TimeRange } from '@/types';
 
@@ -7,6 +8,9 @@ const VALID_RANGES = new Set<TimeRange>(['24h', '7d', '30d', '365d', 'custom']);
 const VALID_SYSTEMS = new Set<SystemFilter>(['all', ...VENDOR_IDS]);
 
 export async function GET(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const { searchParams } = new URL(request.url);
     const rawRange = (searchParams.get('range') ?? '24h') as TimeRange;
@@ -38,15 +42,10 @@ export async function GET(request: Request) {
       hasValidCustom ? toParam : null,
       system
     );
-    return NextResponse.json(payload);
+    return NextResponse.json(payload, {
+      headers: { 'Cache-Control': 'private, no-store' },
+    });
   } catch (err) {
-    console.error('[api/dashboard]', err);
-    const message =
-      process.env.NODE_ENV === 'production'
-        ? 'Erreur serveur'
-        : err instanceof Error
-          ? err.message
-          : 'Erreur serveur';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse('api/dashboard', err, 'Erreur serveur');
   }
 }

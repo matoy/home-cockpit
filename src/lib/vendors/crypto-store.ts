@@ -2,16 +2,38 @@ import crypto from 'node:crypto';
 import type { GoogleHomeMode, HomeConnectEnv } from '@/types';
 
 const SECRET_PREFIX = 'v1:';
+export const OAUTH_STATE_TTL_SECONDS = 900; // 15 minutes
+const OAUTH_CLOCK_SKEW_SECONDS = 60;
 
-function deriveAesKey(): Buffer {
-  const rawSecret =
+function getRawEncryptionSecret(): string {
+  const configured =
     process.env.TOKEN_ENCRYPTION_KEY?.trim() ||
     process.env.APP_PASSWORD?.trim() ||
     process.env.SCHEDULE_SECRET?.trim() ||
-    process.env.TUYA_ACCESS_SECRET?.trim() ||
-    'cockpit-dev-token-key';
+    process.env.TUYA_ACCESS_SECRET?.trim();
 
-  return crypto.createHash('sha256').update(rawSecret).digest();
+  if (configured) {
+    return configured;
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'Aucun secret serveur configuré pour le chiffrement OAuth en production (TOKEN_ENCRYPTION_KEY requis).'
+    );
+  }
+
+  return 'cockpit-dev-token-key';
+}
+
+function deriveAesKey(): Buffer {
+  return crypto.createHash('sha256').update(getRawEncryptionSecret()).digest();
+}
+
+function deriveOAuthStateKey(): Buffer {
+  return crypto
+    .createHash('sha256')
+    .update(`oauth-state-v1:${getRawEncryptionSecret()}`)
+    .digest();
 }
 
 /**
@@ -65,14 +87,26 @@ export interface SignedOAuthState {
   returnTab?: OAuthReturnTab;
 }
 
-function signHmacPayload(payload: object): string {
-  const key = deriveAesKey();
-  const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+function signHmacPayload(
+  payload: object,
+  nowSec = Math.floor(Date.now() / 1000)
+): string {
+  const key = deriveOAuthStateKey();
+  const iat = Math.floor(nowSec);
+  const envelope = {
+    ...payload,
+    iat,
+    exp: iat + OAUTH_STATE_TTL_SECONDS,
+  };
+  const encoded = Buffer.from(JSON.stringify(envelope), 'utf8').toString('base64url');
   const sig = crypto.createHmac('sha256', key).update(encoded).digest('base64url');
   return `${encoded}.${sig}`;
 }
 
-function verifyHmacPayload(token: string | null | undefined): Record<string, unknown> | null {
+function verifyHmacPayload(
+  token: string | null | undefined,
+  nowSec = Math.floor(Date.now() / 1000)
+): Record<string, unknown> | null {
   if (!token) return null;
   const dotIdx = token.indexOf('.');
   if (dotIdx <= 0) return null;
@@ -81,7 +115,7 @@ function verifyHmacPayload(token: string | null | undefined): Record<string, unk
   const sig = token.slice(dotIdx + 1);
   if (!encoded || !sig) return null;
 
-  const key = deriveAesKey();
+  const key = deriveOAuthStateKey();
   const expectedSig = crypto.createHmac('sha256', key).update(encoded).digest('base64url');
   const bufSig = Buffer.from(sig, 'utf8');
   const bufExpected = Buffer.from(expectedSig, 'utf8');
@@ -91,7 +125,21 @@ function verifyHmacPayload(token: string | null | undefined): Record<string, unk
 
   try {
     const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const rec = parsed as Record<string, unknown>;
+    if (typeof rec.iat !== 'number' || typeof rec.exp !== 'number') {
+      return null;
+    }
+    if (
+      !Number.isFinite(rec.iat) ||
+      !Number.isFinite(rec.exp) ||
+      rec.exp < rec.iat ||
+      rec.iat > nowSec + OAUTH_CLOCK_SKEW_SECONDS ||
+      nowSec > rec.exp
+    ) {
+      return null;
+    }
+    return rec;
   } catch {
     return null;
   }
@@ -100,15 +148,18 @@ function verifyHmacPayload(token: string | null | undefined): Record<string, unk
 /**
  * Signe un paramètre OAuth `state` anti-CSRF par HMAC-SHA256.
  */
-export function signOAuthState(payload: SignedOAuthState): string {
-  return signHmacPayload(payload);
+export function signOAuthState(payload: SignedOAuthState, nowSec?: number): string {
+  return signHmacPayload(payload, nowSec);
 }
 
 /**
  * Vérifie et décode un paramètre OAuth `state` signé.
  */
-export function verifyOAuthState(token: string | null | undefined): SignedOAuthState | null {
-  const parsed = verifyHmacPayload(token);
+export function verifyOAuthState(
+  token: string | null | undefined,
+  nowSec?: number
+): SignedOAuthState | null {
+  const parsed = verifyHmacPayload(token, nowSec);
   if (!parsed) return null;
   if (
     typeof parsed.nonce === 'string' &&
@@ -133,17 +184,21 @@ export interface SignedHomeConnectOAuthState {
 /**
  * Signe un paramètre OAuth `state` Siemens Home Connect anti-CSRF par HMAC-SHA256.
  */
-export function signHomeConnectOAuthState(payload: SignedHomeConnectOAuthState): string {
-  return signHmacPayload(payload);
+export function signHomeConnectOAuthState(
+  payload: SignedHomeConnectOAuthState,
+  nowSec?: number
+): string {
+  return signHmacPayload(payload, nowSec);
 }
 
 /**
  * Vérifie et décode un paramètre OAuth `state` Siemens Home Connect signé.
  */
 export function verifyHomeConnectOAuthState(
-  token: string | null | undefined
+  token: string | null | undefined,
+  nowSec?: number
 ): SignedHomeConnectOAuthState | null {
-  const parsed = verifyHmacPayload(token);
+  const parsed = verifyHmacPayload(token, nowSec);
   if (!parsed) return null;
   if (
     typeof parsed.nonce === 'string' &&
@@ -168,17 +223,18 @@ export interface SignedDaikinOAuthState {
 /**
  * Signe un paramètre OAuth `state` Daikin Onecta anti-CSRF par HMAC-SHA256.
  */
-export function signDaikinOAuthState(payload: SignedDaikinOAuthState): string {
-  return signHmacPayload(payload);
+export function signDaikinOAuthState(payload: SignedDaikinOAuthState, nowSec?: number): string {
+  return signHmacPayload(payload, nowSec);
 }
 
 /**
  * Vérifie et décode un paramètre OAuth `state` Daikin Onecta signé.
  */
 export function verifyDaikinOAuthState(
-  token: string | null | undefined
+  token: string | null | undefined,
+  nowSec?: number
 ): SignedDaikinOAuthState | null {
-  const parsed = verifyHmacPayload(token);
+  const parsed = verifyHmacPayload(token, nowSec);
   if (!parsed) return null;
   if (typeof parsed.nonce === 'string' && parsed.nonce.length >= 8) {
     return {

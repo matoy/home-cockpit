@@ -1,13 +1,19 @@
 import { NextResponse } from 'next/server';
 import { syncSomfyDevices } from '@/lib/data-service';
+import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 
 export async function POST() {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const result = await syncSomfyDevices();
     return NextResponse.json(result);
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Échec de synchronisation Somfy Cloud';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(
+      'api/vendors/somfy/sync',
+      err,
+      'Échec de synchronisation Somfy Cloud'
+    );
   }
 }

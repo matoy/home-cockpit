@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { exportBackupArchive } from '@/lib/backup-service';
+import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 import type { BackupMetricsRange } from '@/types';
 
 const VALID_RANGES: ReadonlySet<BackupMetricsRange> = new Set([
@@ -11,6 +12,9 @@ const VALID_RANGES: ReadonlySet<BackupMetricsRange> = new Set([
 ]);
 
 export async function GET(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const { searchParams } = new URL(request.url);
     const rawRange = (searchParams.get('metrics') ?? 'none').trim() as BackupMetricsRange;
@@ -33,8 +37,10 @@ export async function GET(request: Request) {
       },
     });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Échec lors de la génération de la sauvegarde.';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(
+      'api/backup/export',
+      err,
+      'Échec lors de la génération de la sauvegarde.'
+    );
   }
 }

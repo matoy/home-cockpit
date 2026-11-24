@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
 import { syncTuyaDevices } from '@/lib/data-service';
+import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 
 export async function POST() {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const result = await syncTuyaDevices();
     return NextResponse.json(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Échec de synchronisation Tuya';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse('api/tuya/sync', err, 'Échec de synchronisation Tuya');
   }
 }

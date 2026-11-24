@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { syncRoomsFromVendor } from '@/lib/data-service';
+import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 import { isValidVendorId, VENDOR_REGISTRY } from '@/lib/vendors/registry';
 
 export async function POST(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const body = (await request.json().catch(() => ({}))) as { vendor?: unknown };
     const rawVendor = body.vendor ?? 'all';
@@ -22,8 +26,6 @@ export async function POST(request: Request) {
     const result = await syncRoomsFromVendor(rawVendor);
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Échec de synchronisation des pièces.';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse('api/rooms/sync', err, 'Échec de synchronisation des pièces.');
   }
 }

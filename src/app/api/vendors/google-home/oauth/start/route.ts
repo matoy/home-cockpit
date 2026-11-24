@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { buildOAuthRedirectUrl, getPublicOrigin } from '@/lib/http-utils';
+import { buildOAuthRedirectUrl, getPublicOrigin, requireApiAuth } from '@/lib/http-utils';
 import {
   normalizeOAuthReturnTab,
   signOAuthState,
@@ -13,6 +13,9 @@ import {
 import type { GoogleHomeMode } from '@/types';
 
 export async function GET(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   const origin = getPublicOrigin(request);
   const { searchParams } = new URL(request.url);
   const rawMode = searchParams.get('mode');

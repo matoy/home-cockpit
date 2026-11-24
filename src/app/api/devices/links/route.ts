@@ -6,9 +6,13 @@ import {
   toggleDeviceSystemTag,
   unlinkDeviceVendor,
 } from '@/lib/data-service';
+import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 import { isValidVendorId } from '@/lib/vendors/registry';
 
 export async function POST(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const body = (await request.json()) as {
       action?: string;
@@ -119,11 +123,14 @@ export async function POST(request: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erreur liaison multi-systèmes';
     const status = message.includes('principal') || message.includes('même') ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return apiErrorResponse('api/devices/links POST', err, 'Erreur liaison multi-systèmes', status);
   }
 }
 
 export async function DELETE(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const { searchParams } = new URL(request.url);
     const deviceId = searchParams.get('deviceId');
@@ -144,6 +151,6 @@ export async function DELETE(request: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erreur dissociation système';
     const status = message.includes('principal') || message.includes('dernier') ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return apiErrorResponse('api/devices/links DELETE', err, 'Erreur dissociation système', status);
   }
 }

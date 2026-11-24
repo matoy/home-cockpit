@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 import { getVendorServerPluginBySlug } from '@/lib/services/vendors';
 import { getVendorBySlug } from '@/lib/vendors/registry';
 
@@ -9,6 +10,9 @@ export async function POST(
   _request: Request,
   context: { params: Promise<{ vendor: string }> }
 ) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   const { vendor: rawVendor } = await context.params;
   const meta = getVendorBySlug(rawVendor);
   const plugin = getVendorServerPluginBySlug(rawVendor);
@@ -31,8 +35,10 @@ export async function POST(
     await plugin.disconnect();
     return NextResponse.json({ ok: true, vendor: meta.id });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : `Échec de déconnexion ${meta.label}.`;
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(
+      `api/vendors/${meta.slug}/disconnect`,
+      err,
+      `Échec de déconnexion ${meta.label}.`
+    );
   }
 }

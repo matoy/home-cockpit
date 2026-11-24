@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server';
 import { importBackupArchive, previewBackupArchive } from '@/lib/backup-service';
+import { requireApiAuth } from '@/lib/http-utils';
 import type { BackupImportMode } from '@/types';
 
 const MAX_UPLOAD_BYTES = 35 * 1024 * 1024; // 35 Mo compressés
 
 export async function POST(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const formData = await request.formData();
     const fileEntry = formData.get('file');

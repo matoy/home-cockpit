@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createRoom, deleteRoom, updateRoom } from '@/lib/data-service';
+import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 
 type RoomMutationFields = {
   name?: string;
@@ -38,12 +39,15 @@ function validateRoomThresholds(fields: {
 }
 
 export async function POST(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
 
     const name = typeof body.name === 'string' ? body.name.trim() : '';
-    if (!name) {
-      return NextResponse.json({ error: 'Nom de pièce requis' }, { status: 400 });
+    if (!name || name.length > 100) {
+      return NextResponse.json({ error: 'Nom de pièce requis (<= 100 car.)' }, { status: 400 });
     }
 
     const numericKeys = [
@@ -75,7 +79,13 @@ export async function POST(request: Request) {
     }
 
     const icon = typeof body.icon === 'string' && body.icon.trim() ? body.icon.trim() : undefined;
+    if (icon && icon.length > 40) {
+      return NextResponse.json({ error: 'Icône invalide' }, { status: 400 });
+    }
     const color = typeof body.color === 'string' && body.color.trim() ? body.color.trim() : undefined;
+    if (color && color.length > 32) {
+      return NextResponse.json({ error: 'Couleur invalide' }, { status: 400 });
+    }
 
     const room = await createRoom({
       name,
@@ -88,12 +98,14 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ room }, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erreur création pièce';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse('api/rooms POST', err, 'Erreur création pièce');
   }
 }
 
 export async function PATCH(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
 
@@ -106,21 +118,21 @@ export async function PATCH(request: Request) {
 
     if (body.name !== undefined) {
       const trimmed = typeof body.name === 'string' ? body.name.trim() : '';
-      if (!trimmed) {
-        return NextResponse.json({ error: 'Nom de pièce requis' }, { status: 400 });
+      if (!trimmed || trimmed.length > 100) {
+        return NextResponse.json({ error: 'Nom de pièce invalide (<= 100 car.)' }, { status: 400 });
       }
       updates.name = trimmed;
     }
 
     if (body.icon !== undefined) {
-      if (typeof body.icon !== 'string' || !body.icon.trim()) {
+      if (typeof body.icon !== 'string' || !body.icon.trim() || body.icon.trim().length > 40) {
         return NextResponse.json({ error: 'Icône invalide' }, { status: 400 });
       }
       updates.icon = body.icon.trim();
     }
 
     if (body.color !== undefined) {
-      if (typeof body.color !== 'string' || !body.color.trim()) {
+      if (typeof body.color !== 'string' || !body.color.trim() || body.color.trim().length > 32) {
         return NextResponse.json({ error: 'Couleur invalide' }, { status: 400 });
       }
       updates.color = body.color.trim();
@@ -162,24 +174,25 @@ export async function PATCH(request: Request) {
     }
     return NextResponse.json({ room });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erreur mise à jour pièce';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse('api/rooms PATCH', err, 'Erreur mise à jour pièce');
   }
 }
 
 export async function DELETE(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const { searchParams } = new URL(request.url);
     const idParam = searchParams.get('id');
     const id = idParam ? Number(idParam) : NaN;
-    if (Number.isNaN(id)) {
+    if (!Number.isInteger(id) || id <= 0) {
       return NextResponse.json({ error: 'ID pièce invalide' }, { status: 400 });
     }
 
     await deleteRoom(id);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erreur suppression pièce';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse('api/rooms DELETE', err, 'Erreur suppression pièce');
   }
 }

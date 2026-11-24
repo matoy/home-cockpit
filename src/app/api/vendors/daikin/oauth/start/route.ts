@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { buildOAuthRedirectUrl, getPublicOrigin } from '@/lib/http-utils';
+import { buildOAuthRedirectUrl, getPublicOrigin, requireApiAuth } from '@/lib/http-utils';
 import {
   normalizeOAuthReturnTab,
   signDaikinOAuthState,
@@ -9,6 +9,9 @@ import {
 import { buildDaikinAuthorizeUrl, getDaikinConfig } from '@/lib/vendors/daikin-client';
 
 export async function GET(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   const origin = getPublicOrigin(request);
   const { searchParams } = new URL(request.url);
   const rawReturnTab = searchParams.get('returnTab');

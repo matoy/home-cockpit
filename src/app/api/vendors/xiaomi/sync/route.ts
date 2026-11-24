@@ -1,13 +1,19 @@
 import { NextResponse } from 'next/server';
 import { syncXiaomiDevices } from '@/lib/data-service';
+import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 
 export async function POST() {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const result = await syncXiaomiDevices();
     return NextResponse.json(result);
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Échec de synchronisation Xiaomi Home';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(
+      'api/vendors/xiaomi/sync',
+      err,
+      'Échec de synchronisation Xiaomi Home'
+    );
   }
 }

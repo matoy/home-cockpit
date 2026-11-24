@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { saveHomeConnectConnection } from '@/lib/data-service';
-import { buildOAuthRedirectUrl, getPublicOrigin } from '@/lib/http-utils';
+import { buildOAuthRedirectUrl, getPublicOrigin, safeEqualString } from '@/lib/http-utils';
 import {
   normalizeOAuthReturnTab,
   verifyHomeConnectOAuthState,
@@ -49,7 +49,7 @@ export async function GET(request: Request) {
   const cookieStore = await cookies();
   const expectedNonce = cookieStore.get('hc_oauth_nonce')?.value;
 
-  if (!decodedState || !expectedNonce || decodedState.nonce !== expectedNonce) {
+  if (!decodedState || !expectedNonce || !safeEqualString(decodedState.nonce, expectedNonce)) {
     return redirectWithError(
       origin,
       'Jeton de sécurité OAuth Home Connect invalide ou expiré.',

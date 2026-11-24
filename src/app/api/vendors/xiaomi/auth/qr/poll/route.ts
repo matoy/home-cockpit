@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { saveXiaomiConnection, syncXiaomiDevices } from '@/lib/data-service';
+import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 import { pollXiaomiQrLogin } from '@/lib/vendors/xiaomi-client';
 
 export async function POST(request: Request) {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     const body = (await request.json().catch(() => ({}))) as { qrStateToken?: string };
     const qrStateToken = body.qrStateToken?.trim();
@@ -27,8 +31,10 @@ export async function POST(request: Request) {
       ...syncRes,
     });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Erreur lors de la vérification du QR Code Xiaomi.';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(
+      'api/vendors/xiaomi/auth/qr/poll',
+      err,
+      'Erreur lors de la vérification du QR Code Xiaomi.'
+    );
   }
 }

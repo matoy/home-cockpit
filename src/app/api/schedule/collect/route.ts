@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isRequestAuthenticated, verifyScheduleSecret } from '@/lib/auth';
 import { runCollection } from '@/lib/data-service';
+import { apiErrorResponse } from '@/lib/http-utils';
 
 async function handleScheduleCollect(request: Request, trigger: 'schedule' | 'manual') {
   const hasSecret = verifyScheduleSecret(request);
@@ -12,10 +13,12 @@ async function handleScheduleCollect(request: Request, trigger: 'schedule' | 'ma
 
   try {
     const log = await runCollection(trigger);
-    return NextResponse.json({ ok: log.status === 'success', log }, { status: log.status === 'success' ? 200 : 500 });
+    return NextResponse.json(
+      { ok: log.status === 'success', log },
+      { status: log.status === 'success' ? 200 : 500, headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erreur de collecte';
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    return apiErrorResponse('api/schedule/collect', err, 'Erreur de collecte');
   }
 }
 

@@ -1,13 +1,19 @@
 import { NextResponse } from 'next/server';
 import { disconnectXiaomi } from '@/lib/data-service';
+import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 
 export async function POST() {
+  const authError = await requireApiAuth();
+  if (authError) return authError;
+
   try {
     await disconnectXiaomi();
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Échec de déconnexion Xiaomi Home';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(
+      'api/vendors/xiaomi/disconnect',
+      err,
+      'Échec de déconnexion Xiaomi Home'
+    );
   }
 }

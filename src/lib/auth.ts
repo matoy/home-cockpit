@@ -1,9 +1,11 @@
 import crypto from 'node:crypto';
 import { cookies } from 'next/headers';
 import {
+  SESSION_CLOCK_SKEW_SECONDS,
   SESSION_COOKIE_NAME,
   SESSION_FALLBACK_SALT,
-  SESSION_TOKEN_PAYLOAD,
+  SESSION_TOKEN_VERSION,
+  SESSION_TTL_SECONDS,
 } from '@/lib/auth-constants';
 
 export { SESSION_COOKIE_NAME };
@@ -22,19 +24,54 @@ function getSessionSecret(): string {
   return crypto.createHash('sha256').update(`${pwd}:${extra}`).digest('hex');
 }
 
-export function createSessionToken(): string {
+function signSessionMessage(message: string): string {
   const secret = getSessionSecret();
-  const sig = crypto.createHmac('sha256', secret).update(SESSION_TOKEN_PAYLOAD).digest('hex');
-  return `${SESSION_TOKEN_PAYLOAD}.${sig}`;
+  return crypto.createHmac('sha256', secret).update(message).digest('hex');
 }
 
-export function verifySessionToken(token: string | undefined): boolean {
+export function createSessionToken(nowSec = Math.floor(Date.now() / 1000)): string {
+  const iat = Math.floor(nowSec);
+  const exp = iat + SESSION_TTL_SECONDS;
+  const payload = `${SESSION_TOKEN_VERSION}.${iat}.${exp}`;
+  const sig = signSessionMessage(payload);
+  return `${payload}.${sig}`;
+}
+
+export function verifySessionToken(
+  token: string | undefined,
+  nowSec = Math.floor(Date.now() / 1000)
+): boolean {
   if (!isAppPasswordConfigured()) {
     return !isProduction();
   }
   if (!token) return false;
-  const expected = createSessionToken();
-  return safeCompare(token, expected);
+
+  const parts = token.split('.');
+  if (parts.length !== 4 || parts[0] !== SESSION_TOKEN_VERSION) {
+    return false;
+  }
+
+  const iat = Number(parts[1]);
+  const exp = Number(parts[2]);
+  const sig = parts[3];
+
+  if (
+    !Number.isInteger(iat) ||
+    !Number.isInteger(exp) ||
+    iat <= 0 ||
+    exp <= iat ||
+    !sig ||
+    !/^[0-9a-f]+$/i.test(sig)
+  ) {
+    return false;
+  }
+
+  if (iat > nowSec + SESSION_CLOCK_SKEW_SECONDS || nowSec > exp) {
+    return false;
+  }
+
+  const expectedSig = signSessionMessage(`${SESSION_TOKEN_VERSION}.${iat}.${exp}`);
+  return safeCompare(sig.toLowerCase(), expectedSig);
 }
 
 export function verifyAppPassword(candidate: string): boolean {

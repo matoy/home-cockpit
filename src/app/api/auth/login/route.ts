@@ -7,6 +7,7 @@ import {
 } from '@/lib/auth';
 
 const MAX_FAILED_ATTEMPTS = 5;
+const MAX_PASSWORD_LENGTH = 256;
 const LOCK_DURATION_MS = 15 * 60_000;
 const WINDOW_MS = 15 * 60_000;
 
@@ -19,12 +20,16 @@ interface AttemptRecord {
 const failedAttempts = new Map<string, AttemptRecord>();
 
 function getClientIp(request: Request): string {
+  const vercelFwd = request.headers.get('x-vercel-forwarded-for')?.split(',')[0]?.trim();
+  if (vercelFwd) return vercelFwd;
+  const realIp = request.headers.get('x-real-ip')?.trim();
+  if (realIp) return realIp;
   const forwarded = request.headers.get('x-forwarded-for');
   if (forwarded) {
     const first = forwarded.split(',')[0]?.trim();
     if (first) return first;
   }
-  return request.headers.get('x-real-ip')?.trim() || 'unknown';
+  return 'unknown';
 }
 
 function pruneExpiredAttempts(now: number) {
@@ -36,12 +41,20 @@ function pruneExpiredAttempts(now: number) {
   }
 }
 
+function jsonNoStore(
+  body: Record<string, unknown>,
+  status: number,
+  extraHeaders?: Record<string, string>
+): NextResponse {
+  return NextResponse.json(body, {
+    status,
+    headers: { 'Cache-Control': 'no-store', ...extraHeaders },
+  });
+}
+
 export async function POST(request: Request) {
   if (process.env.NODE_ENV === 'production' && !isAppPasswordConfigured()) {
-    return NextResponse.json(
-      { error: 'APP_PASSWORD doit être configuré en production.' },
-      { status: 503 }
-    );
+    return jsonNoStore({ error: 'APP_PASSWORD doit être configuré en production.' }, 503);
   }
 
   const now = Date.now();
@@ -51,15 +64,19 @@ export async function POST(request: Request) {
 
   if (current && current.lockedUntil > now) {
     const retryAfterSec = Math.max(1, Math.ceil((current.lockedUntil - now) / 1000));
-    return NextResponse.json(
+    return jsonNoStore(
       { error: `Trop de tentatives échouées. Réessayez dans ${Math.ceil(retryAfterSec / 60)} min.` },
-      { status: 429, headers: { 'Retry-After': String(retryAfterSec) } }
+      429,
+      { 'Retry-After': String(retryAfterSec) }
     );
   }
 
   try {
     const body = (await request.json()) as { password?: string };
     const password = typeof body.password === 'string' ? body.password : '';
+    if (password.length > MAX_PASSWORD_LENGTH) {
+      return jsonNoStore({ error: 'Mot de passe trop long.' }, 400);
+    }
 
     if (!verifyAppPassword(password)) {
       await new Promise((resolve) => setTimeout(resolve, 400));
@@ -75,19 +92,20 @@ export async function POST(request: Request) {
       });
 
       if (lockedUntil > 0) {
-        return NextResponse.json(
+        return jsonNoStore(
           { error: 'Trop de tentatives échouées. Compte temporairement bloqué (15 min).' },
-          { status: 429, headers: { 'Retry-After': String(Math.ceil(LOCK_DURATION_MS / 1000)) } }
+          429,
+          { 'Retry-After': String(Math.ceil(LOCK_DURATION_MS / 1000)) }
         );
       }
 
-      return NextResponse.json({ error: 'Mot de passe incorrect' }, { status: 401 });
+      return jsonNoStore({ error: 'Mot de passe incorrect' }, 401);
     }
 
     failedAttempts.delete(ip);
 
     const token = createSessionToken();
-    const response = NextResponse.json({ ok: true });
+    const response = jsonNoStore({ ok: true }, 200);
     response.cookies.set(SESSION_COOKIE_NAME, token, {
       httpOnly: true,
       sameSite: 'lax',
@@ -97,6 +115,6 @@ export async function POST(request: Request) {
     });
     return response;
   } catch {
-    return NextResponse.json({ error: 'Requête invalide' }, { status: 400 });
+    return jsonNoStore({ error: 'Requête invalide' }, 400);
   }
 }
