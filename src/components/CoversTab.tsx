@@ -12,7 +12,6 @@ import {
 } from 'recharts';
 import {
   Activity,
-  AlertTriangle,
   BatteryWarning,
   Blinds,
   CheckCircle2,
@@ -320,8 +319,8 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
 
   return (
     <div className="space-y-5">
-      {/* 4 cartes KPI */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* 3 cartes KPI */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>{t('covers.kpiMonitored')}</span>
@@ -364,39 +363,6 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
             {stats.unknownCount > 0
               ? t('covers.rtsNoFeedback', { count: stats.unknownCount })
               : t('covers.confirmedClosed')}
-          </p>
-        </div>
-
-        <div
-          className={`rounded-2xl border p-4 ${
-            stats.alertCount > 0
-              ? 'border-rose-500/40 bg-rose-950/20'
-              : 'border-slate-800 bg-slate-900/70'
-          }`}
-        >
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>{t('covers.kpiHealth')}</span>
-            {stats.alertCount > 0 ? (
-              <AlertTriangle className="h-4 w-4 text-rose-400" />
-            ) : (
-              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-            )}
-          </div>
-          <div
-            className={`mt-2 text-2xl font-bold ${
-              stats.alertCount > 0 ? 'text-rose-300' : 'text-emerald-300'
-            }`}
-          >
-            {stats.alertCount > 0 ? stats.alertCount : t('covers.statusOk')}
-          </div>
-          <p className="mt-1 text-xs text-slate-400">
-            {stats.alertCount === 0
-              ? t('covers.noAlerts')
-              : t('covers.alertsSub', {
-                  offline: stats.offlineCount,
-                  lowBatt: stats.lowBatteryCount,
-                  weakSignal: stats.weakRssiCount,
-                })}
           </p>
         </div>
       </div>

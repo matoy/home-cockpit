@@ -3,8 +3,10 @@ import { buildDashboardPayload, resolveTimeWindow } from '@/lib/aggregator';
 import {
   computeHybridEnergyKwh,
   computeReadingCost,
+  DEFAULT_TEMPO_CONFIG,
   isTimeInHcSlot,
   normalizeTariffTimeline,
+  simulateContracts,
 } from '@/lib/tariff-engine';
 import type { DeviceRecord, EnvStatus, MetricReadingRecord, RoomRecord, TariffPeriodRecord } from '@/types';
 
@@ -238,5 +240,179 @@ describe('tariff-engine & dashboard aggregator', () => {
     expect(payload.kpis.periodEnergyKwh).toBeCloseTo(0.6, 5);
     expect(payload.kpis.currentPowerW).toBeCloseTo(120, 5);
     expect(payload.devices.length).toBe(2);
+    expect(payload.kpis.projectedMonthEnergyKwh).toBeCloseTo(0.6 * 31, 1);
+  });
+
+  it('supports EDF Tempo pricing, contract simulation, and period-over-period delta', () => {
+    const tempoTariffs: TariffPeriodRecord[] = [
+      {
+        id: 10,
+        label: 'EDF Tempo',
+        startDate: '2026-01-01',
+        endDate: null,
+        mode: 'TEMPO',
+        baseRateEur: null,
+        hpRateEur: null,
+        hcRateEur: null,
+        hcSlots: [{ start: '22:00', end: '06:00' }],
+        tempoConfig: {
+          ...DEFAULT_TEMPO_CONFIG,
+          dayColors: {
+            '2026-01-15': 'RED',
+            '2026-01-16': 'WHITE',
+          },
+        },
+        monthlySubscriptionEur: 15,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ];
+
+    // 2026-01-15 11:00 UTC = 12:00 Paris -> RED HP
+    const redHp = computeReadingCost('2026-01-15T11:00:00.000Z', 2, tempoTariffs);
+    expect(redHp.periodType).toBe('HP');
+    expect(redHp.costEur).toBeCloseTo(2 * DEFAULT_TEMPO_CONFIG.redHpRateEur, 5);
+
+    // 2026-01-16 01:00 UTC = 02:00 Paris -> WHITE HC
+    const whiteHc = computeReadingCost('2026-01-16T01:00:00.000Z', 2, tempoTariffs);
+    expect(whiteHc.periodType).toBe('HC');
+    expect(whiteHc.costEur).toBeCloseTo(2 * DEFAULT_TEMPO_CONFIG.whiteHcRateEur, 5);
+
+    // 2026-01-17 (default BLUE) 12:00 UTC -> BLUE HP
+    const blueHp = computeReadingCost('2026-01-17T12:00:00.000Z', 2, tempoTariffs);
+    expect(blueHp.periodType).toBe('HP');
+    expect(blueHp.costEur).toBeCloseTo(2 * DEFAULT_TEMPO_CONFIG.blueHpRateEur, 5);
+
+    const sim = simulateContracts({
+      totalKwh: 100,
+      hpKwh: 60,
+      hcKwh: 40,
+      baseRate: 0.21,
+      hpRate: 0.22,
+      hcRate: 0.17,
+      tempoConfig: DEFAULT_TEMPO_CONFIG,
+    });
+    expect(sim.cheapest).toBe('TEMPO');
+    expect(sim.bestSavingsVsBase).toBeGreaterThan(0);
+
+    const now = new Date('2026-01-15T12:00:00.000Z');
+    const rooms: RoomRecord[] = [
+      {
+        id: 1,
+        name: 'Salon',
+        icon: 'Sofa',
+        color: '#3b82f6',
+        targetTempMin: 19,
+        targetTempMax: 22,
+        targetHumidityMin: 40,
+        targetHumidityMax: 60,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ];
+    const devices: DeviceRecord[] = [
+      {
+        id: 'dev1',
+        name: 'Plug 1',
+        customName: null,
+        primaryVendor: 'tuya',
+        systems: ['tuya'],
+        roomId: 1,
+        category: 'power',
+        tuyaCategory: 'cz',
+        productName: null,
+        ipAddress: null,
+        macAddress: null,
+        isOnline: true,
+        isMonitored: true,
+        excludeFromTotals: false,
+        energyMode: 'hybrid',
+        dpConfig: {},
+        lastRawStatus: null,
+        lastSeenAt: now.toISOString(),
+        lastPowerW: 100,
+        lastVoltageV: 230,
+        lastAddEleKwh: 1,
+        lastTempC: null,
+        lastHumidityPct: null,
+        lastBatteryPct: null,
+        lastContactOpen: null,
+      },
+    ];
+    const readings: MetricReadingRecord[] = [
+      // Previous 24h window: 1.0 kWh
+      {
+        id: 1,
+        deviceId: 'dev1',
+        roomId: 1,
+        recordedAt: '2026-01-14T10:00:00.000Z',
+        powerW: 100,
+        voltageV: 230,
+        energyKwh: 1.0,
+        energySource: 'add_ele',
+        tempC: null,
+        humidityPct: null,
+        contactOpen: null,
+      },
+      // Current 24h window: 1.5 kWh (+50%)
+      {
+        id: 2,
+        deviceId: 'dev1',
+        roomId: 1,
+        recordedAt: '2026-01-15T10:00:00.000Z',
+        powerW: 150,
+        voltageV: 230,
+        energyKwh: 1.5,
+        energySource: 'add_ele',
+        tempC: null,
+        humidityPct: null,
+        contactOpen: null,
+      },
+    ];
+    const env: EnvStatus = {
+      mode: 'demo',
+      databaseConfigured: false,
+      tuyaConfigured: false,
+      tuyaRegion: 'eu',
+      tuyaUserUidConfigured: false,
+      kasaConfigured: false,
+      kasaRegion: 'eu',
+      homeConnectConfigured: false,
+      homeConnectConnected: false,
+      homeConnectEnv: 'prod',
+      somfyConfigured: false,
+      somfyRegion: 'eu',
+      daikinConfigured: false,
+      daikinConnected: false,
+      xsenseConfigured: false,
+      xiaomiConfigured: false,
+      xiaomiConnected: false,
+      xiaomiRegion: 'de',
+      appPasswordConfigured: false,
+      oidcConfigured: false,
+      oidcProviderName: null,
+      scheduleSecretConfigured: false,
+      googleHomeApiEnabled: false,
+      googleHomeConfigured: false,
+      googleHomeMode: 'mcp',
+      googleHomeConnected: false,
+      googleSdmProjectConfigured: false,
+    };
+
+    const payload = buildDashboardPayload({
+      env,
+      range: '24h',
+      selectedRoomId: 'all',
+      selectedSystem: 'all',
+      rooms,
+      devices,
+      readings,
+      tariffs: tempoTariffs,
+      logs: [],
+      now,
+    });
+
+    expect(payload.kpis.prevPeriodEnergyKwh).toBeCloseTo(1.0, 5);
+    expect(payload.kpis.energyDeltaPct).toBeCloseTo(50, 2);
+    expect(payload.kpis.projectedMonthEnergyKwh).toBeCloseTo(1.5 * 31, 1);
+    expect(payload.kpis.projectedMonthCostEur).toBeGreaterThan(15);
   });
 });

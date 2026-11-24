@@ -17,6 +17,7 @@ import type {
   DpConfig,
   HcSlot,
   RawDpStatus,
+  TempoConfig,
   VendorId,
 } from '@/types';
 
@@ -129,6 +130,7 @@ export const tariffPeriods = pgTable('tariff_periods', {
   hpRateEur: real('hp_rate_eur'),
   hcRateEur: real('hc_rate_eur'),
   hcSlots: jsonb('hc_slots').$type<HcSlot[]>().default([]).notNull(),
+  tempoConfig: jsonb('tempo_config').$type<TempoConfig | null>(),
   monthlySubscriptionEur: real('monthly_subscription_eur').default(0).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
@@ -157,4 +159,11 @@ export const automations = pgTable('automations', {
   actions: jsonb('actions').$type<AutomationAction[]>().default([]).notNull(),
   rawPayload: jsonb('raw_payload'),
   syncedAt: timestamp('synced_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const alertEvents = pgTable('alert_events', {
+  dedupKey: text('dedup_key').primaryKey(),
+  severity: text('severity').notNull().default('warning'),
+  message: text('message').notNull(),
+  lastSentAt: timestamp('last_sent_at', { withTimezone: true }).defaultNow().notNull(),
 });

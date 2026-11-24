@@ -3,7 +3,29 @@ import type {
   EnergySource,
   HcSlot,
   TariffPeriodRecord,
+  TempoConfig,
+  TempoDayColor,
 } from '@/types';
+
+export const DEFAULT_TEMPO_CONFIG: TempoConfig = {
+  blueHpRateEur: 0.1494,
+  blueHcRateEur: 0.1232,
+  whiteHpRateEur: 0.173,
+  whiteHcRateEur: 0.1391,
+  redHpRateEur: 0.6468,
+  redHcRateEur: 0.146,
+};
+
+export function getTempoDayColor(
+  dateStr: string,
+  tempoConfig?: TempoConfig | null
+): TempoDayColor {
+  const override = tempoConfig?.dayColors?.[dateStr];
+  if (override === 'BLUE' || override === 'WHITE' || override === 'RED') {
+    return override;
+  }
+  return 'BLUE';
+}
 
 export interface HybridEnergyInput {
   energyMode: EnergyMode;
@@ -189,6 +211,33 @@ export function computeReadingCost(
     };
   }
 
+  if (tariff.mode === 'TEMPO') {
+    const slots = tariff.hcSlots?.length
+      ? tariff.hcSlots
+      : [{ start: '22:00', end: '06:00' }];
+    const inHc = slots.some((slot) => isTimeInHcSlot(timeStr, slot));
+    const tc: TempoConfig = { ...DEFAULT_TEMPO_CONFIG, ...(tariff.tempoConfig ?? {}) };
+    const color = getTempoDayColor(dateStr, tc);
+    const rate =
+      color === 'RED'
+        ? inHc
+          ? tc.redHcRateEur
+          : tc.redHpRateEur
+        : color === 'WHITE'
+          ? inHc
+            ? tc.whiteHcRateEur
+            : tc.whiteHpRateEur
+          : inHc
+            ? tc.blueHcRateEur
+            : tc.blueHpRateEur;
+    return {
+      costEur: energyKwh * rate,
+      rateEur: rate,
+      periodType: inHc ? 'HC' : 'HP',
+      tariffLabel: tariff.label,
+    };
+  }
+
   if (tariff.mode === 'HP_HC') {
     const slots = tariff.hcSlots ?? [];
     const inHc = slots.some((slot) => isTimeInHcSlot(timeStr, slot));
@@ -249,4 +298,58 @@ export function computeDewPointC(tempC: number | null, humidityPct: number | nul
   const alpha = (a * tempC) / (b + tempC) + Math.log(Math.min(100, Math.max(1, humidityPct)) / 100);
   const dew = (b * alpha) / (a - alpha);
   return Math.round(dew * 10) / 10;
+}
+
+export interface ContractSimulationResult {
+  baseCost: number;
+  hpHcCost: number;
+  tempoCost: number;
+  weightedTempoHp: number;
+  weightedTempoHc: number;
+  cheapest: 'BASE' | 'HP_HC' | 'TEMPO';
+  bestSavingsVsBase: number;
+}
+
+/**
+ * Simule et compare le coût d'une consommation sur les options Base, HP/HC et EDF Tempo
+ * (pondération annuelle officielle 300 jours Bleus, 43 Blancs, 22 Rouges).
+ */
+export function simulateContracts(params: {
+  totalKwh: number;
+  hpKwh: number;
+  hcKwh: number;
+  baseRate: number;
+  hpRate: number;
+  hcRate: number;
+  tempoConfig?: TempoConfig | null;
+}): ContractSimulationResult {
+  const { totalKwh, hpKwh, hcKwh, baseRate, hpRate, hcRate, tempoConfig } = params;
+  const tc: TempoConfig = { ...DEFAULT_TEMPO_CONFIG, ...(tempoConfig ?? {}) };
+
+  const weightedTempoHp =
+    (300 * tc.blueHpRateEur + 43 * tc.whiteHpRateEur + 22 * tc.redHpRateEur) / 365;
+  const weightedTempoHc =
+    (300 * tc.blueHcRateEur + 43 * tc.whiteHcRateEur + 22 * tc.redHcRateEur) / 365;
+
+  const baseCost = totalKwh * baseRate;
+  const hpHcCost = hpKwh * hpRate + hcKwh * hcRate;
+  const tempoCost = hpKwh * weightedTempoHp + hcKwh * weightedTempoHc;
+
+  const minCost = Math.min(baseCost, hpHcCost, tempoCost);
+  const cheapest: ContractSimulationResult['cheapest'] =
+    tempoCost <= baseCost && tempoCost <= hpHcCost
+      ? 'TEMPO'
+      : hpHcCost <= baseCost
+        ? 'HP_HC'
+        : 'BASE';
+
+  return {
+    baseCost,
+    hpHcCost,
+    tempoCost,
+    weightedTempoHp,
+    weightedTempoHc,
+    cheapest,
+    bestSavingsVsBase: Math.max(0, baseCost - minCost),
+  };
 }

@@ -12,7 +12,7 @@ import {
   Scale,
   Calendar,
 } from 'lucide-react';
-import { isTimeInHcSlot } from '@/lib/tariff-engine';
+import { DEFAULT_TEMPO_CONFIG, isTimeInHcSlot, simulateContracts } from '@/lib/tariff-engine';
 import { useI18n } from './I18nProvider';
 import type { DashboardPayload, HcSlot, TariffMode, TariffPeriodRecord } from '@/types';
 
@@ -31,6 +31,12 @@ interface TariffFormState {
   hpRateEur: string;
   hcRateEur: string;
   hcSlots: HcSlot[];
+  blueHpRateEur: string;
+  blueHcRateEur: string;
+  whiteHpRateEur: string;
+  whiteHcRateEur: string;
+  redHpRateEur: string;
+  redHcRateEur: string;
   monthlySubscriptionEur: string;
 }
 
@@ -46,6 +52,12 @@ function emptyForm(): TariffFormState {
     hpRateEur: '0.2146',
     hcRateEur: '0.1696',
     hcSlots: [{ start: '22:00', end: '06:00' }],
+    blueHpRateEur: String(DEFAULT_TEMPO_CONFIG.blueHpRateEur),
+    blueHcRateEur: String(DEFAULT_TEMPO_CONFIG.blueHcRateEur),
+    whiteHpRateEur: String(DEFAULT_TEMPO_CONFIG.whiteHpRateEur),
+    whiteHcRateEur: String(DEFAULT_TEMPO_CONFIG.whiteHcRateEur),
+    redHpRateEur: String(DEFAULT_TEMPO_CONFIG.redHpRateEur),
+    redHcRateEur: String(DEFAULT_TEMPO_CONFIG.redHcRateEur),
     monthlySubscriptionEur: '14.18',
   };
 }
@@ -82,7 +94,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
     );
   }, [data.tariffs, sortedTariffs]);
 
-  // Comparateur instantané Base vs HP/HC sur la consommation de la période
+  // Comparateur instantané Base vs HP/HC vs EDF Tempo sur la consommation de la période
   const comparator = useMemo(() => {
     const totalKwh = data.kpis.periodEnergyKwh;
     const baseRate = activeTariff?.baseRateEur ?? 0.2016;
@@ -110,9 +122,15 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       hpKwh = totalKwh * 0.65;
     }
 
-    const baseCost = totalKwh * baseRate;
-    const hpHcCost = hpKwh * hpRate + hcKwh * hcRate;
-    const diff = baseCost - hpHcCost;
+    const sim = simulateContracts({
+      totalKwh,
+      hpKwh,
+      hcKwh,
+      baseRate,
+      hpRate,
+      hcRate,
+      tempoConfig: activeTariff?.tempoConfig ?? DEFAULT_TEMPO_CONFIG,
+    });
 
     return {
       totalKwh,
@@ -122,14 +140,13 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       baseRate,
       hpRate,
       hcRate,
-      baseCost,
-      hpHcCost,
-      diff,
+      ...sim,
       exactFromBuckets,
     };
   }, [data.kpis.periodEnergyKwh, data.timeSeries, activeTariff]);
 
   function startEdit(t: TariffPeriodRecord) {
+    const tc = { ...DEFAULT_TEMPO_CONFIG, ...(t.tempoConfig ?? {}) };
     setForm({
       id: t.id,
       label: t.label,
@@ -140,6 +157,12 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       hpRateEur: String(t.hpRateEur ?? 0.2146),
       hcRateEur: String(t.hcRateEur ?? 0.1696),
       hcSlots: t.hcSlots?.length ? t.hcSlots : [{ start: '22:00', end: '06:00' }],
+      blueHpRateEur: String(tc.blueHpRateEur),
+      blueHcRateEur: String(tc.blueHcRateEur),
+      whiteHpRateEur: String(tc.whiteHpRateEur),
+      whiteHcRateEur: String(tc.whiteHcRateEur),
+      redHpRateEur: String(tc.redHpRateEur),
+      redHcRateEur: String(tc.redHcRateEur),
       monthlySubscriptionEur: String(t.monthlySubscriptionEur ?? 0),
     });
     setShowForm(true);
@@ -166,7 +189,18 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       baseRateEur: Number(form.baseRateEur) || null,
       hpRateEur: Number(form.hpRateEur) || null,
       hcRateEur: Number(form.hcRateEur) || null,
-      hcSlots: form.mode === 'HP_HC' ? form.hcSlots : [],
+      hcSlots: form.mode === 'HP_HC' || form.mode === 'TEMPO' ? form.hcSlots : [],
+      tempoConfig:
+        form.mode === 'TEMPO'
+          ? {
+            blueHpRateEur: Number(form.blueHpRateEur) || DEFAULT_TEMPO_CONFIG.blueHpRateEur,
+            blueHcRateEur: Number(form.blueHcRateEur) || DEFAULT_TEMPO_CONFIG.blueHcRateEur,
+            whiteHpRateEur: Number(form.whiteHpRateEur) || DEFAULT_TEMPO_CONFIG.whiteHpRateEur,
+            whiteHcRateEur: Number(form.whiteHcRateEur) || DEFAULT_TEMPO_CONFIG.whiteHcRateEur,
+            redHpRateEur: Number(form.redHpRateEur) || DEFAULT_TEMPO_CONFIG.redHpRateEur,
+            redHcRateEur: Number(form.redHcRateEur) || DEFAULT_TEMPO_CONFIG.redHcRateEur,
+          }
+          : null,
       monthlySubscriptionEur: Number(form.monthlySubscriptionEur) || 0,
     };
 
@@ -280,20 +314,19 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
             </div>
           </div>
 
-          {/* Sélecteur visuel Base vs HP/HC */}
+          {/* Sélecteur visuel Base vs HP/HC vs EDF Tempo */}
           <div>
             <label className="block text-xs font-medium text-slate-300 mb-2">
               {t('tariffs.optionLabel')}
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <button
                 type="button"
                 onClick={() => setForm({ ...form, mode: 'BASE' })}
-                className={`rounded-xl border p-3.5 text-left transition ${
-                  form.mode === 'BASE'
+                className={`rounded-xl border p-3.5 text-left transition ${form.mode === 'BASE'
                     ? 'border-indigo-500 bg-indigo-500/15 text-white'
                     : 'border-slate-700 bg-slate-950/60 text-slate-400 hover:border-slate-600'
-                }`}
+                  }`}
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold">{t('tariffs.optionBaseTitle')}</span>
@@ -307,11 +340,10 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
               <button
                 type="button"
                 onClick={() => setForm({ ...form, mode: 'HP_HC' })}
-                className={`rounded-xl border p-3.5 text-left transition ${
-                  form.mode === 'HP_HC'
+                className={`rounded-xl border p-3.5 text-left transition ${form.mode === 'HP_HC'
                     ? 'border-emerald-500 bg-emerald-500/15 text-white'
                     : 'border-slate-700 bg-slate-950/60 text-slate-400 hover:border-slate-600'
-                }`}
+                  }`}
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold">{t('tariffs.optionHpHcTitle')}</span>
@@ -321,76 +353,195 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                   {t('tariffs.optionHpHcDesc')}
                 </p>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, mode: 'TEMPO' })}
+                className={`rounded-xl border p-3.5 text-left transition ${form.mode === 'TEMPO'
+                    ? 'border-sky-500 bg-sky-500/15 text-white'
+                    : 'border-slate-700 bg-slate-950/60 text-slate-400 hover:border-slate-600'
+                  }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold">{t('tariffs.optionTempoTitle')}</span>
+                  {form.mode === 'TEMPO' && <Check className="h-4 w-4 text-sky-400" />}
+                </div>
+                <p className="mt-1 text-[11px] opacity-80">
+                  {t('tariffs.optionTempoDesc')}
+                </p>
+              </button>
             </div>
           </div>
 
           {/* Prix du kWh selon le mode */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {form.mode === 'BASE' ? (
+          {form.mode === 'TEMPO' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  {t('tariffs.baseRateLabel')}
+                <label className="block text-xs font-medium text-sky-300 mb-1.5">
+                  {t('tariffs.tempoBlueHp')}
                 </label>
                 <input
                   type="number"
                   step="0.0001"
                   min="0"
                   required
-                  value={form.baseRateEur}
-                  onChange={(e) => setForm({ ...form, baseRateEur: e.target.value })}
+                  value={form.blueHpRateEur}
+                  onChange={(e) => setForm({ ...form, blueHpRateEur: e.target.value })}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-sky-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-sky-200 mb-1.5">
+                  {t('tariffs.tempoBlueHc')}
+                </label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  required
+                  value={form.blueHcRateEur}
+                  onChange={(e) => setForm({ ...form, blueHcRateEur: e.target.value })}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-sky-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-200 mb-1.5">
+                  {t('tariffs.tempoWhiteHp')}
+                </label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  required
+                  value={form.whiteHpRateEur}
+                  onChange={(e) => setForm({ ...form, whiteHpRateEur: e.target.value })}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-sky-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  {t('tariffs.tempoWhiteHc')}
+                </label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  required
+                  value={form.whiteHcRateEur}
+                  onChange={(e) => setForm({ ...form, whiteHcRateEur: e.target.value })}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-sky-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-rose-300 mb-1.5">
+                  {t('tariffs.tempoRedHp')}
+                </label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  required
+                  value={form.redHpRateEur}
+                  onChange={(e) => setForm({ ...form, redHpRateEur: e.target.value })}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-rose-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-rose-200 mb-1.5">
+                  {t('tariffs.tempoRedHc')}
+                </label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  required
+                  value={form.redHcRateEur}
+                  onChange={(e) => setForm({ ...form, redHcRateEur: e.target.value })}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-rose-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  {t('tariffs.subLabel')}
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={form.monthlySubscriptionEur}
+                  onChange={(e) => setForm({ ...form, monthlySubscriptionEur: e.target.value })}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
                 />
               </div>
-            ) : (
-              <>
-                <div>
-                  <label className="block text-xs font-medium text-amber-300 mb-1.5">
-                    {t('tariffs.hpRateLabel')}
-                  </label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    min="0"
-                    required
-                    value={form.hpRateEur}
-                    onChange={(e) => setForm({ ...form, hpRateEur: e.target.value })}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-emerald-300 mb-1.5">
-                    {t('tariffs.hcRateLabel')}
-                  </label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    min="0"
-                    required
-                    value={form.hcRateEur}
-                    onChange={(e) => setForm({ ...form, hcRateEur: e.target.value })}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
-                  />
-                </div>
-              </>
-            )}
-
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                {t('tariffs.subLabel')}
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={form.monthlySubscriptionEur}
-                onChange={(e) => setForm({ ...form, monthlySubscriptionEur: e.target.value })}
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
-              />
             </div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {form.mode === 'BASE' ? (
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    {t('tariffs.baseRateLabel')}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    required
+                    value={form.baseRateEur}
+                    onChange={(e) => setForm({ ...form, baseRateEur: e.target.value })}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-amber-300 mb-1.5">
+                      {t('tariffs.hpRateLabel')}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      min="0"
+                      required
+                      value={form.hpRateEur}
+                      onChange={(e) => setForm({ ...form, hpRateEur: e.target.value })}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-emerald-300 mb-1.5">
+                      {t('tariffs.hcRateLabel')}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      min="0"
+                      required
+                      value={form.hcRateEur}
+                      onChange={(e) => setForm({ ...form, hcRateEur: e.target.value })}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  {t('tariffs.subLabel')}
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={form.monthlySubscriptionEur}
+                  onChange={(e) => setForm({ ...form, monthlySubscriptionEur: e.target.value })}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Éditeur de plages HC */}
-          {form.mode === 'HP_HC' && (
+          {(form.mode === 'HP_HC' || form.mode === 'TEMPO') && (
             <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-medium text-slate-200 flex items-center gap-1.5">
@@ -501,24 +652,28 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
             return (
               <div
                 key={tariffItem.id}
-                className={`rounded-2xl border p-5 transition ${
-                  isCurrent
+                className={`rounded-2xl border p-5 transition ${isCurrent
                     ? 'border-emerald-500/40 bg-emerald-950/10'
                     : 'border-slate-800 bg-slate-900/70'
-                }`}
+                  }`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-semibold text-white">{tariffItem.label}</h3>
                       <span
-                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
-                          tariffItem.mode === 'HP_HC'
-                            ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
-                            : 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'
-                        }`}
+                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${tariffItem.mode === 'TEMPO'
+                            ? 'bg-sky-500/15 text-sky-300 border border-sky-500/30'
+                            : tariffItem.mode === 'HP_HC'
+                              ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                              : 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'
+                          }`}
                       >
-                        {tariffItem.mode === 'HP_HC' ? 'HP / HC' : 'BASE'}
+                        {tariffItem.mode === 'TEMPO'
+                          ? 'TEMPO'
+                          : tariffItem.mode === 'HP_HC'
+                            ? 'HP / HC'
+                            : 'BASE'}
                       </span>
                       {isCurrent && (
                         <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-300">
@@ -567,6 +722,27 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                         {(tariffItem.baseRateEur ?? 0).toFixed(4)} €/kWh
                       </span>
                     </div>
+                  ) : tariffItem.mode === 'TEMPO' ? (
+                    <>
+                      <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2 font-mono text-[11px] text-slate-200">
+                        {t('tariffs.tempoRatesSummary', {
+                          bHp: (tariffItem.tempoConfig?.blueHpRateEur ?? DEFAULT_TEMPO_CONFIG.blueHpRateEur).toFixed(4),
+                          bHc: (tariffItem.tempoConfig?.blueHcRateEur ?? DEFAULT_TEMPO_CONFIG.blueHcRateEur).toFixed(4),
+                          wHp: (tariffItem.tempoConfig?.whiteHpRateEur ?? DEFAULT_TEMPO_CONFIG.whiteHpRateEur).toFixed(4),
+                          wHc: (tariffItem.tempoConfig?.whiteHcRateEur ?? DEFAULT_TEMPO_CONFIG.whiteHcRateEur).toFixed(4),
+                          rHp: (tariffItem.tempoConfig?.redHpRateEur ?? DEFAULT_TEMPO_CONFIG.redHpRateEur).toFixed(4),
+                          rHc: (tariffItem.tempoConfig?.redHcRateEur ?? DEFAULT_TEMPO_CONFIG.redHcRateEur).toFixed(4),
+                        })}
+                      </div>
+                      <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2 text-slate-300">
+                        {t('tariffs.hcSlotsList')}{' '}
+                        <span className="font-mono">
+                          {(tariffItem.hcSlots?.length ? tariffItem.hcSlots : [{ start: '22:00', end: '06:00' }])
+                            .map((s) => `${s.start}–${s.end}`)
+                            .join(', ')}
+                        </span>
+                      </div>
+                    </>
                   ) : (
                     <>
                       <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2">
@@ -601,7 +777,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
           })}
         </div>
 
-        {/* Comparateur instantané Base vs HP/HC */}
+        {/* Comparateur instantané Base vs HP/HC vs EDF Tempo */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 h-fit space-y-4">
           <div className="flex items-center gap-2">
             <Scale className="h-4 w-4 text-indigo-400" />
@@ -615,9 +791,21 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
           </p>
 
           <div className="space-y-2.5 text-xs">
-            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 flex justify-between items-center">
+            <div
+              className={`rounded-xl border p-3 flex justify-between items-center ${comparator.cheapest === 'BASE'
+                  ? 'border-emerald-500/40 bg-emerald-950/15'
+                  : 'border-slate-800 bg-slate-950/60'
+                }`}
+            >
               <div>
-                <div className="font-medium text-indigo-300">{t('tariffs.simBaseLabel')}</div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-indigo-300">{t('tariffs.simBaseLabel')}</span>
+                  {comparator.cheapest === 'BASE' && (
+                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                      {t('tariffs.simBestChoice')}
+                    </span>
+                  )}
+                </div>
                 <div className="text-[11px] text-slate-500">
                   {comparator.baseRate.toFixed(4)} €/kWh
                 </div>
@@ -627,9 +815,21 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 flex justify-between items-center">
+            <div
+              className={`rounded-xl border p-3 flex justify-between items-center ${comparator.cheapest === 'HP_HC'
+                  ? 'border-emerald-500/40 bg-emerald-950/15'
+                  : 'border-slate-800 bg-slate-950/60'
+                }`}
+            >
               <div>
-                <div className="font-medium text-emerald-300">{t('tariffs.simHpHcLabel')}</div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-emerald-300">{t('tariffs.simHpHcLabel')}</span>
+                  {comparator.cheapest === 'HP_HC' && (
+                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                      {t('tariffs.simBestChoice')}
+                    </span>
+                  )}
+                </div>
                 <div className="text-[11px] text-slate-500">
                   {t('tariffs.simSubSplit', {
                     hcPct: comparator.hcPct.toFixed(0),
@@ -643,17 +843,54 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                 {comparator.hpHcCost.toFixed(2)} €
               </div>
             </div>
+
+            <div
+              className={`rounded-xl border p-3 flex justify-between items-center ${comparator.cheapest === 'TEMPO'
+                  ? 'border-emerald-500/40 bg-emerald-950/15'
+                  : 'border-slate-800 bg-slate-950/60'
+                }`}
+            >
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-sky-300">{t('tariffs.simTempoLabel')}</span>
+                  {comparator.cheapest === 'TEMPO' && (
+                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                      {t('tariffs.simBestChoice')}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {t('tariffs.simTempoSub', {
+                    hcRate: comparator.weightedTempoHc.toFixed(4),
+                    hpRate: comparator.weightedTempoHp.toFixed(4),
+                  })}
+                </div>
+              </div>
+              <div className="text-base font-bold font-mono text-white">
+                {comparator.tempoCost.toFixed(2)} €
+              </div>
+            </div>
           </div>
 
           <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs flex items-center gap-2">
             <Euro className="h-4 w-4 text-indigo-400 shrink-0" />
-            {comparator.diff > 0.01 ? (
+            {comparator.cheapest === 'TEMPO' ? (
+              <span className="text-sky-300">
+                {t('tariffs.simTempoLabel')} · {t('tariffs.simBestChoice')} (−
+                {comparator.bestSavingsVsBase.toFixed(2)} €)
+              </span>
+            ) : comparator.cheapest === 'HP_HC' ? (
               <span className="text-emerald-300">
-                {t('tariffs.simSavingsHpHc', { diff: comparator.diff.toFixed(2) })}
+                {t('tariffs.simSavingsHpHc', { diff: comparator.bestSavingsVsBase.toFixed(2) })}
               </span>
             ) : (
               <span className="text-indigo-200">
-                {t('tariffs.simSavingsBase', { diff: Math.abs(comparator.diff).toFixed(2) })}
+                {t('tariffs.simSavingsBase', {
+                  diff: Math.max(
+                    0,
+                    Math.min(comparator.hpHcCost, comparator.tempoCost) - comparator.baseCost
+                  ).toFixed(2),
+                })}
               </span>
             )}
           </div>

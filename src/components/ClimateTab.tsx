@@ -18,17 +18,17 @@ import {
   Thermometer,
   Droplets,
   Zap,
-  Battery,
-  BatteryWarning,
   CheckCircle2,
   AlertTriangle,
   Wifi,
   WifiOff,
   Plug,
+  Download,
 } from 'lucide-react';
+import { buildClimateStatsCsv, triggerCsvDownload } from '@/lib/csv-export';
 import { isActiveClimateSensor } from '@/lib/device-utils';
 import { useI18n } from '@/components/I18nProvider';
-import { Card } from '@/components/ui';
+import { Card, ConnectivityBatteryKpi } from '@/components/ui';
 import type { DashboardPayload } from '@/types';
 
 interface ClimateTabProps {
@@ -84,44 +84,47 @@ export function ClimateTab({ data }: ClimateTabProps) {
 
   const activeCorrelationRoom = data.rooms.find((r) => String(r.id) === correlationRoomId);
 
-  const climateHealth = useMemo(() => {
-    const sensors = data.devices.filter((d) => {
-      if (!isActiveClimateSensor(d)) return false;
-      if (data.selectedSystem !== 'all' && !d.systems.includes(data.selectedSystem)) {
-        return false;
-      }
-      if (data.selectedRoomId !== 'all' && String(d.roomId) !== data.selectedRoomId) {
-        return false;
-      }
-      return true;
-    });
-
-    const onlineCount = sensors.filter((d) => d.isOnline).length;
-    const withBattery = sensors.filter(
-      (d): d is typeof d & { lastBatteryPct: number } =>
-        d.lastBatteryPct !== null && Number.isFinite(d.lastBatteryPct)
-    );
-    const mainsPoweredCount = sensors.filter(
-      (d) => !d.dpConfig?.battery?.code && d.lastBatteryPct === null
-    ).length;
-    const lowBatteryCount = withBattery.filter((d) => d.lastBatteryPct <= 20).length;
-    const avgBatteryPct =
-      withBattery.length > 0
-        ? Math.round(withBattery.reduce((s, d) => s + d.lastBatteryPct, 0) / withBattery.length)
-        : null;
-    const minBatteryPct =
-      withBattery.length > 0 ? Math.min(...withBattery.map((d) => d.lastBatteryPct)) : null;
-
-    return {
-      sensors,
-      totalCount: sensors.length,
-      onlineCount,
-      mainsPoweredCount,
-      lowBatteryCount,
-      avgBatteryPct,
-      minBatteryPct,
-    };
+  const climateSensors = useMemo(() => {
+    return data.devices
+      .filter((d) => {
+        if (!isActiveClimateSensor(d)) return false;
+        if (data.selectedSystem !== 'all' && !d.systems.includes(data.selectedSystem)) {
+          return false;
+        }
+        if (data.selectedRoomId !== 'all' && String(d.roomId) !== data.selectedRoomId) {
+          return false;
+        }
+        return true;
+      })
+      .map((d) => ({
+        name: d.customName || d.name,
+        isOnline: d.isOnline,
+        batteryPct: d.lastBatteryPct,
+        isMains: !d.dpConfig?.battery?.code && d.lastBatteryPct === null,
+      }));
   }, [data.devices, data.selectedRoomId, data.selectedSystem]);
+
+  const sortedRoomSummaries = useMemo(() => {
+    const withSensor: DashboardPayload['roomSummaries'] = [];
+    const withoutSensor: DashboardPayload['roomSummaries'] = [];
+    for (const rs of data.roomSummaries) {
+      const hasSensor =
+        rs.devices.some((d) => isActiveClimateSensor(d)) ||
+        rs.currentTempC !== null ||
+        rs.currentHumidityPct !== null;
+      if (hasSensor) {
+        withSensor.push(rs);
+      } else {
+        withoutSensor.push(rs);
+      }
+    }
+    return [...withSensor, ...withoutSensor];
+  }, [data.roomSummaries]);
+
+  const sortTooltipDesc = (item: { value?: unknown }) =>
+    typeof item.value === 'number' && Number.isFinite(item.value)
+      ? -item.value
+      : Number.POSITIVE_INFINITY;
 
   const { kpis } = data;
 
@@ -173,11 +176,10 @@ export function ClimateTab({ data }: ClimateTabProps) {
               {t('climate.kpiThermalComfort')}
             </span>
             <div
-              className={`rounded-lg p-2 ${
-                kpis.climateAlertsCount > 0
-                  ? 'bg-amber-500/15 text-amber-400'
-                  : 'bg-emerald-500/15 text-emerald-400'
-              }`}
+              className={`rounded-lg p-2 ${kpis.climateAlertsCount > 0
+                ? 'bg-amber-500/15 text-amber-400'
+                : 'bg-emerald-500/15 text-emerald-400'
+                }`}
             >
               {kpis.climateAlertsCount > 0 ? (
                 <AlertTriangle className="h-4 w-4" />
@@ -200,66 +202,13 @@ export function ClimateTab({ data }: ClimateTabProps) {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
-              {t('climate.kpiConnectivity')}
-            </span>
-            <div
-              className={`rounded-lg p-2 ${
-                climateHealth.lowBatteryCount > 0
-                  ? 'bg-rose-500/15 text-rose-400'
-                  : 'bg-emerald-500/15 text-emerald-400'
-              }`}
-            >
-              {climateHealth.lowBatteryCount > 0 ? (
-                <BatteryWarning className="h-4 w-4" />
-              ) : (
-                <Battery className="h-4 w-4" />
-              )}
-            </div>
-          </div>
-          <div
-            className="mt-3 flex items-baseline gap-2"
-            title={
-              climateHealth.sensors
-                .map(
-                  (s) =>
-                    `${s.customName || s.name} (${s.isOnline ? t('common.online') : t('common.offline')})`
-                )
-                .join(' • ') || t('climate.noActiveSensor')
-            }
-          >
-            <span className="text-3xl font-bold tracking-tight text-white">
-              {climateHealth.onlineCount} / {climateHealth.totalCount}
-            </span>
-            <span className="text-xs text-slate-400">{t('climate.onlineWord')}</span>
-          </div>
-          <p
-            className={`mt-2 text-xs ${
-              climateHealth.lowBatteryCount > 0 ? 'text-rose-300' : 'text-slate-400'
-            }`}
-          >
-            {climateHealth.lowBatteryCount > 0
-              ? `${t('climate.lowBatteryCount', { count: climateHealth.lowBatteryCount })}${
-                  climateHealth.mainsPoweredCount > 0
-                    ? t('climate.onMainsSuffix', { count: climateHealth.mainsPoweredCount })
-                    : ''
-                }`
-              : climateHealth.avgBatteryPct !== null
-                ? `${t('climate.avgMinBattery', {
-                    avg: climateHealth.avgBatteryPct,
-                    min: climateHealth.minBatteryPct ?? 0,
-                  })}${
-                    climateHealth.mainsPoweredCount > 0
-                      ? t('climate.onMainsSuffix', { count: climateHealth.mainsPoweredCount })
-                      : ''
-                  }`
-                : climateHealth.mainsPoweredCount > 0
-                  ? t('climate.mainsCount', { count: climateHealth.mainsPoweredCount })
-                  : t('climate.noBatteryReported')}
-          </p>
-        </div>
+        <ConnectivityBatteryKpi
+          title={t('climate.kpiConnectivity')}
+          sensors={climateSensors}
+          noActiveSensorLabel={t('climate.noActiveSensor')}
+          mainsCountLabel={(count) => t('climate.mainsCount', { count })}
+          lowBatteryLabel={(count) => t('climate.lowBatteryCount', { count })}
+        />
       </div>
 
       {/* Multi-courbes Température */}
@@ -295,6 +244,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
                     borderRadius: '12px',
                     fontSize: '12px',
                   }}
+                  itemSorter={sortTooltipDesc}
                   formatter={(val) => `${Number(val ?? 0).toFixed(1)} °C`}
                 />
                 <Legend wrapperStyle={{ fontSize: '12px' }} />
@@ -347,6 +297,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
                     borderRadius: '12px',
                     fontSize: '12px',
                   }}
+                  itemSorter={sortTooltipDesc}
                   formatter={(val) => `${Number(val ?? 0).toFixed(0)} %`}
                 />
                 <Legend wrapperStyle={{ fontSize: '12px' }} />
@@ -454,8 +405,21 @@ export function ClimateTab({ data }: ClimateTabProps) {
 
       {/* Tableau récapitulatif */}
       <Card padded={false} className="overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-800">
+        <div className="px-5 py-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-white">{t('climate.statsTableTitle')}</h3>
+          <button
+            type="button"
+            onClick={() =>
+              triggerCsvDownload(
+                `home-cockpit-climate-${data.range}.csv`,
+                buildClimateStatsCsv(sortedRoomSummaries)
+              )
+            }
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
+          >
+            <Download className="h-3.5 w-3.5 text-emerald-400" />
+            {t('climate.exportCsv')}
+          </button>
         </div>
         <table className="w-full table-fixed text-left text-xs">
           <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider">
@@ -471,7 +435,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/80">
-            {data.roomSummaries.map((rs) => {
+            {sortedRoomSummaries.map((rs) => {
               const amplitude =
                 rs.maxTempC !== null && rs.minTempC !== null
                   ? (rs.maxTempC - rs.minTempC).toFixed(1)

@@ -24,13 +24,16 @@ import {
   ShieldAlert,
   Plug,
   User,
+  HeartPulse,
 } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
 import { extractCoverSummary } from '@/lib/covers-utils';
+import { computeHomeHealth } from '@/lib/home-health';
 import { extractDaikinSummary, isDaikinHvacDevice } from '@/lib/vendors/daikin-display';
 import { extractXSenseSummary, isXSenseSecurityDevice } from '@/lib/vendors/xsense-display';
 import { extractXiaomiSummary, isXiaomiSecurityOrHomeDevice } from '@/lib/vendors/xiaomi-display';
 import { LanguageSwitcher } from './LanguageSwitcher';
+import { ThemeToggle } from './ThemeToggle';
 import { useI18n } from './I18nProvider';
 import { AlertBanner, Button } from './ui';
 import type { SessionUser } from '@/lib/auth';
@@ -51,6 +54,9 @@ function TabLoadingFallback() {
 }
 
 const EnergyTab = dynamic(() => import('./EnergyTab').then((m) => m.EnergyTab), {
+  loading: () => <TabLoadingFallback />,
+});
+const HealthTab = dynamic(() => import('./HealthTab').then((m) => m.HealthTab), {
   loading: () => <TabLoadingFallback />,
 });
 const ClimateTab = dynamic(() => import('./ClimateTab').then((m) => m.ClimateTab), {
@@ -88,8 +94,11 @@ const SetupGuideTab = dynamic(() => import('./SetupGuideTab').then((m) => m.Setu
   loading: () => <TabLoadingFallback />,
 });
 
+const AUTO_REFRESH_STORAGE_KEY = 'hc_auto_refresh_ms';
+
 interface DashboardAppProps {
   initialData: DashboardPayload;
+  initialTab?: TabId;
   sessionUser?: SessionUser | null;
 }
 
@@ -98,11 +107,16 @@ function toLocalDateTimeInput(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function DashboardApp({ initialData, sessionUser = null }: DashboardAppProps) {
+export function DashboardApp({
+  initialData,
+  initialTab = 'overview',
+  sessionUser = null,
+}: DashboardAppProps) {
   const router = useRouter();
   const { t, locale, formatDateTime } = useI18n();
   const [data, setData] = useState<DashboardPayload>(initialData);
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
+  const [autoRefreshMs, setAutoRefreshMs] = useState<number>(0);
   const [range, setRange] = useState<TimeRange>(initialData.range);
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [customFromInput, setCustomFromInput] = useState<string>(() => {
@@ -136,6 +150,25 @@ export function DashboardApp({ initialData, sessionUser = null }: DashboardAppPr
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    let stored = 0;
+    try {
+      const raw = window.localStorage.getItem(AUTO_REFRESH_STORAGE_KEY);
+      const parsed = raw ? Number(raw) : 0;
+      if (parsed === 60_000 || parsed === 300_000 || parsed === 900_000) {
+        stored = parsed;
+      }
+    } catch {
+      stored = 0;
+    }
+    if (stored <= 0) return;
+    const timer = window.setTimeout(() => {
+      setAutoRefreshMs(stored);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get('tab');
     const ghStatus = params.get('gh');
@@ -147,10 +180,10 @@ export function DashboardApp({ initialData, sessionUser = null }: DashboardAppPr
     const dkStatus = params.get('dk');
     const dkError = params.get('dk_error');
 
-    const hasRelevantParams = Boolean(
-      tabParam || ghStatus || ghError || hcStatus || hcError || dkStatus || dkError
+    const hasOAuthParams = Boolean(
+      ghStatus || ghError || hcStatus || hcError || dkStatus || dkError
     );
-    if (!hasRelevantParams) return;
+    if (!hasOAuthParams) return;
 
     let cancelled = false;
     let toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -256,6 +289,48 @@ export function DashboardApp({ initialData, sessionUser = null }: DashboardAppPr
     },
     [range, roomId, appliedCustom, systemFilter, router]
   );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const currentParams = new URLSearchParams(window.location.search);
+    if (
+      currentParams.has('gh') ||
+      currentParams.has('gh_error') ||
+      currentParams.has('hc') ||
+      currentParams.has('hc_error') ||
+      currentParams.has('dk') ||
+      currentParams.has('dk_error')
+    ) {
+      return;
+    }
+
+    const nextParams = new URLSearchParams();
+    if (activeTab !== 'overview') nextParams.set('tab', activeTab);
+    if (range !== '24h') nextParams.set('range', range);
+    if (range === 'custom' && appliedCustom) {
+      nextParams.set('from', appliedCustom.from);
+      nextParams.set('to', appliedCustom.to);
+    }
+    if (roomId !== 'all') nextParams.set('roomId', roomId);
+    if (systemFilter !== 'all') nextParams.set('system', systemFilter);
+
+    const qs = nextParams.toString();
+    const nextUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    const currentUrl = `${window.location.pathname}${window.location.search}`;
+    if (nextUrl !== currentUrl) {
+      window.history.replaceState(window.history.state, '', nextUrl);
+    }
+  }, [activeTab, range, roomId, systemFilter, appliedCustom]);
+
+  useEffect(() => {
+    if (autoRefreshMs <= 0) return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && !loading) {
+        void fetchDashboard(range, roomId, appliedCustom, systemFilter);
+      }
+    }, autoRefreshMs);
+    return () => window.clearInterval(id);
+  }, [autoRefreshMs, loading, fetchDashboard, range, roomId, appliedCustom, systemFilter]);
 
   async function handleRangeChange(nextRange: Exclude<TimeRange, 'custom'>) {
     setRange(nextRange);
@@ -496,6 +571,11 @@ export function DashboardApp({ initialData, sessionUser = null }: DashboardAppPr
     };
   }, [data.devices, data.vendors, data.selectedSystem, data.selectedRoomId, locale]);
 
+  const healthIssuesCount = useMemo(
+    () => computeHomeHealth(data, locale).totalIssues,
+    [data, locale]
+  );
+
   const rangeOptions: Array<{ id: Exclude<TimeRange, 'custom'>; label: string }> = [
     { id: '24h', label: t('header.range24h') },
     { id: '7d', label: t('header.range7d') },
@@ -503,56 +583,82 @@ export function DashboardApp({ initialData, sessionUser = null }: DashboardAppPr
     { id: '365d', label: t('header.range365d') },
   ];
 
-  const tabs: Array<{
+  type NavTabItem = {
     id: TabId;
     label: string;
     title?: string;
     icon: typeof LayoutGrid;
     badge?: number;
-  }> = [
-    { id: 'overview', label: t('nav.overview'), icon: LayoutGrid },
-    { id: 'energy', label: t('nav.energy'), icon: BarChart3 },
-    { id: 'climate', label: t('nav.climate'), icon: Thermometer },
+  };
+
+  const tabGroups: Array<{ id: string; label: string; tabs: NavTabItem[] }> = [
     {
-      id: 'contacts',
-      label: t('nav.contacts'),
-      icon: DoorOpen,
-      badge: data.contacts.summary.openCountNow,
+      id: 'monitoring',
+      label: t('nav.groupMonitoring'),
+      tabs: [
+        { id: 'overview', label: t('nav.overview'), icon: LayoutGrid },
+        {
+          id: 'health',
+          label: t('nav.health'),
+          icon: HeartPulse,
+          badge: healthIssuesCount > 0 ? healthIssuesCount : undefined,
+        },
+        { id: 'energy', label: t('nav.energy'), icon: BarChart3 },
+        { id: 'climate', label: t('nav.climate'), icon: Thermometer },
+        {
+          id: 'contacts',
+          label: t('nav.contacts'),
+          icon: DoorOpen,
+          badge: data.contacts.summary.openCountNow,
+        },
+      ],
     },
     {
-      id: 'covers',
-      label: t('nav.covers'),
-      icon: Blinds,
-      badge: openCoversCount > 0 ? openCoversCount : undefined,
+      id: 'equipment',
+      label: t('nav.groupEquipment'),
+      tabs: [
+        {
+          id: 'covers',
+          label: t('nav.covers'),
+          icon: Blinds,
+          badge: openCoversCount > 0 ? openCoversCount : undefined,
+        },
+        {
+          id: 'hvac',
+          label: t('nav.hvac'),
+          icon: Wind,
+          badge: activeHvacCount > 0 ? activeHvacCount : undefined,
+        },
+        {
+          id: 'security',
+          label: t('nav.security'),
+          icon: ShieldAlert,
+          badge: activeSecurityAlertsCount > 0 ? activeSecurityAlertsCount : undefined,
+        },
+        {
+          id: 'automations',
+          label: t('nav.automations'),
+          icon: Workflow,
+          badge: data.automations.summary.warningCount,
+        },
+      ],
     },
     {
-      id: 'hvac',
-      label: t('nav.hvac'),
-      icon: Wind,
-      badge: activeHvacCount > 0 ? activeHvacCount : undefined,
+      id: 'management',
+      label: t('nav.groupManagement'),
+      tabs: [
+        { id: 'devices', label: t('nav.devices'), icon: Cpu },
+        { id: 'rooms', label: t('nav.rooms'), icon: Home },
+        {
+          id: 'systems',
+          label: t('nav.systems'),
+          icon: Plug,
+          badge: connectedSystemsCount > 0 ? connectedSystemsCount : undefined,
+        },
+        { id: 'tariffs', label: t('nav.tariffs'), icon: Euro },
+        { id: 'guide', label: t('nav.guide'), icon: BookOpen },
+      ],
     },
-    {
-      id: 'security',
-      label: t('nav.security'),
-      icon: ShieldAlert,
-      badge: activeSecurityAlertsCount > 0 ? activeSecurityAlertsCount : undefined,
-    },
-    {
-      id: 'automations',
-      label: t('nav.automations'),
-      icon: Workflow,
-      badge: data.automations.summary.warningCount,
-    },
-    { id: 'devices', label: t('nav.devices'), icon: Cpu },
-    { id: 'rooms', label: t('nav.rooms'), icon: Home },
-    {
-      id: 'systems',
-      label: t('nav.systems'),
-      icon: Plug,
-      badge: connectedSystemsCount > 0 ? connectedSystemsCount : undefined,
-    },
-    { id: 'tariffs', label: t('nav.tariffs'), icon: Euro },
-    { id: 'guide', label: t('nav.guide'), icon: BookOpen },
   ];
 
   return (
@@ -662,6 +768,7 @@ export function DashboardApp({ initialData, sessionUser = null }: DashboardAppPr
             </select>
 
             <LanguageSwitcher compact />
+            <ThemeToggle />
 
             <button
               onClick={() => void handleCollectNow()}
@@ -680,6 +787,27 @@ export function DashboardApp({ initialData, sessionUser = null }: DashboardAppPr
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
+
+            <select
+              value={String(autoRefreshMs)}
+              onChange={(e) => {
+                const next = Number(e.target.value);
+                setAutoRefreshMs(next);
+                try {
+                  window.localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, String(next));
+                } catch {
+                  // ignore storage errors
+                }
+              }}
+              aria-label={t('header.autoRefreshAria')}
+              title={t('header.autoRefreshAria')}
+              className="rounded-xl border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-300 focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="0">{t('header.autoRefreshOff')}</option>
+              <option value="60000">{t('header.autoRefresh1m')}</option>
+              <option value="300000">{t('header.autoRefresh5m')}</option>
+              <option value="900000">{t('header.autoRefresh15m')}</option>
+            </select>
 
             {(sessionUser?.name || sessionUser?.email) && (
               <span
@@ -772,29 +900,40 @@ export function DashboardApp({ initialData, sessionUser = null }: DashboardAppPr
           aria-label={t('nav.ariaLabel')}
           className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-wrap items-center gap-x-1 gap-y-0.5 border-t border-slate-800/60"
         >
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                title={tab.title ?? tab.label}
-                className={`flex items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-xs font-medium transition ${active
-                  ? 'border-indigo-500 bg-indigo-500/10 rounded-t-lg text-white'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
-                  }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {tab.label}
-                {tab.badge !== undefined && tab.badge > 0 && (
-                  <span className="rounded-full bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.2 text-[10px] font-semibold text-amber-300">
-                    {tab.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {tabGroups.map((group, groupIdx) => (
+            <div
+              key={group.id}
+              className={`flex flex-wrap items-center gap-x-0.5 gap-y-0.5 ${groupIdx > 0 ? 'md:border-l md:border-slate-800/80 md:pl-2 md:ml-1' : ''
+                }`}
+            >
+              <span className="hidden xl:inline text-[9px] font-semibold uppercase tracking-wider text-slate-500 mr-1 select-none">
+                {group.label}
+              </span>
+              {group.tabs.map((tab) => {
+                const Icon = tab.icon;
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    title={tab.title ?? tab.label}
+                    className={`flex items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-xs font-medium transition ${active
+                      ? 'border-indigo-500 bg-indigo-500/10 rounded-t-lg text-white'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                      }`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {tab.label}
+                    {tab.badge !== undefined && tab.badge > 0 && (
+                      <span className="rounded-full bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.2 text-[10px] font-semibold text-amber-300">
+                        {tab.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
       </header>
 
@@ -826,6 +965,9 @@ export function DashboardApp({ initialData, sessionUser = null }: DashboardAppPr
             onSelectRoom={(id) => void handleRoomChange(id)}
             onNavigateTab={setActiveTab}
           />
+        )}
+        {activeTab === 'health' && (
+          <HealthTab data={data} onNavigateTab={setActiveTab} />
         )}
         {activeTab === 'energy' && <EnergyTab data={data} />}
         {activeTab === 'climate' && <ClimateTab data={data} />}

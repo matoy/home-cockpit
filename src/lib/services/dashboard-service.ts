@@ -198,7 +198,7 @@ export async function getDashboardData(
 
   const now = new Date();
   const { startMs, endMs, effectiveHours } = resolveTimeWindow(range, customFrom, customTo, now);
-  const startDate = new Date(startMs);
+  const prevStartDate = new Date(startMs - (endMs - startMs));
   const endDate = new Date(endMs);
 
   const [roomRows, deviceRows, linkRows, connRows, mappedReadings, tariffRows, automationRows, logRows] =
@@ -207,7 +207,7 @@ export async function getDashboardData(
       db.select().from(devices).orderBy(asc(devices.name)),
       db.select().from(deviceVendorLinks).orderBy(asc(deviceVendorLinks.id)),
       db.select().from(vendorConnections),
-      loadMetricReadingsForWindow(db, range, startDate, endDate, effectiveHours),
+      loadMetricReadingsForWindow(db, range, prevStartDate, endDate, effectiveHours * 2),
       db.select().from(tariffPeriods).orderBy(asc(tariffPeriods.startDate)),
       db.select().from(automations).orderBy(asc(automations.name)),
       db.select().from(collectionLogs).orderBy(desc(collectionLogs.executedAt)).limit(20),

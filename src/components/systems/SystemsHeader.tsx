@@ -1,6 +1,6 @@
 'use client';
 
-import { Cpu, Plug } from 'lucide-react';
+import { Cpu, Plug, RefreshCw } from 'lucide-react';
 import { useI18n } from '@/components/I18nProvider';
 
 interface SystemsHeaderProps {
@@ -9,6 +9,8 @@ interface SystemsHeaderProps {
   visibleSyncCardsCount: number;
   totalDevicesCount: number;
   onOpenDevicesTab?: () => void;
+  onSyncAll?: () => void;
+  syncingAll?: boolean;
 }
 
 /**
@@ -20,6 +22,8 @@ export function SystemsHeader({
   visibleSyncCardsCount,
   totalDevicesCount,
   onOpenDevicesTab,
+  onSyncAll,
+  syncingAll = false,
 }: SystemsHeaderProps) {
   const { t } = useI18n();
 
@@ -52,6 +56,18 @@ export function SystemsHeader({
         >
           {mode === 'live' ? t('common.liveModeReadOnly') : t('common.demoMode')}
         </span>
+
+        {onSyncAll && (
+          <button
+            type="button"
+            onClick={onSyncAll}
+            disabled={syncingAll}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3 py-1.5 text-xs font-medium text-white transition"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${syncingAll ? 'animate-spin' : ''}`} />
+            {syncingAll ? t('systems.syncingAll') : t('systems.syncAllBtn')}
+          </button>
+        )}
 
         {onOpenDevicesTab && (
           <button

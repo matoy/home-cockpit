@@ -2,25 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
-  Plus,
   Trash2,
   Pencil,
   Sliders,
   CheckCircle2,
   AlertCircle,
-  X,
-  Home,
   Wifi,
   WifiOff,
-  Layers,
   Link2,
-  Unlink,
-  Search,
-  ArrowRight,
-  Archive,
-  Plug,
 } from 'lucide-react';
-import { VENDOR_IDS, VENDOR_REGISTRY } from '@/lib/vendors/registry';
+import { VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import { extractDaikinSummary } from '@/lib/vendors/daikin-display';
 import { extractHomeConnectSummary } from '@/lib/vendors/home-connect-display';
 import { extractSomfyDisplaySummary } from '@/lib/vendors/somfy-display';
@@ -29,6 +20,8 @@ import { extractXiaomiSummary } from '@/lib/vendors/xiaomi-display';
 import type { AppLocale } from '@/lib/i18n/types';
 import { normalizeSearchText } from '@/lib/utils';
 import { useI18n } from './I18nProvider';
+import { DevicesFilterBar } from './devices/DevicesFilterBar';
+import { DevicesMobileList } from './devices/DevicesMobileList';
 import { DeviceSystemsModal } from './devices/DeviceSystemsModal';
 import { DpInspectorModal } from './devices/DpInspectorModal';
 import { DuplicatesBanner } from './devices/DuplicatesBanner';
@@ -777,402 +770,71 @@ export function DevicesRoomsTab({
 
       {/* Liste des appareils */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-800 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-white">
-                {t('devices.listTitle', {
-                  count:
-                    roomFilter !== 'all' || systemFilter !== 'all' || searchQuery.trim() !== ''
-                      ? `${filteredDevices.length} / ${data.devices.length}`
-                      : filteredDevices.length,
-                })}
-              </h3>
-              <p className="text-xs text-slate-400">
-                {t('devices.listSubtitle')}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-              <div className="relative flex-1 sm:w-80">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={t('devices.searchPlaceholder')}
-                  aria-label={t('devices.searchAria')}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 pl-8 pr-8 py-1.5 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    title={t('common.clearSearch')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:bg-slate-800 hover:text-white"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (bulkPanelOpen && selectedDeviceIds.length === 0) {
-                    setBulkPanelOpen(false);
-                    setBulkFeedback(null);
-                  } else {
-                    setBulkPanelOpen(true);
-                  }
-                }}
-                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition shrink-0 ${bulkPanelOpen || selectedDeviceIds.length > 0
-                  ? 'border-indigo-500/50 bg-indigo-500/20 text-indigo-200 hover:bg-indigo-500/30'
-                  : 'border-slate-700 bg-slate-800/80 text-slate-200 hover:bg-slate-800'
-                  }`}
-              >
-                <Link2 className="h-3.5 w-3.5" />
-                {t('devices.bulkLinkBtn')}
-                {selectedDeviceIds.length > 0 && (
-                  <span className="rounded-full bg-indigo-500 px-1.5 py-0.2 text-[10px] font-semibold text-white">
-                    {selectedDeviceIds.length}
-                  </span>
-                )}
-              </button>
-
-              {onOpenSystemsTab && (
-                <button
-                  type="button"
-                  onClick={onOpenSystemsTab}
-                  title={t('devices.systemsShortcutTitle')}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700/80 px-3 py-1.5 text-xs font-medium text-slate-200 transition shrink-0"
-                >
-                  <Plug className="h-3.5 w-3.5 text-indigo-400" />
-                  {t('devices.systemsShortcutBtn')}
-                </button>
-              )}
-
-              {onOpenBackupSection && (
-                <button
-                  type="button"
-                  onClick={onOpenBackupSection}
-                  title={t('devices.exportImportTitle')}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700/80 px-3 py-1.5 text-xs font-medium text-slate-200 transition shrink-0"
-                >
-                  <Archive className="h-3.5 w-3.5 text-indigo-400" />
-                  {t('devices.exportImportBtn')}
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={openCreateManualDeviceModal}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white transition shrink-0"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                {t('devices.declareManualBtn')}
-              </button>
-            </div>
-          </div>
-
-          {/* Barre de filtres par système (Vendor) */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 mr-1">
-              <Layers className="h-3.5 w-3.5 text-slate-500" />
-              {t('devices.systemFilterLabel')}
-            </span>
-            <button
-              type="button"
-              onClick={() => setSystemFilter('all')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${systemFilter === 'all'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-                }`}
-            >
-              {t('devices.filterAll', { count: systemCounts.all })}
-            </button>
-            {VENDOR_IDS.filter((vId) => {
-              const count = systemCounts[vId];
-              if (vId === 'tuya' || systemFilter === vId) return true;
-              if (vId === 'kasa') return showKasa || (data.env.mode === 'live' && count > 0);
-              if (vId === 'home_connect')
-                return showHomeConnect || (data.env.mode === 'live' && count > 0);
-              if (vId === 'somfy')
-                return showSomfy || (data.env.mode === 'live' && count > 0);
-              if (vId === 'daikin')
-                return showDaikin || count > 0;
-              if (vId === 'xsense')
-                return showXSense || count > 0;
-              if (vId === 'xiaomi')
-                return showXiaomi || count > 0;
-              if (vId === 'google_home')
-                return showGoogleHomeApi || (data.env.mode === 'live' && count > 0);
-              return true;
-            }).map((vId) => {
-              const meta = VENDOR_REGISTRY[vId];
-              const active = systemFilter === vId;
-              const count = systemCounts[vId];
-              return (
-                <button
-                  key={vId}
-                  type="button"
-                  onClick={() => setSystemFilter(vId)}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition border ${active
-                    ? meta.badgeClass
-                    : 'border-transparent bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-                    }`}
-                >
-                  <span className={`h-2 w-2 rounded-full shrink-0 ${meta.dotClass}`} />
-                  {meta.label} ({count})
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={() => setSystemFilter('multi')}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition border ${systemFilter === 'multi'
-                ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-200'
-                : 'border-transparent bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-                }`}
-            >
-              <Link2 className="h-3 w-3" />
-              {t('devices.filterMulti', { count: systemCounts.multi })}
-            </button>
-            <button
-              type="button"
-              onClick={() => setSystemFilter('manual')}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition border ${systemFilter === 'manual'
-                ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-200'
-                : 'border-transparent bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-                }`}
-            >
-              <Pencil className="h-3 w-3" />
-              {t('devices.filterManual', { count: systemCounts.manual })}
-            </button>
-          </div>
-
-          {/* Barre de filtres par pièce */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 mr-1">
-              <Home className="h-3.5 w-3.5 text-slate-500" />
-              {t('devices.roomFilterLabel')}
-            </span>
-            <button
-              type="button"
-              onClick={() => setRoomFilter('all')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${roomFilter === 'all'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-                }`}
-            >
-              {t('devices.roomFilterAll', {
-                count:
-                  systemCounts.all === filteredDevices.length && roomFilter === 'all'
-                    ? systemCounts.all
-                    : unassignedCount + Array.from(roomDeviceCounts.values()).reduce((a, b) => a + b, 0),
-              })}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setRoomFilter('unassigned')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition border ${roomFilter === 'unassigned'
-                ? 'border-amber-500 bg-amber-500/20 text-amber-200'
-                : unassignedCount > 0
-                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
-                  : 'border-transparent bg-slate-800/80 text-slate-400 hover:bg-slate-800'
-                }`}
-            >
-              {t('devices.roomFilterUnassigned', { count: unassignedCount })}
-            </button>
-
-            {data.rooms.map((r) => {
-              const key = String(r.id);
-              const active = roomFilter === key;
-              const count = roomDeviceCounts.get(r.id) ?? 0;
-              return (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => setRoomFilter(key)}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition border ${active
-                    ? 'border-indigo-500 bg-indigo-600/25 text-white'
-                    : 'border-transparent bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-                    }`}
-                >
-                  <span
-                    className="h-2 w-2 rounded-full shrink-0"
-                    style={{ backgroundColor: r.color }}
-                  />
-                  {r.name} ({count})
-                </button>
-              );
-            })}
-
-            {onOpenRoomsTab && (
-              <button
-                type="button"
-                onClick={onOpenRoomsTab}
-                className="ml-auto inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1.5 text-[11px] font-medium text-slate-200 transition"
-              >
-                {t('devices.manageRoomsBtn')}
-                <ArrowRight className="h-3 w-3 text-indigo-400" />
-              </button>
-            )}
-          </div>
-
-          {showBulkBar && (
-            <div className="rounded-xl border border-indigo-500/35 bg-indigo-500/10 p-3 space-y-2.5">
-              <div className="flex flex-wrap items-center justify-between gap-2.5">
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="inline-flex items-center gap-1.5 font-semibold text-indigo-200">
-                    <Link2 className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-                    {t('devices.bulkBarTitle')}
-                  </span>
-                  <span className="rounded-full bg-indigo-500/25 px-2 py-0.5 text-[11px] font-medium text-indigo-100">
-                    {t('devices.bulkSelectedCount', { count: selectedDeviceIds.length })}
-                  </span>
-                  {selectedDeviceIds.length > selectedFilteredCount && (
-                    <span className="text-[11px] text-amber-300/90">
-                      {t('devices.bulkOutsideFilter', {
-                        count: selectedDeviceIds.length - selectedFilteredCount,
-                      })}
-                    </span>
-                  )}
-                  <span className="text-[11px] text-slate-400 hidden sm:inline">
-                    {t('devices.bulkShiftHint')}
-                  </span>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <button
-                    type="button"
-                    disabled={bulkSaving || filteredDevices.length === 0}
-                    onClick={() => {
-                      setBulkFeedback(null);
-                      setSelectedDeviceIds((prev) =>
-                        Array.from(new Set([...prev, ...filteredDeviceIds]))
-                      );
-                    }}
-                    className="rounded-lg border border-slate-700 bg-slate-900/90 hover:bg-slate-800 disabled:opacity-40 px-2.5 py-1 text-[11px] text-slate-200 transition"
-                  >
-                    {t('devices.bulkSelectAllVisible', { count: filteredDevices.length })}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={bulkSaving || filteredNotLinkedToBulkVendorIds.length === 0}
-                    onClick={handleSelectNotLinkedToBulkVendor}
-                    className="rounded-lg border border-slate-700 bg-slate-900/90 hover:bg-slate-800 disabled:opacity-40 px-2.5 py-1 text-[11px] text-slate-200 transition"
-                  >
-                    {t('devices.bulkSelectNotLinked', {
-                      vendor: VENDOR_REGISTRY[bulkVendor].label,
-                      count: filteredNotLinkedToBulkVendorIds.length,
-                    })}
-                  </button>
-                  {selectedDeviceIds.length > 0 && (
-                    <button
-                      type="button"
-                      disabled={bulkSaving}
-                      onClick={() => {
-                        setSelectedDeviceIds([]);
-                        setBulkFeedback(null);
-                      }}
-                      className="rounded-lg border border-slate-700 bg-slate-900/90 hover:bg-slate-800 disabled:opacity-40 px-2.5 py-1 text-[11px] text-slate-300 transition"
-                    >
-                      {t('devices.bulkClear')}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <label
-                  htmlFor="bulk-vendor-select"
-                  className="text-[11px] font-medium text-slate-300"
-                >
-                  {t('devices.bulkTargetSystem')}
-                </label>
-                <select
-                  id="bulk-vendor-select"
-                  value={bulkVendor}
-                  disabled={bulkSaving}
-                  onChange={(e) => {
-                    setBulkVendor(e.target.value as VendorId);
-                    setBulkFeedback(null);
-                  }}
-                  className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
-                >
-                  {VENDOR_IDS.map((vId) => (
-                    <option key={vId} value={vId}>
-                      {VENDOR_REGISTRY[vId].label}
-                    </option>
-                  ))}
-                </select>
-
-                <button
-                  type="button"
-                  disabled={bulkSaving || selectedDeviceIds.length === 0}
-                  onClick={() => void handleBulkSystemAction(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 px-3 py-1.5 text-xs font-medium text-white transition"
-                >
-                  <Link2 className="h-3.5 w-3.5" />
-                  {bulkSaving ? t('devices.bulkApplying') : t('devices.bulkLinkAction')}
-                </button>
-
-                <button
-                  type="button"
-                  disabled={bulkSaving || selectedDeviceIds.length === 0}
-                  onClick={() => void handleBulkSystemAction(false)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:border-rose-500/40 hover:bg-rose-500/15 hover:text-rose-200 disabled:opacity-40 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
-                >
-                  <Unlink className="h-3.5 w-3.5" />
-                  {t('devices.bulkUnlinkAction')}
-                </button>
-
-                <button
-                  type="button"
-                  disabled={bulkSaving}
-                  onClick={() => {
-                    setBulkPanelOpen(false);
-                    setSelectedDeviceIds([]);
-                    setBulkFeedback(null);
-                  }}
-                  title={t('devices.bulkCloseBar')}
-                  aria-label={t('devices.bulkCloseBar')}
-                  className="ml-auto rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              {bulkFeedback && (
-                <div
-                  className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-xs ${bulkFeedback.ok
-                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-                    : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
-                    }`}
-                >
-                  <div className="flex items-center gap-2">
-                    {bulkFeedback.ok ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                    ) : (
-                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                    )}
-                    <span>{bulkFeedback.text}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setBulkFeedback(null)}
-                    aria-label={t('devices.closeMessage')}
-                    className="rounded p-0.5 opacity-70 hover:opacity-100"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        <DevicesFilterBar
+          filteredCount={filteredDevices.length}
+          totalCount={data.devices.length}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          roomFilter={roomFilter}
+          onRoomFilterChange={setRoomFilter}
+          systemFilter={systemFilter}
+          onSystemFilterChange={setSystemFilter}
+          systemCounts={systemCounts}
+          rooms={data.rooms}
+          roomDeviceCounts={roomDeviceCounts}
+          unassignedCount={unassignedCount}
+          envMode={data.env.mode}
+          showKasa={showKasa}
+          showHomeConnect={showHomeConnect}
+          showSomfy={showSomfy}
+          showDaikin={showDaikin}
+          showXSense={showXSense}
+          showXiaomi={showXiaomi}
+          showGoogleHomeApi={showGoogleHomeApi}
+          bulkPanelOpen={bulkPanelOpen}
+          onToggleBulkPanel={() => {
+            if (bulkPanelOpen && selectedDeviceIds.length === 0) {
+              setBulkPanelOpen(false);
+              setBulkFeedback(null);
+            } else {
+              setBulkPanelOpen(true);
+            }
+          }}
+          selectedDeviceIds={selectedDeviceIds}
+          onClearSelected={() => {
+            setSelectedDeviceIds([]);
+            setBulkFeedback(null);
+          }}
+          onSelectAllVisible={() => {
+            setBulkFeedback(null);
+            setSelectedDeviceIds((prev) =>
+              Array.from(new Set([...prev, ...filteredDeviceIds]))
+            );
+          }}
+          filteredDevices={filteredDevices}
+          selectedFilteredCount={selectedFilteredCount}
+          bulkVendor={bulkVendor}
+          onBulkVendorChange={(v) => {
+            setBulkVendor(v);
+            setBulkFeedback(null);
+          }}
+          bulkSaving={bulkSaving}
+          filteredNotLinkedCount={filteredNotLinkedToBulkVendorIds.length}
+          onSelectNotLinked={handleSelectNotLinkedToBulkVendor}
+          onBulkSystemAction={(link) => void handleBulkSystemAction(link)}
+          onCloseBulkBar={() => {
+            setBulkPanelOpen(false);
+            setSelectedDeviceIds([]);
+            setBulkFeedback(null);
+          }}
+          bulkFeedback={bulkFeedback}
+          onClearBulkFeedback={() => setBulkFeedback(null)}
+          showBulkBar={showBulkBar}
+          onOpenSystemsTab={onOpenSystemsTab}
+          onOpenBackupSection={onOpenBackupSection}
+          onOpenRoomsTab={onOpenRoomsTab}
+          onCreateManualDevice={openCreateManualDeviceModal}
+        />
 
         {/* Vue Desktop sans scrollbar horizontale (table-fixed 100 %) */}
         <div className="hidden lg:block">
@@ -1352,9 +1014,9 @@ export function DevicesRoomsTab({
                           const ipTitle =
                             dev.ipAddress && somfyNet?.isGatewayNetwork
                               ? t('devices.somfyGatewayIpTitle', {
-                                  gateway: gatewayName,
-                                  ip: dev.ipAddress,
-                                })
+                                gateway: gatewayName,
+                                ip: dev.ipAddress,
+                              })
                               : somfyNet && !dev.ipAddress
                                 ? t('devices.somfyIpMissingTitle')
                                 : dev.primaryVendor === 'home_connect' && !dev.ipAddress
@@ -1363,9 +1025,9 @@ export function DevicesRoomsTab({
                           const macTitle =
                             dev.macAddress && somfyNet?.isGatewayNetwork
                               ? t('devices.somfyGatewayMacTitle', {
-                                  gateway: gatewayName,
-                                  mac: dev.macAddress,
-                                })
+                                gateway: gatewayName,
+                                mac: dev.macAddress,
+                              })
                               : somfyNet && !dev.macAddress
                                 ? t('devices.somfyMacMissingTitle')
                                 : dev.primaryVendor === 'home_connect' && !dev.macAddress
@@ -1622,335 +1284,27 @@ export function DevicesRoomsTab({
         </div>
 
         {/* Vue Mobile / Tablette (< 1024px) empilée sans scrollbar */}
-        <div className="lg:hidden divide-y divide-slate-800/80">
-          {filteredDevices.length === 0 ? (
-            <div className="px-4 py-8 text-center text-xs text-slate-500">
-              <div>{t('devices.noMatchingDevices')}</div>
-              {(roomFilter !== 'all' || systemFilter !== 'all' || searchQuery.trim() !== '') && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setRoomFilter('all');
-                    setSystemFilter('all');
-                  }}
-                  className="mt-2.5 inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1 text-[11px] text-slate-200 transition"
-                >
-                  {t('common.resetFilters')}
-                </button>
-              )}
-            </div>
-          ) : (
-            filteredDevices.map((dev) => {
-              const isManual = dev.id.startsWith('manual_');
-              const isSelected = selectedDeviceIdSet.has(dev.id);
-              return (
-                <div
-                  key={dev.id}
-                  className={`p-4 space-y-3 text-xs transition-colors ${isSelected ? 'bg-indigo-500/10' : ''
-                    }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-start gap-2 min-w-0">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        disabled={bulkSaving}
-                        onClick={(e) => {
-                          lastShiftKeyRef.current = e.shiftKey;
-                        }}
-                        onChange={() => {
-                          const shift = lastShiftKeyRef.current;
-                          lastShiftKeyRef.current = false;
-                          toggleSelectDevice(dev.id, shift);
-                        }}
-                        aria-label={t('devices.selectDeviceAria', { name: dev.customName || dev.name })}
-                        className="mt-0.5 h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500 shrink-0 cursor-pointer"
-                      />
-                      {dev.isOnline ? (
-                        <Wifi className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                      ) : (
-                        <WifiOff className="h-3.5 w-3.5 text-slate-500 shrink-0 mt-0.5" />
-                      )}
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="font-medium text-white truncate">{dev.name}</span>
-                          {isManual && (
-                            <span className="shrink-0 rounded border border-emerald-500/30 bg-emerald-500/15 px-1.5 py-0.2 text-[9.5px] font-medium text-emerald-300">
-                              {t('devices.manualBadge')}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-slate-500 font-mono truncate">
-                          {dev.productName || dev.tuyaCategory || dev.id}
-                        </div>
-                      </div>
-                    </div>
-
-                    {isManual ? (
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => openEditManualDeviceModal(dev)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2.5 py-1 text-[11px] text-slate-200"
-                        >
-                          <Pencil className="h-3 w-3" />
-                          {t('common.edit')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteManualDevice(dev)}
-                          title={t('devices.deleteManualTitle')}
-                          className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 hover:border-rose-500/40 hover:bg-rose-500/15 hover:text-rose-300 p-1.5 text-slate-300"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => openInspector(dev)}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2.5 py-1 text-[11px] text-slate-200 shrink-0"
-                      >
-                        <Sliders className="h-3 w-3" />
-                        {t('devices.dpInspectorBtn')}
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {dev.systems.map((sys) => {
-                      const meta = VENDOR_REGISTRY[sys];
-                      return (
-                        <span
-                          key={sys}
-                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${meta.badgeClass}`}
-                        >
-                          <span className={`h-1.5 w-1.5 rounded-full ${meta.dotClass}`} />
-                          {meta.label}
-                        </span>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      onClick={() => openManageSystems(dev)}
-                      className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300"
-                    >
-                      <Link2 className="h-2.5 w-2.5" />
-                      {t('devices.linkBtn')}
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div>
-                      <label className="block text-[10px] text-slate-400 mb-1">{t('devices.customNameLabel')}</label>
-                      <input
-                        key={`mob-name-${dev.id}-${dev.customName ?? ''}`}
-                        type="text"
-                        defaultValue={dev.customName ?? ''}
-                        placeholder={dev.name}
-                        onBlur={(e) => {
-                          const val = e.target.value.trim();
-                          if (val !== (dev.customName ?? '')) {
-                            void handleDeviceUpdate(dev.id, { customName: val || null });
-                          }
-                        }}
-                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-slate-400 mb-1">{t('devices.colIpMac')}</label>
-                      {(() => {
-                        const somfyNet = extractSomfyDisplaySummary(dev, locale);
-                        const ipLabel = dev.ipAddress || '—';
-                        const macLabel =
-                          dev.macAddress ||
-                          (somfyNet?.gatewayId ? `GW ${somfyNet.gatewayId}` : '—');
-                        return (
-                          <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-2.5 py-1.5 font-mono text-[11px] text-slate-300 truncate">
-                            {ipLabel} · {macLabel}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-slate-400 mb-1">{t('devices.colRoom')}</label>
-                      <select
-                        value={dev.roomId ?? ''}
-                        onChange={(e) =>
-                          void handleDeviceUpdate(dev.id, {
-                            roomId: e.target.value ? Number(e.target.value) : null,
-                          })
-                        }
-                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
-                      >
-                        <option value="">{t('common.unassigned')}</option>
-                        {data.rooms.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-slate-400 mb-1">{t('devices.colKwhMode')}</label>
-                      <select
-                        value={dev.energyMode}
-                        onChange={(e) =>
-                          void handleDeviceUpdate(dev.id, {
-                            energyMode: e.target.value as EnergyMode,
-                          })
-                        }
-                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
-                      >
-                        <option value="hybrid">{t('devices.energyHybrid')}</option>
-                        <option value="add_ele">{t('devices.energyAddEle')}</option>
-                        <option value="integration">{t('devices.energyIntegration')}</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                    {(() => {
-                      const hcSummary = extractHomeConnectSummary(dev.lastRawStatus, locale);
-                      const dkSummary = extractDaikinSummary(dev.lastRawStatus, locale);
-                      const somfySummary = extractSomfyDisplaySummary(dev, locale);
-                      const xsSummary = extractXSenseSummary(dev.lastRawStatus, locale);
-                      const miSummary = extractXiaomiSummary(dev.lastRawStatus, locale);
-                      return (
-                        <div className="flex flex-wrap gap-2 font-mono text-[11px] text-slate-300">
-                          {somfySummary?.cover && (
-                            <span
-                              title={`${somfySummary.cover.kindLabel} (${somfySummary.protocol})`}
-                              className={
-                                somfySummary.cover.state === 'closed'
-                                  ? 'text-emerald-300'
-                                  : somfySummary.cover.state === 'open'
-                                    ? 'text-sky-300'
-                                    : 'text-amber-300'
-                              }
-                            >
-                              {somfySummary.compactBadge}
-                            </span>
-                          )}
-                          {dev.lastPowerW !== null && (
-                            <span className="text-indigo-300">{dev.lastPowerW} W</span>
-                          )}
-                          {dev.lastTempC !== null && (
-                            <span className="text-emerald-300">{dev.lastTempC} °C</span>
-                          )}
-                          {dev.lastHumidityPct !== null && (
-                            <span className="text-sky-300">{dev.lastHumidityPct} %</span>
-                          )}
-                          {dev.lastContactOpen !== null && (
-                            <span className={dev.lastContactOpen ? 'text-amber-300' : 'text-emerald-300'}>
-                              {dev.lastContactOpen ? t('common.open') : t('common.closed')}
-                            </span>
-                          )}
-                          {hcSummary?.operationLabel && (
-                            <span
-                              title={hcSummary.activeProgram ?? undefined}
-                              className={
-                                hcSummary.operationTone === 'cyan'
-                                  ? 'text-cyan-300'
-                                  : hcSummary.operationTone === 'emerald'
-                                    ? 'text-emerald-300'
-                                    : hcSummary.operationTone === 'amber'
-                                      ? 'text-amber-300'
-                                      : hcSummary.operationTone === 'rose'
-                                        ? 'text-rose-300'
-                                        : 'text-slate-400'
-                              }
-                            >
-                              {hcSummary.operationLabel}
-                              {hcSummary.progressPct !== null ? ` · ${hcSummary.progressPct}%` : ''}
-                              {hcSummary.remainingLabel ? ` · ${hcSummary.remainingLabel}` : ''}
-                            </span>
-                          )}
-                          {hcSummary?.tempsLabel && (
-                            <span className="text-sky-300">{hcSummary.tempsLabel}</span>
-                          )}
-                          {hcSummary?.doorOpen && (
-                            <span className="rounded bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[10px] text-amber-300">
-                              {t('common.doorOpen')}
-                            </span>
-                          )}
-                          {dkSummary && (
-                            <span
-                              title={dkSummary.compactText}
-                              className={
-                                dkSummary.modeTone === 'amber'
-                                  ? 'text-amber-300'
-                                  : dkSummary.modeTone === 'sky'
-                                    ? 'text-sky-300'
-                                    : dkSummary.modeTone === 'indigo'
-                                      ? 'text-indigo-300'
-                                      : 'text-slate-400'
-                              }
-                            >
-                              {dkSummary.compactText}
-                            </span>
-                          )}
-                          {xsSummary && (
-                            <span
-                              title={xsSummary.compactText}
-                              className={
-                                xsSummary.isAlert
-                                  ? 'text-rose-300 font-semibold'
-                                  : xsSummary.alarmTone === 'amber'
-                                    ? 'text-amber-300'
-                                    : 'text-emerald-300'
-                              }
-                            >
-                              {xsSummary.compactText}
-                            </span>
-                          )}
-                          {miSummary && (
-                            <span
-                              title={miSummary.compactText}
-                              className={
-                                miSummary.isAlert ? 'text-rose-300 font-semibold' : 'text-orange-300'
-                              }
-                            >
-                              {miSummary.compactText}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    <div className="flex items-center gap-4 text-[11px] text-slate-300">
-                      <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={dev.isMonitored}
-                          onChange={(e) =>
-                            void handleDeviceUpdate(dev.id, { isMonitored: e.target.checked })
-                          }
-                          className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-indigo-600"
-                        />
-                        {t('devices.colMonitored')}
-                      </label>
-                      <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={dev.excludeFromTotals}
-                          onChange={(e) =>
-                            void handleDeviceUpdate(dev.id, {
-                              excludeFromTotals: e.target.checked,
-                            })
-                          }
-                          className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-amber-500"
-                        />
-                        {t('devices.colExclude')}
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
+        <DevicesMobileList
+          filteredDevices={filteredDevices}
+          rooms={data.rooms}
+          hasActiveFilters={
+            roomFilter !== 'all' || systemFilter !== 'all' || searchQuery.trim() !== ''
+          }
+          onResetFilters={() => {
+            setSearchQuery('');
+            setRoomFilter('all');
+            setSystemFilter('all');
+          }}
+          selectedDeviceIdSet={selectedDeviceIdSet}
+          bulkSaving={bulkSaving}
+          lastShiftKeyRef={lastShiftKeyRef}
+          onToggleSelectDevice={toggleSelectDevice}
+          onOpenEditManual={openEditManualDeviceModal}
+          onDeleteManual={(dev) => void handleDeleteManualDevice(dev)}
+          onOpenInspector={openInspector}
+          onOpenManageSystems={openManageSystems}
+          onUpdateDevice={(id, updates) => void handleDeviceUpdate(id, updates)}
+        />
       </div>
 
       {/* Modale Inspecteur DP */}

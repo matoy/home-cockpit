@@ -1,8 +1,10 @@
 import { getDb, type AppDatabase } from '@/db';
 import { collectionLogs, devices } from '@/db/schema';
+import { runPostCollectionAlerting } from '@/lib/alerting';
 import { extractCoverSummary } from '@/lib/covers-utils';
 import { getDemoState, simulateDemoCollection } from '@/lib/demo-store';
 import { sanitizeDeviceDpConfig } from '@/lib/device-utils';
+import { runMetricsRetention } from '@/lib/services/retention-service';
 import { mapDbLog, seedDefaultDataIfEmpty } from '@/lib/services/shared';
 import { VENDOR_SERVER_PLUGINS } from '@/lib/services/vendors';
 import {
@@ -261,7 +263,11 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
 
   if (!tuyaPlugin.isConfigured()) {
     if (!db) {
-      return simulateDemoCollection(trigger);
+      const log = simulateDemoCollection(trigger);
+      if (log.status === 'success') {
+        await runPostCollectionAlerting(null, new Date()).catch(() => undefined);
+      }
+      return log;
     }
 
     await seedDefaultDataIfEmpty(db);
@@ -312,6 +318,10 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
             durationMs: Date.now() - startedMs,
           })
           .returning();
+        await runPostCollectionAlerting(db, now).catch(() => undefined);
+        if (trigger === 'schedule') {
+          await runMetricsRetention(db, now).catch(() => undefined);
+        }
         return mapDbLog(logRow);
       }
     } catch (err) {
@@ -350,7 +360,11 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
   }
 
   if (!db) {
-    return collectTuyaLiveInDemoStore(trigger, startedMs);
+    const log = await collectTuyaLiveInDemoStore(trigger, startedMs);
+    if (log.status === 'success') {
+      await runPostCollectionAlerting(null, new Date()).catch(() => undefined);
+    }
+    return log;
   }
 
   // Mode complet : Neon Postgres + Tuya + plugins secondaires enregistrés
@@ -403,6 +417,10 @@ export async function runCollection(trigger: 'schedule' | 'manual'): Promise<Col
       })
       .returning();
 
+    await runPostCollectionAlerting(db, now).catch(() => undefined);
+    if (trigger === 'schedule') {
+      await runMetricsRetention(db, now).catch(() => undefined);
+    }
     return mapDbLog(logRow);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue lors de la collecte';

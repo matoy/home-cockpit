@@ -4,7 +4,7 @@ import { tariffPeriods } from '@/db/schema';
 import { getDemoState } from '@/lib/demo-store';
 import { ensureSchemaInitialized, mapDbTariff } from '@/lib/services/shared';
 import { normalizeTariffTimeline } from '@/lib/tariff-engine';
-import type { HcSlot, TariffMode, TariffPeriodRecord } from '@/types';
+import type { HcSlot, TariffMode, TariffPeriodRecord, TempoConfig } from '@/types';
 
 export interface TariffInput {
   label: string;
@@ -15,6 +15,7 @@ export interface TariffInput {
   hpRateEur: number | null;
   hcRateEur: number | null;
   hcSlots: HcSlot[];
+  tempoConfig?: TempoConfig | null;
   monthlySubscriptionEur: number;
 }
 
@@ -42,6 +43,7 @@ export async function createTariff(input: TariffInput): Promise<TariffPeriodReco
     const created: TariffPeriodRecord = {
       id: state.nextTariffId++,
       ...input,
+      tempoConfig: input.tempoConfig ?? null,
       createdAt: new Date().toISOString(),
     };
     state.tariffs = normalizeTariffTimeline([...state.tariffs, created]);

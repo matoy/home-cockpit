@@ -30,6 +30,7 @@ import {
   isXiaomiSecurityOrHomeDevice,
   type XiaomiDeviceSummary,
 } from '@/lib/vendors/xiaomi-display';
+import { ConnectivityBatteryKpi } from './ui';
 import { useI18n } from './I18nProvider';
 import type { DashboardPayload, DeviceRecord, RoomRecord, TabId } from '@/types';
 
@@ -129,7 +130,7 @@ export function SecurityTab({
       const xs = extractXSenseSummary(dev.lastRawStatus, locale);
       const mi = extractXiaomiSummary(dev.lastRawStatus, locale);
       const isAlert = Boolean(xs?.isAlert || mi?.isAlert);
-      const isLowBattery = dev.lastBatteryPct !== null && dev.lastBatteryPct < 20;
+      const isLowBattery = dev.lastBatteryPct !== null && dev.lastBatteryPct <= 20;
       items.push({
         device: dev,
         room: dev.roomId !== null ? roomById.get(dev.roomId) ?? null : null,
@@ -190,6 +191,18 @@ export function SecurityTab({
       avgBatteryPct,
     };
   }, [allItems]);
+
+  const securitySensors = useMemo(
+    () =>
+      allItems.map((item) => ({
+        name: item.device.customName || item.device.name,
+        isOnline: item.device.isOnline,
+        batteryPct: item.device.lastBatteryPct,
+        isMains:
+          item.device.lastBatteryPct === null && !item.device.dpConfig?.battery?.code,
+      })),
+    [allItems]
+  );
 
   const filteredItems = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -269,7 +282,7 @@ export function SecurityTab({
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div
-          className={`rounded-2xl border p-4 ${
+          className={`rounded-2xl border p-5 ${
             kpis.activeAlerts > 0
               ? 'border-rose-500/50 bg-rose-950/30'
               : 'border-slate-800 bg-slate-900/70'
@@ -299,7 +312,7 @@ export function SecurityTab({
           </p>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>{t('security.kpiDetectors')}</span>
             <Flame className="h-4 w-4 text-rose-400" />
@@ -315,7 +328,7 @@ export function SecurityTab({
           </p>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>{t('security.kpiStations')}</span>
             <Sparkles className="h-4 w-4 text-orange-400" />
@@ -331,27 +344,13 @@ export function SecurityTab({
           </p>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>{t('security.kpiBatteries')}</span>
-            <Battery
-              className={`h-4 w-4 ${
-                kpis.lowBatteryCount > 0 ? 'text-amber-400' : 'text-emerald-400'
-              }`}
-            />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-white">
-              {kpis.avgBatteryPct !== null ? `${kpis.avgBatteryPct} %` : '—'}
-            </span>
-            <span className="text-xs text-slate-400">{t('security.avgWord')}</span>
-          </div>
-          <p className="mt-1 text-[11px] text-slate-400">
-            {kpis.lowBatteryCount > 0
-              ? t('security.lowBatteriesSub', { count: kpis.lowBatteryCount })
-              : t('security.okBatteriesSub', { count: kpis.batteryCount })}
-          </p>
-        </div>
+        <ConnectivityBatteryKpi
+          title={t('climate.kpiConnectivity')}
+          sensors={securitySensors}
+          noActiveSensorLabel={t('security.noActiveSensor')}
+          mainsCountLabel={(count) => t('security.mainsCount', { count })}
+          lowBatteryLabel={(count) => t('security.lowBatteriesSub', { count })}
+        />
       </div>
 
       {/* Barre de filtres */}

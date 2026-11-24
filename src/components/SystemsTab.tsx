@@ -4,16 +4,18 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   BookOpen,
   ExternalLink,
-  QrCode,
   RefreshCw,
 } from 'lucide-react';
 import { VENDOR_IDS, VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import { AlertBanner } from './ui';
 import { useI18n } from './I18nProvider';
 import { CollectionLogsCard } from './systems/CollectionLogsCard';
+import { DaikinVendorCard } from './systems/DaikinVendorCard';
 import { GenericVendorCard } from './systems/GenericVendorCard';
+import { GoogleHomeVendorCard } from './systems/GoogleHomeVendorCard';
 import { SystemsHeader } from './systems/SystemsHeader';
 import { UnconfiguredSystemsSection } from './systems/UnconfiguredSystemsSection';
+import { XiaomiVendorCard } from './systems/XiaomiVendorCard';
 
 const CUSTOM_RENDERED_VENDORS = new Set<VendorId>([
   'tuya',
@@ -98,6 +100,7 @@ export function SystemsTab({
   );
   const [syncingGenericVendor, setSyncingGenericVendor] = useState<VendorId | null>(null);
   const [disconnectingGenericVendor, setDisconnectingGenericVendor] = useState<VendorId | null>(null);
+  const [syncingAll, setSyncingAll] = useState(false);
   const [syncMessage, setSyncMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   const systemCounts = useMemo(() => {
@@ -727,6 +730,92 @@ export function SystemsTab({
 
   const connectedSystemsCount = data.vendors.filter((v) => v.connected).length;
 
+  async function handleSyncAll() {
+    const targets: Array<{ label: string; endpoint: string }> = [
+      { label: VENDOR_REGISTRY.tuya.label, endpoint: '/api/tuya/sync' },
+    ];
+    if (showKasa) {
+      targets.push({ label: VENDOR_REGISTRY.kasa.label, endpoint: '/api/vendors/kasa/sync' });
+    }
+    if (showHomeConnect && (data.env.mode === 'demo' || isHcConnected)) {
+      targets.push({
+        label: VENDOR_REGISTRY.home_connect.label,
+        endpoint: '/api/vendors/home-connect/sync',
+      });
+    }
+    if (showSomfy) {
+      targets.push({ label: VENDOR_REGISTRY.somfy.label, endpoint: '/api/vendors/somfy/sync' });
+    }
+    if (showDaikin && (data.env.mode === 'demo' || isDkConnected)) {
+      targets.push({ label: VENDOR_REGISTRY.daikin.label, endpoint: '/api/vendors/daikin/sync' });
+    }
+    if (showXSense) {
+      targets.push({ label: VENDOR_REGISTRY.xsense.label, endpoint: '/api/vendors/xsense/sync' });
+    }
+    if (data.env.mode === 'demo' || isXiaomiConnected) {
+      targets.push({ label: VENDOR_REGISTRY.xiaomi.label, endpoint: '/api/vendors/xiaomi/sync' });
+    }
+    if (showGoogleHomeApi && (data.env.mode === 'demo' || isGhConnected)) {
+      targets.push({
+        label: VENDOR_REGISTRY.google_home.label,
+        endpoint: '/api/vendors/google-home/sync',
+      });
+    }
+    for (const id of visibleGenericVendors) {
+      const meta = VENDOR_REGISTRY[id];
+      targets.push({ label: meta.label, endpoint: meta.syncEndpoint });
+    }
+
+    if (targets.length === 0) {
+      setSyncMessage({ ok: false, text: t('systems.syncAllNone') });
+      return;
+    }
+
+    setSyncingAll(true);
+    setSyncMessage(null);
+    try {
+      const results = await Promise.allSettled(
+        targets.map(async (target) => {
+          const res = await fetch(target.endpoint, { method: 'POST' });
+          if (!res.ok) {
+            const json = (await res.json().catch(() => ({}))) as { error?: string };
+            throw new Error(json.error || target.label);
+          }
+          return target.label;
+        })
+      );
+
+      let okCount = 0;
+      const failedLabels: string[] = [];
+      results.forEach((result, idx) => {
+        if (result.status === 'fulfilled') {
+          okCount += 1;
+        } else {
+          failedLabels.push(targets[idx].label);
+        }
+      });
+
+      if (failedLabels.length === 0) {
+        setSyncMessage({
+          ok: true,
+          text: t('systems.syncAllOk', { count: okCount }),
+        });
+      } else {
+        setSyncMessage({
+          ok: false,
+          text: t('systems.syncAllPartial', {
+            ok: okCount,
+            total: targets.length,
+            failed: failedLabels.join(', '),
+          }),
+        });
+      }
+      await onRefresh();
+    } finally {
+      setSyncingAll(false);
+    }
+  }
+
   const availableUnconfiguredSystems: Array<{
     vendor: VendorId;
     scope: string;
@@ -805,7 +894,15 @@ export function SystemsTab({
         visibleSyncCardsCount={visibleSyncCardsCount}
         totalDevicesCount={data.devices.length}
         onOpenDevicesTab={onOpenDevicesTab}
+        onSyncAll={() => void handleSyncAll()}
+        syncingAll={syncingAll}
       />
+
+      {syncMessage && (
+        <AlertBanner tone={syncMessage.ok ? 'success' : 'error'}>
+          {syncMessage.text}
+        </AlertBanner>
+      )}
 
       {/* Synchronisation Multi-Vendors */}
       <div className={syncGridClass}>
@@ -1122,130 +1219,23 @@ export function SystemsTab({
 
         {/* Daikin Onecta Cloud (masqué si non configuré) */}
         {showDaikin && (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.daikin.badgeClass}`}
-                >
-                  {VENDOR_REGISTRY.daikin.label}
-                </span>
-                <span className="text-xs text-slate-400">
-                  {t('common.devicesCount', {
-                    count: daikinVendor?.devicesCount ?? systemCounts.daikin,
-                  })}
-                </span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isDkConnected || data.env.mode === 'demo'
-                    ? 'bg-emerald-500/15 text-emerald-300'
-                    : 'bg-slate-800 text-slate-400'
-                    }`}
-                >
-                  {data.env.mode === 'demo'
-                    ? t('common.demoMode')
-                    : isDkConnected
-                      ? t('systems.daikinConnectedOAuth')
-                      : t('common.readyOAuth')}
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">
-                {VENDOR_REGISTRY.daikin.description}. {t('systems.daikinDesc')}
-              </p>
-              {daikinVendor?.lastError && (
-                <p className="text-[11px] text-amber-300">{daikinVendor.lastError}</p>
-              )}
-              {data.env.mode === 'live' && !isDkConnected && (
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowDaikinLocalBox((v) => !v)}
-                    className="text-[11px] font-medium text-blue-300 hover:text-blue-200 underline underline-offset-2"
-                  >
-                    {showDaikinLocalBox
-                      ? t('systems.daikinLocalHide')
-                      : t('systems.daikinLocalShow')}
-                  </button>
-                  {showDaikinLocalBox && (
-                    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/70 p-2.5">
-                      <input
-                        type="text"
-                        value={daikinExchangeInput}
-                        onChange={(e) => setDaikinExchangeInput(e.target.value)}
-                        placeholder={t('systems.daikinExchangePlaceholder')}
-                        className="flex-1 min-w-[200px] rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        disabled={exchangingDaikin || !daikinExchangeInput.trim()}
-                        onClick={() => void handleExchangeDaikinCode()}
-                        className="rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 px-3 py-1.5 text-[11px] font-medium text-white transition"
-                      >
-                        {exchangingDaikin ? t('common.validating') : t('common.validate')}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <span className="text-[11px] text-slate-500">
-                {daikinVendor?.lastSyncedAt
-                  ? t('common.syncedAt', {
-                    date: new Date(daikinVendor.lastSyncedAt).toLocaleString(intlLocale),
-                  })
-                  : t('systems.daikinFooterDefault')}
-              </span>
-
-              <div className="flex flex-wrap items-center gap-2">
-                {onOpenDaikinGuide && (
-                  <button
-                    type="button"
-                    onClick={onOpenDaikinGuide}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:text-white transition"
-                    title={t('common.setupGuideBtn')}
-                  >
-                    <BookOpen className="h-3.5 w-3.5 text-blue-400" />
-                    {t('common.setupGuideBtn')}
-                  </button>
-                )}
-
-                {data.env.mode === 'live' && !isDkConnected ? (
-                  <a
-                    href="/api/vendors/daikin/oauth/start?returnTab=systems"
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3.5 py-2 text-xs font-medium text-white transition"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    {t('systems.daikinConnectBtn')}
-                  </a>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={handleSyncDaikin}
-                      disabled={syncingDaikin || disconnectingDaikin}
-                      className="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
-                    >
-                      <RefreshCw
-                        className={`h-3.5 w-3.5 ${syncingDaikin ? 'animate-spin' : ''}`}
-                      />
-                      {syncingDaikin ? t('common.syncing') : t('systems.syncDaikinBtn')}
-                    </button>
-                    {data.env.mode === 'live' && isDkConnected && (
-                      <button
-                        type="button"
-                        onClick={handleDisconnectDaikin}
-                        disabled={disconnectingDaikin || syncingDaikin}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3 py-2 text-xs text-slate-300 transition"
-                      >
-                        {t('common.disconnect')}
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
+          <DaikinVendorCard
+            mode={data.env.mode}
+            summary={daikinVendor}
+            devicesCount={systemCounts.daikin}
+            isConnected={isDkConnected}
+            showLocalBox={showDaikinLocalBox}
+            onToggleLocalBox={() => setShowDaikinLocalBox((v) => !v)}
+            exchangeInput={daikinExchangeInput}
+            onExchangeInputChange={setDaikinExchangeInput}
+            exchanging={exchangingDaikin}
+            onExchangeCode={() => void handleExchangeDaikinCode()}
+            syncing={syncingDaikin}
+            disconnecting={disconnectingDaikin}
+            onSync={() => void handleSyncDaikin()}
+            onDisconnect={() => void handleDisconnectDaikin()}
+            onOpenGuide={onOpenDaikinGuide}
+          />
         )}
 
         {/* X-Sense Home Security */}
@@ -1320,315 +1310,55 @@ export function SystemsTab({
 
         {/* Xiaomi Home (Mi Cloud : QR Code ou compte .env + 2FA) */}
         {showXiaomi && (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.xiaomi.badgeClass}`}
-                >
-                  {VENDOR_REGISTRY.xiaomi.label}
-                </span>
-                <span className="text-xs text-slate-400">
-                  {t('common.devicesCount', {
-                    count: xiaomiVendor?.devicesCount ?? systemCounts.xiaomi,
-                  })}
-                </span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.mode === 'demo' || isXiaomiConnected
-                    ? 'bg-emerald-500/15 text-emerald-300'
-                    : data.env.xiaomiConfigured
-                      ? 'bg-amber-500/15 text-amber-300'
-                      : 'bg-slate-800 text-slate-400'
-                    }`}
-                >
-                  {data.env.mode === 'demo'
-                    ? t('common.demoMode')
-                    : isXiaomiConnected
-                      ? `${t('common.connected')} (${xiaomiRegion.toUpperCase()})`
-                      : data.env.xiaomiConfigured
-                        ? t('systems.xiaomiReqAuth')
-                        : t('systems.xiaomiQrOrEnv')}
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-1.5">
-                {t('systems.xiaomiDesc')}
-              </p>
-              {xiaomiVendor?.lastError && (
-                <p className="text-[11px] text-amber-300 mt-1">{xiaomiVendor.lastError}</p>
-              )}
-
-              {/* Panneau interactif QR Code / Identifiants + 2FA */}
-              {(showXiaomiAuthBox || !isXiaomiConnected) && data.env.mode === 'live' && (
-                <div className="mt-2.5 space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <select
-                      value={xiaomiRegion}
-                      onChange={(e) => setXiaomiRegion(e.target.value)}
-                      aria-label={t('systems.xiaomiServerAria')}
-                      className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 focus:border-orange-500 focus:outline-none"
-                    >
-                      <option value="de">{t('systems.xiaomiRegionDe')}</option>
-                      <option value="cn">{t('systems.xiaomiRegionCn')}</option>
-                      <option value="us">{t('systems.xiaomiRegionUs')}</option>
-                      <option value="sg">{t('systems.xiaomiRegionSg')}</option>
-                      <option value="ru">{t('systems.xiaomiRegionRu')}</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => void handleStartXiaomiQr()}
-                      disabled={xiaomiStartingQr}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-orange-500/40 bg-orange-500/15 hover:bg-orange-500/25 px-2.5 py-1 text-[11px] font-medium text-orange-200 transition"
-                    >
-                      <QrCode className="h-3.5 w-3.5" />
-                      {xiaomiStartingQr ? t('systems.xiaomiQrGenerating') : t('systems.xiaomiQrScanBtn')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowXiaomiAuthBox((v) => !v)}
-                      className="text-[11px] text-slate-400 hover:text-slate-200 underline underline-offset-2"
-                    >
-                      {showXiaomiAuthBox ? t('systems.xiaomiHideOpts') : t('systems.xiaomiAccountOpts')}
-                    </button>
-                  </div>
-
-                  {xiaomiQrData && (
-                    <div className="rounded-xl border border-orange-500/30 bg-slate-950/80 p-3 flex flex-wrap items-center gap-3">
-                      <img
-                        src={xiaomiQrData.qrImageUrl}
-                        alt="QR Code Xiaomi Home"
-                        className="h-28 w-28 rounded-lg bg-white p-1"
-                      />
-                      <div className="space-y-1.5 text-[11px] text-slate-300 flex-1 min-w-[180px]">
-                        <p className="font-medium text-orange-200">
-                          {t('systems.xiaomiQrTitle')}
-                        </p>
-                        <p className="text-slate-400">
-                          {t('systems.xiaomiQrHelp')}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => setXiaomiQrData(null)}
-                          className="text-slate-400 hover:text-white underline"
-                        >
-                          {t('systems.xiaomiQrCancel')}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {showXiaomiAuthBox && !xiaomiQrData && (
-                    <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-2.5 space-y-2">
-                      {!xiaomi2faToken ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <input
-                            type="text"
-                            value={xiaomiUsername}
-                            onChange={(e) => setXiaomiUsername(e.target.value)}
-                            placeholder={t('systems.xiaomiUserPlaceholder')}
-                            className="flex-1 min-w-[150px] rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white placeholder:text-slate-500"
-                          />
-                          <input
-                            type="password"
-                            value={xiaomiPassword}
-                            onChange={(e) => setXiaomiPassword(e.target.value)}
-                            placeholder={t('systems.xiaomiPassPlaceholder')}
-                            className="flex-1 min-w-[140px] rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white placeholder:text-slate-500"
-                          />
-                          <button
-                            type="button"
-                            disabled={xiaomiLoggingIn}
-                            onClick={() => void handleXiaomiCredentialLogin()}
-                            className="rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-40 px-3 py-1.5 text-[11px] font-medium text-white transition"
-                          >
-                            {xiaomiLoggingIn ? t('systems.xiaomiConnecting') : t('systems.xiaomiConnectBtn')}
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <input
-                            type="text"
-                            value={xiaomi2faCode}
-                            onChange={(e) => setXiaomi2faCode(e.target.value)}
-                            placeholder={t('systems.xiaomi2faPlaceholder')}
-                            className="flex-1 min-w-[180px] rounded-lg border border-orange-500/40 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white placeholder:text-slate-500"
-                          />
-                          <button
-                            type="button"
-                            disabled={xiaomiVerifying2fa || !xiaomi2faCode.trim()}
-                            onClick={() => void handleXiaomiVerify2fa()}
-                            className="rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-40 px-3 py-1.5 text-[11px] font-medium text-white transition"
-                          >
-                            {xiaomiVerifying2fa ? t('common.validating') : t('systems.xiaomi2faValidateBtn')}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <span className="text-[11px] text-slate-500">
-                {xiaomiVendor?.lastSyncedAt
-                  ? t('common.syncedAt', {
-                    date: new Date(xiaomiVendor.lastSyncedAt).toLocaleString(intlLocale),
-                  })
-                  : t('systems.xiaomiFooterDefault')}
-              </span>
-
-              <div className="flex flex-wrap items-center gap-2">
-                {onOpenXiaomiGuide && (
-                  <button
-                    type="button"
-                    onClick={onOpenXiaomiGuide}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:text-white transition"
-                  >
-                    <BookOpen className="h-3.5 w-3.5 text-orange-400" />
-                    {t('common.setupGuideBtn')}
-                  </button>
-                )}
-                {(data.env.mode === 'demo' || isXiaomiConnected) && (
-                  <button
-                    type="button"
-                    onClick={() => void handleSyncXiaomi()}
-                    disabled={syncingXiaomi || disconnectingXiaomi}
-                    className="inline-flex items-center gap-2 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
-                  >
-                    <RefreshCw
-                      className={`h-3.5 w-3.5 ${syncingXiaomi ? 'animate-spin' : ''}`}
-                    />
-                    {syncingXiaomi ? t('common.syncing') : t('systems.syncXiaomiBtn')}
-                  </button>
-                )}
-                {data.env.mode === 'live' && isXiaomiConnected && (
-                  <button
-                    type="button"
-                    onClick={() => void handleDisconnectXiaomi()}
-                    disabled={disconnectingXiaomi || syncingXiaomi}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3 py-2 text-xs text-slate-300 transition"
-                  >
-                    {t('common.disconnect')}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+          <XiaomiVendorCard
+            mode={data.env.mode}
+            summary={xiaomiVendor}
+            devicesCount={systemCounts.xiaomi}
+            isConnected={isXiaomiConnected}
+            xiaomiConfigured={data.env.xiaomiConfigured}
+            region={xiaomiRegion}
+            onRegionChange={setXiaomiRegion}
+            showAuthBox={showXiaomiAuthBox}
+            onToggleAuthBox={() => setShowXiaomiAuthBox((v) => !v)}
+            qrData={xiaomiQrData}
+            onCancelQr={() => setXiaomiQrData(null)}
+            startingQr={xiaomiStartingQr}
+            onStartQr={() => void handleStartXiaomiQr()}
+            username={xiaomiUsername}
+            onUsernameChange={setXiaomiUsername}
+            password={xiaomiPassword}
+            onPasswordChange={setXiaomiPassword}
+            loggingIn={xiaomiLoggingIn}
+            onCredentialLogin={() => void handleXiaomiCredentialLogin()}
+            twoFaToken={xiaomi2faToken}
+            twoFaCode={xiaomi2faCode}
+            onTwoFaCodeChange={setXiaomi2faCode}
+            verifying2fa={xiaomiVerifying2fa}
+            onVerify2fa={() => void handleXiaomiVerify2fa()}
+            syncing={syncingXiaomi}
+            disconnecting={disconnectingXiaomi}
+            onSync={() => void handleSyncXiaomi()}
+            onDisconnect={() => void handleDisconnectXiaomi()}
+            onOpenGuide={onOpenXiaomiGuide}
+          />
         )}
 
         {/* Google Home (masqué si GOOGLE_HOME_MODE=off ou non défini) */}
         {showGoogleHomeApi && (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="w-full">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${VENDOR_REGISTRY.google_home.badgeClass}`}
-                    >
-                      {VENDOR_REGISTRY.google_home.label}
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      {t('common.devicesCount', {
-                        count: ghVendor?.devicesCount ?? systemCounts.google_home,
-                      })}
-                    </span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isGhConnected
-                        ? 'bg-emerald-500/15 text-emerald-300'
-                        : 'bg-slate-800 text-slate-400'
-                        }`}
-                    >
-                      {data.env.mode === 'demo'
-                        ? t('common.demoMode')
-                        : isGhConnected
-                          ? `${t('common.connected')} (${(ghVendor?.mode ?? selectedGoogleMode).toString().toUpperCase()})`
-                          : data.env.googleHomeConfigured
-                            ? t('common.readyOAuth')
-                            : t('common.oauthNotConfigured')}
-                    </span>
-                  </div>
-
-                  {!isGhConnected && data.env.mode === 'live' && (
-                    <select
-                      value={selectedGoogleMode}
-                      onChange={(e) => setSelectedGoogleMode(e.target.value as GoogleHomeMode)}
-                      aria-label={t('systems.ghModeAria')}
-                      className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 focus:border-sky-500 focus:outline-none"
-                    >
-                      <option value="mcp">{t('systems.ghModeMcp')}</option>
-                      <option value="sdm">{t('systems.ghModeSdm')}</option>
-                    </select>
-                  )}
-                </div>
-
-                <p className="text-xs text-slate-400 mt-2">
-                  {VENDOR_REGISTRY.google_home.description}. {t('systems.ghDesc')}
-                </p>
-
-                {ghVendor?.lastError && (
-                  <p className="text-[11px] text-rose-300 mt-1.5">{ghVendor.lastError}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <span className="text-[11px] text-slate-500">
-                {ghVendor?.lastSyncedAt
-                  ? t('common.syncedAt', {
-                    date: new Date(ghVendor.lastSyncedAt).toLocaleString(intlLocale),
-                  })
-                  : data.env.mode === 'live' && !data.env.googleHomeConfigured
-                    ? t('systems.ghMissingEnv')
-                    : t('common.readOnlyZeroCmd')}
-              </span>
-
-              <div className="flex flex-wrap items-center gap-2">
-                {onOpenGoogleGuide && (
-                  <button
-                    type="button"
-                    onClick={onOpenGoogleGuide}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:text-white transition"
-                    title={t('common.setupGuideBtn')}
-                  >
-                    <BookOpen className="h-3.5 w-3.5 text-sky-400" />
-                    {t('common.setupGuideBtn')}
-                  </button>
-                )}
-                {data.env.mode === 'live' && !isGhConnected ? (
-                  <a
-                    href={`/api/vendors/google-home/oauth/start?mode=${selectedGoogleMode}&returnTab=systems`}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 px-3.5 py-2 text-xs font-medium text-white transition"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    {t('systems.ghConnectBtn', { mode: selectedGoogleMode.toUpperCase() })}
-                  </a>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={handleSyncGoogleHome}
-                      disabled={syncingGoogle || disconnectingGoogle}
-                      className="inline-flex items-center gap-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
-                    >
-                      <RefreshCw className={`h-3.5 w-3.5 ${syncingGoogle ? 'animate-spin' : ''}`} />
-                      {syncingGoogle ? t('common.syncing') : t('systems.syncGhBtn')}
-                    </button>
-                    {data.env.mode === 'live' && isGhConnected && (
-                      <button
-                        type="button"
-                        onClick={handleDisconnectGoogleHome}
-                        disabled={disconnectingGoogle || syncingGoogle}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3 py-2 text-xs text-slate-300 transition"
-                      >
-                        {t('common.disconnect')}
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
+          <GoogleHomeVendorCard
+            mode={data.env.mode}
+            summary={ghVendor}
+            devicesCount={systemCounts.google_home}
+            isConnected={isGhConnected}
+            googleHomeConfigured={data.env.googleHomeConfigured}
+            selectedMode={selectedGoogleMode}
+            onModeChange={setSelectedGoogleMode}
+            syncing={syncingGoogle}
+            disconnecting={disconnectingGoogle}
+            onSync={() => void handleSyncGoogleHome()}
+            onDisconnect={() => void handleDisconnectGoogleHome()}
+            onOpenGuide={onOpenGoogleGuide}
+          />
         )}
 
         {visibleGenericVendors.map((vendorId) => (
@@ -1645,12 +1375,6 @@ export function SystemsTab({
           />
         ))}
       </div>
-
-      {syncMessage && (
-        <AlertBanner tone={syncMessage.ok ? 'success' : 'error'}>
-          {syncMessage.text}
-        </AlertBanner>
-      )}
 
       {/* Autres systèmes disponibles (non encore configurés dans .env) */}
       <UnconfiguredSystemsSection items={availableUnconfiguredSystems} />

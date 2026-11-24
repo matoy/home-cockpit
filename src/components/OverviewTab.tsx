@@ -89,13 +89,26 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
               <Euro className="h-4 w-4" />
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-3">
+          <div className="mt-3 flex flex-wrap items-baseline gap-2.5">
             <span className="text-3xl font-bold tracking-tight text-white">
               {kpis.periodCostEur.toFixed(2)} €
             </span>
             <span className="text-sm font-medium text-emerald-400">
               {kpis.periodEnergyKwh.toFixed(2)} kWh
             </span>
+            {kpis.energyDeltaPct !== null && kpis.energyDeltaPct !== undefined && (
+              <span
+                title={t('overview.vsPrevPeriod')}
+                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  kpis.energyDeltaPct > 0
+                    ? 'bg-rose-500/15 text-rose-300'
+                    : 'bg-emerald-500/15 text-emerald-300'
+                }`}
+              >
+                {kpis.energyDeltaPct > 0 ? '+' : ''}
+                {kpis.energyDeltaPct.toFixed(1)}%
+              </span>
+            )}
           </div>
           <p className="mt-2 text-xs text-slate-400">
             {t('overview.avgPrice', {
@@ -103,6 +116,14 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
               sub: kpis.subscriptionCostEur.toFixed(2),
             })}
           </p>
+          {kpis.projectedMonthCostEur !== null && kpis.projectedMonthCostEur !== undefined && (
+            <p className="mt-1 text-[11px] font-medium text-indigo-300">
+              {t('overview.projectedMonth', {
+                cost: kpis.projectedMonthCostEur.toFixed(0),
+                kwh: (kpis.projectedMonthEnergyKwh ?? 0).toFixed(0),
+              })}
+            </p>
+          )}
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
