@@ -42,6 +42,7 @@ import { SystemsTab } from './SystemsTab';
 import { SetupGuideTab } from './SetupGuideTab';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useI18n } from './I18nProvider';
+import { AlertBanner, Button } from './ui';
 import type { DashboardPayload, SystemFilter, TabId, TimeRange } from '@/types';
 
 interface DashboardAppProps {
@@ -55,7 +56,7 @@ function toLocalDateTimeInput(date: Date): string {
 
 export function DashboardApp({ initialData }: DashboardAppProps) {
   const router = useRouter();
-  const { t, formatDateTime } = useI18n();
+  const { t, locale, formatDateTime } = useI18n();
   const [data, setData] = useState<DashboardPayload>(initialData);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [range, setRange] = useState<TimeRange>(initialData.range);
@@ -369,7 +370,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
     if (data.selectedRoomId !== 'all' && String(d.roomId) !== data.selectedRoomId) {
       return false;
     }
-    const cover = extractCoverSummary(d);
+    const cover = extractCoverSummary(d, locale);
     return cover !== null && (cover.state === 'open' || cover.state === 'partial');
   }).length;
   const activeHvacCount = data.devices.filter((d) => {
@@ -380,7 +381,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
       return false;
     }
     if (!isDaikinHvacDevice(d)) return false;
-    const summary = extractDaikinSummary(d.lastRawStatus);
+    const summary = extractDaikinSummary(d.lastRawStatus, locale);
     return Boolean(summary?.isOn);
   }).length;
   const activeSecurityAlertsCount = data.devices.filter((d) => {
@@ -391,8 +392,8 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
       return false;
     }
     if (!isXSenseSecurityDevice(d) && !isXiaomiSecurityOrHomeDevice(d)) return false;
-    const xs = extractXSenseSummary(d.lastRawStatus);
-    const mi = extractXiaomiSummary(d.lastRawStatus);
+    const xs = extractXSenseSummary(d.lastRawStatus, locale);
+    const mi = extractXiaomiSummary(d.lastRawStatus, locale);
     return Boolean(xs?.isAlert || mi?.isAlert);
   }).length;
 
@@ -719,24 +720,24 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
       {/* Contenu principal */}
       <main className="mx-auto max-w-7xl px-4 sm:px-6 py-6 space-y-5">
         {data.env.mode === 'demo' && (
-          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200 flex flex-wrap items-center justify-between gap-2">
-            <span>
-              <strong>{t('header.demoBannerTitle')}</strong> {t('header.demoBannerBody')}
-            </span>
-            <button
-              onClick={() => setActiveTab('guide')}
-              className="rounded-lg border border-amber-400/40 bg-amber-400/15 px-3 py-1 font-medium text-amber-100 hover:bg-amber-400/25"
-            >
-              {t('common.openGuideSetup')}
-            </button>
-          </div>
+          <AlertBanner
+            tone="warning"
+            className="rounded-2xl px-4 py-3"
+            action={
+              <Button
+                size="sm"
+                onClick={() => setActiveTab('guide')}
+                className="border-amber-400/40 bg-amber-400/15 text-amber-100 hover:bg-amber-400/25"
+              >
+                {t('common.openGuideSetup')}
+              </Button>
+            }
+          >
+            <strong>{t('header.demoBannerTitle')}</strong> {t('header.demoBannerBody')}
+          </AlertBanner>
         )}
 
-        {toast && (
-          <div className="rounded-xl border border-indigo-500/40 bg-indigo-500/15 px-4 py-2.5 text-xs text-indigo-200">
-            {toast}
-          </div>
-        )}
+        {toast && <AlertBanner tone="info">{toast}</AlertBanner>}
 
         {activeTab === 'overview' && (
           <OverviewTab

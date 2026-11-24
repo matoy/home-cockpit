@@ -2,9 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle,
   BookOpen,
-  CheckCircle2,
   Clock,
   Cpu,
   ExternalLink,
@@ -13,6 +11,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { VENDOR_REGISTRY } from '@/lib/vendors/registry';
+import { AlertBanner } from './ui';
 import { useI18n } from './I18nProvider';
 import type { DashboardPayload, GoogleHomeMode, HomeConnectEnv, VendorId } from '@/types';
 
@@ -132,7 +131,7 @@ export function SystemsTab({
           setXiaomiQrData(null);
           setSyncMessage({
             ok: false,
-            text: json.error || 'Échec lors du scan QR Xiaomi Home.',
+            text: json.error || t('systems.errXiaomiQrScan'),
           });
           return;
         }
@@ -140,14 +139,14 @@ export function SystemsTab({
           setXiaomiQrData(null);
           setSyncMessage({
             ok: false,
-            text: json.message || 'QR Code Xiaomi expiré.',
+            text: json.message || t('systems.errXiaomiQrExpired'),
           });
         } else if (json.status === 'connected') {
           setXiaomiQrData(null);
           setShowXiaomiAuthBox(false);
           setSyncMessage({
             ok: true,
-            text: json.message || 'Xiaomi Home connecté via QR Code et synchronisé.',
+            text: json.message || t('systems.okXiaomiQrConnected'),
           });
           await onRefresh();
         }
@@ -160,7 +159,7 @@ export function SystemsTab({
       active = false;
       clearInterval(intervalId);
     };
-  }, [xiaomiQrData, onRefresh]);
+  }, [xiaomiQrData, onRefresh, t]);
 
   async function handleSyncTuya() {
     setSyncingTuya(true);
@@ -168,13 +167,13 @@ export function SystemsTab({
     try {
       const res = await fetch('/api/tuya/sync', { method: 'POST' });
       const json = (await res.json()) as { message?: string; error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec de synchronisation Tuya');
-      setSyncMessage({ ok: true, text: json.message || 'Synchronisation Tuya terminée.' });
+      if (!res.ok) throw new Error(json.error || t('systems.errSync', { vendor: 'Tuya' }));
+      setSyncMessage({ ok: true, text: json.message || t('systems.okSync', { vendor: 'Tuya' }) });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur Tuya',
+        text: err instanceof Error ? err.message : t('systems.errVendor', { vendor: 'Tuya' }),
       });
     } finally {
       setSyncingTuya(false);
@@ -187,13 +186,16 @@ export function SystemsTab({
     try {
       const res = await fetch('/api/vendors/kasa/sync', { method: 'POST' });
       const json = (await res.json()) as { message?: string; error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec de synchronisation Kasa');
-      setSyncMessage({ ok: true, text: json.message || 'Synchronisation Kasa Cloud terminée.' });
+      if (!res.ok) throw new Error(json.error || t('systems.errSync', { vendor: 'Kasa' }));
+      setSyncMessage({
+        ok: true,
+        text: json.message || t('systems.okSync', { vendor: 'Kasa Cloud' }),
+      });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur Kasa Cloud',
+        text: err instanceof Error ? err.message : t('systems.errVendor', { vendor: 'Kasa Cloud' }),
       });
     } finally {
       setSyncingKasa(false);
@@ -206,16 +208,21 @@ export function SystemsTab({
     try {
       const res = await fetch('/api/vendors/home-connect/sync', { method: 'POST' });
       const json = (await res.json()) as { message?: string; error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec de synchronisation Siemens Home Connect');
+      if (!res.ok) {
+        throw new Error(json.error || t('systems.errSync', { vendor: 'Siemens Home Connect' }));
+      }
       setSyncMessage({
         ok: true,
-        text: json.message || 'Synchronisation Siemens Home Connect terminée.',
+        text: json.message || t('systems.okSync', { vendor: 'Siemens Home Connect' }),
       });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur Siemens Home Connect',
+        text:
+          err instanceof Error
+            ? err.message
+            : t('systems.errVendor', { vendor: 'Siemens Home Connect' }),
       });
     } finally {
       setSyncingHomeConnect(false);
@@ -228,13 +235,23 @@ export function SystemsTab({
     try {
       const res = await fetch('/api/vendors/home-connect/disconnect', { method: 'POST' });
       const json = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec de déconnexion Siemens Home Connect');
-      setSyncMessage({ ok: true, text: 'Siemens Home Connect déconnecté.' });
+      if (!res.ok) {
+        throw new Error(
+          json.error || t('systems.errDisconnect', { vendor: 'Siemens Home Connect' })
+        );
+      }
+      setSyncMessage({
+        ok: true,
+        text: t('systems.okDisconnect', { vendor: 'Siemens Home Connect' }),
+      });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur déconnexion Home Connect',
+        text:
+          err instanceof Error
+            ? err.message
+            : t('systems.errDisconnectGeneric', { vendor: 'Home Connect' }),
       });
     } finally {
       setDisconnectingHomeConnect(false);
@@ -247,13 +264,16 @@ export function SystemsTab({
     try {
       const res = await fetch('/api/vendors/somfy/sync', { method: 'POST' });
       const json = (await res.json()) as { message?: string; error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec de synchronisation Somfy Cloud');
-      setSyncMessage({ ok: true, text: json.message || 'Synchronisation Somfy Cloud terminée.' });
+      if (!res.ok) throw new Error(json.error || t('systems.errSync', { vendor: 'Somfy Cloud' }));
+      setSyncMessage({
+        ok: true,
+        text: json.message || t('systems.okSync', { vendor: 'Somfy Cloud' }),
+      });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur Somfy Cloud',
+        text: err instanceof Error ? err.message : t('systems.errVendor', { vendor: 'Somfy Cloud' }),
       });
     } finally {
       setSyncingSomfy(false);
@@ -266,16 +286,19 @@ export function SystemsTab({
     try {
       const res = await fetch('/api/vendors/daikin/sync', { method: 'POST' });
       const json = (await res.json()) as { message?: string; error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec de synchronisation Daikin Onecta');
+      if (!res.ok) {
+        throw new Error(json.error || t('systems.errSync', { vendor: 'Daikin Onecta' }));
+      }
       setSyncMessage({
         ok: true,
-        text: json.message || 'Synchronisation Daikin Onecta terminée.',
+        text: json.message || t('systems.okSync', { vendor: 'Daikin Onecta' }),
       });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur Daikin Onecta',
+        text:
+          err instanceof Error ? err.message : t('systems.errVendor', { vendor: 'Daikin Onecta' }),
       });
     } finally {
       setSyncingDaikin(false);
@@ -293,18 +316,18 @@ export function SystemsTab({
         body: JSON.stringify({ input: daikinExchangeInput.trim() }),
       });
       const json = (await res.json()) as { message?: string; error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec échange OAuth Daikin');
+      if (!res.ok) throw new Error(json.error || t('systems.errExchangeDaikin'));
       setDaikinExchangeInput('');
       setShowDaikinLocalBox(false);
       setSyncMessage({
         ok: true,
-        text: json.message || 'Daikin Onecta connecté et synchronisé.',
+        text: json.message || t('systems.okConnectedDaikin'),
       });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur échange OAuth Daikin',
+        text: err instanceof Error ? err.message : t('systems.errExchangeDaikin'),
       });
     } finally {
       setExchangingDaikin(false);
@@ -317,13 +340,18 @@ export function SystemsTab({
     try {
       const res = await fetch('/api/vendors/daikin/disconnect', { method: 'POST' });
       const json = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec de déconnexion Daikin Onecta');
-      setSyncMessage({ ok: true, text: 'Daikin Onecta déconnecté.' });
+      if (!res.ok) {
+        throw new Error(json.error || t('systems.errDisconnect', { vendor: 'Daikin Onecta' }));
+      }
+      setSyncMessage({ ok: true, text: t('systems.okDisconnect', { vendor: 'Daikin Onecta' }) });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur déconnexion Daikin Onecta',
+        text:
+          err instanceof Error
+            ? err.message
+            : t('systems.errDisconnectGeneric', { vendor: 'Daikin Onecta' }),
       });
     } finally {
       setDisconnectingDaikin(false);
@@ -336,16 +364,21 @@ export function SystemsTab({
     try {
       const res = await fetch('/api/vendors/xsense/sync', { method: 'POST' });
       const json = (await res.json()) as { message?: string; error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec de synchronisation X-Sense Security');
+      if (!res.ok) {
+        throw new Error(json.error || t('systems.errSync', { vendor: 'X-Sense Security' }));
+      }
       setSyncMessage({
         ok: true,
-        text: json.message || 'Synchronisation X-Sense Security terminée.',
+        text: json.message || t('systems.okSync', { vendor: 'X-Sense Security' }),
       });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur X-Sense Security',
+        text:
+          err instanceof Error
+            ? err.message
+            : t('systems.errVendor', { vendor: 'X-Sense Security' }),
       });
     } finally {
       setSyncingXSense(false);
@@ -369,7 +402,7 @@ export function SystemsTab({
         error?: string;
       };
       if (!res.ok || !json.qrImageUrl || !json.qrStateToken) {
-        throw new Error(json.error || 'Impossible de générer le QR Code Xiaomi Home.');
+        throw new Error(json.error || t('systems.errXiaomiQrStart'));
       }
       setXiaomiQrData({
         qrImageUrl: json.qrImageUrl,
@@ -380,7 +413,7 @@ export function SystemsTab({
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur génération QR Xiaomi',
+        text: err instanceof Error ? err.message : t('systems.errXiaomiQrStart'),
       });
     } finally {
       setXiaomiStartingQr(false);
@@ -407,13 +440,13 @@ export function SystemsTab({
         message?: string;
         error?: string;
       };
-      if (!res.ok) throw new Error(json.error || 'Échec connexion Xiaomi Home');
+      if (!res.ok) throw new Error(json.error || t('systems.errXiaomiLogin'));
       if (json.status === 'requires_2fa' && json.verifyStateToken) {
         setXiaomi2faToken(json.verifyStateToken);
         setShowXiaomiAuthBox(true);
         setSyncMessage({
           ok: true,
-          text: json.message || 'Code de vérification 2FA requis.',
+          text: json.message || t('systems.okXiaomi2faRequired'),
         });
         return;
       }
@@ -422,13 +455,13 @@ export function SystemsTab({
       setXiaomiPassword('');
       setSyncMessage({
         ok: true,
-        text: json.message || 'Xiaomi Home connecté et synchronisé.',
+        text: json.message || t('systems.okXiaomiConnected'),
       });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur connexion Xiaomi Home',
+        text: err instanceof Error ? err.message : t('systems.errXiaomiLogin'),
       });
     } finally {
       setXiaomiLoggingIn(false);
@@ -449,19 +482,19 @@ export function SystemsTab({
         }),
       });
       const json = (await res.json()) as { message?: string; error?: string };
-      if (!res.ok) throw new Error(json.error || 'Code 2FA Xiaomi invalide');
+      if (!res.ok) throw new Error(json.error || t('systems.errXiaomi2faInvalid'));
       setXiaomi2faToken(null);
       setXiaomi2faCode('');
       setShowXiaomiAuthBox(false);
       setSyncMessage({
         ok: true,
-        text: json.message || 'Xiaomi Home connecté et synchronisé.',
+        text: json.message || t('systems.okXiaomiConnected'),
       });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur validation 2FA Xiaomi',
+        text: err instanceof Error ? err.message : t('systems.errXiaomi2faInvalid'),
       });
     } finally {
       setXiaomiVerifying2fa(false);
@@ -474,16 +507,19 @@ export function SystemsTab({
     try {
       const res = await fetch('/api/vendors/xiaomi/sync', { method: 'POST' });
       const json = (await res.json()) as { message?: string; error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec synchronisation Xiaomi Home');
+      if (!res.ok) {
+        throw new Error(json.error || t('systems.errSync', { vendor: 'Xiaomi Home' }));
+      }
       setSyncMessage({
         ok: true,
-        text: json.message || 'Synchronisation Xiaomi Home terminée.',
+        text: json.message || t('systems.okSync', { vendor: 'Xiaomi Home' }),
       });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur Xiaomi Home',
+        text:
+          err instanceof Error ? err.message : t('systems.errVendor', { vendor: 'Xiaomi Home' }),
       });
     } finally {
       setSyncingXiaomi(false);
@@ -496,15 +532,20 @@ export function SystemsTab({
     try {
       const res = await fetch('/api/vendors/xiaomi/disconnect', { method: 'POST' });
       const json = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec déconnexion Xiaomi Home');
+      if (!res.ok) {
+        throw new Error(json.error || t('systems.errDisconnect', { vendor: 'Xiaomi Home' }));
+      }
       setXiaomiQrData(null);
       setXiaomi2faToken(null);
-      setSyncMessage({ ok: true, text: 'Xiaomi Home déconnecté.' });
+      setSyncMessage({ ok: true, text: t('systems.okDisconnect', { vendor: 'Xiaomi Home' }) });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur déconnexion Xiaomi Home',
+        text:
+          err instanceof Error
+            ? err.message
+            : t('systems.errDisconnectGeneric', { vendor: 'Xiaomi Home' }),
       });
     } finally {
       setDisconnectingXiaomi(false);
@@ -517,16 +558,19 @@ export function SystemsTab({
     try {
       const res = await fetch('/api/vendors/google-home/sync', { method: 'POST' });
       const json = (await res.json()) as { message?: string; error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec de synchronisation Google Home');
+      if (!res.ok) {
+        throw new Error(json.error || t('systems.errSync', { vendor: 'Google Home' }));
+      }
       setSyncMessage({
         ok: true,
-        text: json.message || 'Synchronisation Google Home terminée.',
+        text: json.message || t('systems.okSync', { vendor: 'Google Home' }),
       });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur Google Home',
+        text:
+          err instanceof Error ? err.message : t('systems.errVendor', { vendor: 'Google Home' }),
       });
     } finally {
       setSyncingGoogle(false);
@@ -539,13 +583,18 @@ export function SystemsTab({
     try {
       const res = await fetch('/api/vendors/google-home/disconnect', { method: 'POST' });
       const json = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(json.error || 'Échec de déconnexion Google Home');
-      setSyncMessage({ ok: true, text: 'Google Home déconnecté.' });
+      if (!res.ok) {
+        throw new Error(json.error || t('systems.errDisconnect', { vendor: 'Google Home' }));
+      }
+      setSyncMessage({ ok: true, text: t('systems.okDisconnect', { vendor: 'Google Home' }) });
       await onRefresh();
     } catch (err) {
       setSyncMessage({
         ok: false,
-        text: err instanceof Error ? err.message : 'Erreur déconnexion',
+        text:
+          err instanceof Error
+            ? err.message
+            : t('systems.errDisconnectGeneric', { vendor: 'Google Home' }),
       });
     } finally {
       setDisconnectingGoogle(false);
@@ -1531,19 +1580,9 @@ export function SystemsTab({
       </div>
 
       {syncMessage && (
-        <div
-          className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-xs ${syncMessage.ok
-              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-              : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-            }`}
-        >
-          {syncMessage.ok ? (
-            <CheckCircle2 className="h-4 w-4 shrink-0" />
-          ) : (
-            <AlertCircle className="h-4 w-4 shrink-0" />
-          )}
-          <span>{syncMessage.text}</span>
-        </div>
+        <AlertBanner tone={syncMessage.ok ? 'success' : 'error'}>
+          {syncMessage.text}
+        </AlertBanner>
       )}
 
       {/* Autres systèmes disponibles (non encore configurés dans .env) */}

@@ -1,3 +1,5 @@
+import { normalizeLocale, type AppLocale } from '@/lib/i18n/types';
+import { toFiniteNumber as toNum } from '@/lib/utils';
 import type { DeviceRecord, RawDpStatus } from '@/types';
 
 export type DaikinOperationMode =
@@ -38,27 +40,146 @@ export interface DaikinUnitSummary {
   searchableText: string;
 }
 
-const MODE_META_FR: Record<
-  DaikinOperationMode,
-  { label: string; tone: DaikinModeTone }
+const MODE_TONES: Record<DaikinOperationMode, DaikinModeTone> = {
+  heating: 'amber',
+  cooling: 'sky',
+  auto: 'indigo',
+  dry: 'teal',
+  fanOnly: 'slate',
+  unknown: 'slate',
+};
+
+const DAIKIN_COPY: Record<
+  AppLocale,
+  {
+    modes: Record<DaikinOperationMode, string>;
+    unitTypes: Record<string, string>;
+    unitFallback: string;
+    standby: string;
+    fanAuto: string;
+    fanQuiet: string;
+    fanStep: (step: number) => string;
+    target: (temp: number) => string;
+    outdoor: (temp: number) => string;
+    kwhDay: (val: string) => string;
+  }
 > = {
-  heating: { label: 'Chauffage', tone: 'amber' },
-  cooling: { label: 'Clim', tone: 'sky' },
-  auto: { label: 'Auto', tone: 'indigo' },
-  dry: { label: 'Déshumidif.', tone: 'teal' },
-  fanOnly: { label: 'Ventilation', tone: 'slate' },
-  unknown: { label: 'Actif', tone: 'slate' },
+  fr: {
+    modes: {
+      heating: 'Chauffage',
+      cooling: 'Clim',
+      auto: 'Auto',
+      dry: 'Déshumidif.',
+      fanOnly: 'Ventilation',
+      unknown: 'Actif',
+    },
+    unitTypes: {
+      climateControl: 'Split / Clim réversible',
+      climateControlMainZone: 'PAC Air/Eau (Zone principale)',
+      domesticHotWaterTank: 'Ballon ECS (Altherma)',
+    },
+    unitFallback: 'Unité Daikin',
+    standby: 'Veille',
+    fanAuto: 'Ventil. Auto',
+    fanQuiet: 'Silence',
+    fanStep: (step) => `Vitesse ${step}`,
+    target: (temp) => `Cible ${temp}°C`,
+    outdoor: (temp) => `Ext. ${temp}°C`,
+    kwhDay: (val) => `${val} kWh/j`,
+  },
+  en: {
+    modes: {
+      heating: 'Heating',
+      cooling: 'Cooling',
+      auto: 'Auto',
+      dry: 'Dry',
+      fanOnly: 'Fan',
+      unknown: 'Active',
+    },
+    unitTypes: {
+      climateControl: 'Split AC / Heat Pump',
+      climateControlMainZone: 'Air-to-Water HP (Main Zone)',
+      domesticHotWaterTank: 'DHW Tank (Altherma)',
+    },
+    unitFallback: 'Daikin Unit',
+    standby: 'Standby',
+    fanAuto: 'Auto Fan',
+    fanQuiet: 'Quiet',
+    fanStep: (step) => `Speed ${step}`,
+    target: (temp) => `Target ${temp}°C`,
+    outdoor: (temp) => `Out. ${temp}°C`,
+    kwhDay: (val) => `${val} kWh/d`,
+  },
+  es: {
+    modes: {
+      heating: 'Calefacción',
+      cooling: 'Frío',
+      auto: 'Auto',
+      dry: 'Deshumidif.',
+      fanOnly: 'Ventilación',
+      unknown: 'Activo',
+    },
+    unitTypes: {
+      climateControl: 'Split / Bomba de calor',
+      climateControlMainZone: 'Bomba Aire/Agua (Zona principal)',
+      domesticHotWaterTank: 'Depósito ACS (Altherma)',
+    },
+    unitFallback: 'Unidad Daikin',
+    standby: 'Espera',
+    fanAuto: 'Ventil. Auto',
+    fanQuiet: 'Silencio',
+    fanStep: (step) => `Velocidad ${step}`,
+    target: (temp) => `Obj. ${temp}°C`,
+    outdoor: (temp) => `Ext. ${temp}°C`,
+    kwhDay: (val) => `${val} kWh/d`,
+  },
+  de: {
+    modes: {
+      heating: 'Heizen',
+      cooling: 'Kühlen',
+      auto: 'Auto',
+      dry: 'Entfeuchten',
+      fanOnly: 'Lüften',
+      unknown: 'Aktiv',
+    },
+    unitTypes: {
+      climateControl: 'Split-Klimagerät / WP',
+      climateControlMainZone: 'Luft/Wasser-WP (Hauptzone)',
+      domesticHotWaterTank: 'Warmwasserspeicher (Altherma)',
+    },
+    unitFallback: 'Daikin-Gerät',
+    standby: 'Standby',
+    fanAuto: 'Auto-Lüfter',
+    fanQuiet: 'Leise',
+    fanStep: (step) => `Stufe ${step}`,
+    target: (temp) => `Soll ${temp}°C`,
+    outdoor: (temp) => `Außen ${temp}°C`,
+    kwhDay: (val) => `${val} kWh/T`,
+  },
+  it: {
+    modes: {
+      heating: 'Riscaldamento',
+      cooling: 'Raffresc.',
+      auto: 'Auto',
+      dry: 'Deumidif.',
+      fanOnly: 'Ventilazione',
+      unknown: 'Attivo',
+    },
+    unitTypes: {
+      climateControl: 'Split / Pompa di calore',
+      climateControlMainZone: 'PdC Aria/Acqua (Zona principale)',
+      domesticHotWaterTank: 'Boiler ACS (Altherma)',
+    },
+    unitFallback: 'Unità Daikin',
+    standby: 'Standby',
+    fanAuto: 'Vent. Auto',
+    fanQuiet: 'Silenzioso',
+    fanStep: (step) => `Velocità ${step}`,
+    target: (temp) => `Target ${temp}°C`,
+    outdoor: (temp) => `Est. ${temp}°C`,
+    kwhDay: (val) => `${val} kWh/g`,
+  },
 };
-
-const UNIT_TYPE_LABELS: Record<string, string> = {
-  climateControl: 'Split / Clim réversible',
-  climateControlMainZone: 'PAC Air/Eau (Zone principale)',
-  domesticHotWaterTank: 'Ballon ECS (Altherma)',
-};
-
-function toNum(val: unknown): number | null {
-  return typeof val === 'number' && Number.isFinite(val) ? val : null;
-}
 
 function toStr(val: unknown): string | null {
   return typeof val === 'string' && val.trim() ? val.trim() : null;
@@ -86,7 +207,8 @@ export function isDaikinHvacDevice(
 }
 
 export function extractDaikinSummary(
-  rawStatus: RawDpStatus[] | null | undefined
+  rawStatus: RawDpStatus[] | null | undefined,
+  rawLocale: AppLocale = 'fr'
 ): DaikinUnitSummary | null {
   if (!Array.isArray(rawStatus) || rawStatus.length === 0) return null;
 
@@ -100,16 +222,18 @@ export function extractDaikinSummary(
   const hasDaikinKey = Array.from(map.keys()).some((k) => k.startsWith('daikin:'));
   if (!hasDaikinKey) return null;
 
+  const locale = normalizeLocale(rawLocale);
+  const copy = DAIKIN_COPY[locale];
+
   const unitType = toStr(map.get('daikin:unitType')) ?? 'climateControl';
-  const unitTypeLabel = UNIT_TYPE_LABELS[unitType] ?? 'Unité Daikin';
+  const unitTypeLabel = copy.unitTypes[unitType] ?? copy.unitFallback;
   const model = toStr(map.get('daikin:model'));
   const onOff = toStr(map.get('daikin:onOff'))?.toLowerCase();
   const isOn = onOff === 'on';
 
   const operationMode = normalizeMode(toStr(map.get('daikin:operationMode')));
-  const modeMeta = MODE_META_FR[operationMode];
-  const modeLabel = isOn ? modeMeta.label : 'Veille';
-  const modeTone: DaikinModeTone = isOn ? modeMeta.tone : 'slate';
+  const modeLabel = isOn ? copy.modes[operationMode] : copy.standby;
+  const modeTone: DaikinModeTone = isOn ? MODE_TONES[operationMode] : 'slate';
 
   const roomTempC = toNum(map.get('daikin:roomTempC'));
   const humidityPct = toNum(map.get('daikin:roomHumidityPct'));
@@ -121,9 +245,9 @@ export function extractDaikinSummary(
   let fanLabel: string | null = null;
   if (fanSpeed) {
     const lower = fanSpeed.toLowerCase();
-    if (lower === 'auto') fanLabel = 'Ventil. Auto';
-    else if (lower === 'quiet') fanLabel = 'Silence';
-    else if (lower === 'fixed' && fanStep !== null) fanLabel = `Vitesse ${fanStep}`;
+    if (lower === 'auto') fanLabel = copy.fanAuto;
+    else if (lower === 'quiet') fanLabel = copy.fanQuiet;
+    else if (lower === 'fixed' && fanStep !== null) fanLabel = copy.fanStep(fanStep);
     else fanLabel = fanSpeed;
   }
 
@@ -148,9 +272,9 @@ export function extractDaikinSummary(
   const wifiRssiDbm = toNum(map.get('daikin:wifiRssiDbm'));
 
   const compactParts: string[] = [modeLabel];
-  if (targetTempC !== null) compactParts.push(`Cible ${targetTempC}°C`);
-  if (outdoorTempC !== null) compactParts.push(`Ext. ${outdoorTempC}°C`);
-  if (todayKwh !== null) compactParts.push(`${todayKwh.toFixed(1)} kWh/j`);
+  if (targetTempC !== null) compactParts.push(copy.target(targetTempC));
+  if (outdoorTempC !== null) compactParts.push(copy.outdoor(outdoorTempC));
+  if (todayKwh !== null) compactParts.push(copy.kwhDay(todayKwh.toFixed(1)));
 
   const searchableText = [
     'daikin onecta',

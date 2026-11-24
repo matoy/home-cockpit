@@ -127,7 +127,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       diff,
       exactFromBuckets,
     };
-  }, [data.kpis.periodEnergyKwh, data.range, data.timeSeries, activeTariff]);
+  }, [data.kpis.periodEnergyKwh, data.timeSeries, activeTariff]);
 
   function startEdit(t: TariffPeriodRecord) {
     setForm({

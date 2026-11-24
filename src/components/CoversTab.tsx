@@ -92,7 +92,7 @@ function formatCoverEventBadge(
 }
 
 export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversTabProps) {
-  const { t, intlLocale } = useI18n();
+  const { t, locale, intlLocale } = useI18n();
   const kindLabels: Record<CoverKind, string> = {
     shutter: t('covers.kindShutter'),
     blind: t('covers.kindBlind'),
@@ -116,7 +116,7 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
   const allCovers = useMemo<CoverItem[]>(() => {
     const items: CoverItem[] = [];
     for (const dev of data.devices) {
-      const summary = extractCoverSummary(dev);
+      const summary = extractCoverSummary(dev, locale);
       if (!summary) continue;
       items.push({
         device: dev,
@@ -133,7 +133,7 @@ export function CoversTab({ data, onNavigateTab, onResetGlobalFilters }: CoversT
         intlLocale
       );
     });
-  }, [data.devices, roomById, intlLocale]);
+  }, [data.devices, roomById, locale, intlLocale]);
 
   const scopedCovers = useMemo(() => {
     return allCovers.filter(({ device }) => {

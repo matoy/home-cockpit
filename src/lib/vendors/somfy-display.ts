@@ -1,5 +1,6 @@
-import type { DeviceRecord } from '@/types';
 import { extractCoverSummary, type CoverSummary } from '@/lib/covers-utils';
+import { normalizeLocale, type AppLocale } from '@/lib/i18n/types';
+import type { DeviceRecord } from '@/types';
 
 export interface SomfyDisplaySummary {
   protocol: string;
@@ -12,11 +13,12 @@ export interface SomfyDisplaySummary {
   compactBadge: string;
 }
 
-const DISCRETE_RSSI_FR: Record<string, string> = {
-  good: 'Bon',
-  normal: 'Moyen',
-  low: 'Faible',
-  verylow: 'Très faible',
+const DISCRETE_RSSI_BY_LOCALE: Record<AppLocale, Record<string, string>> = {
+  fr: { good: 'Bon', normal: 'Moyen', low: 'Faible', verylow: 'Très faible' },
+  en: { good: 'Good', normal: 'Fair', low: 'Low', verylow: 'Very low' },
+  es: { good: 'Bueno', normal: 'Medio', low: 'Bajo', verylow: 'Muy bajo' },
+  de: { good: 'Gut', normal: 'Mittel', low: 'Schwach', verylow: 'Sehr schwach' },
+  it: { good: 'Buono', normal: 'Medio', low: 'Debole', verylow: 'Molto debole' },
 };
 
 export function extractSomfyDisplaySummary(
@@ -28,9 +30,11 @@ export function extractSomfyDisplaySummary(
     | 'category'
     | 'lastRawStatus'
     | 'lastBatteryPct'
-  >
+  >,
+  rawLocale: AppLocale = 'fr'
 ): SomfyDisplaySummary | null {
-  const cover = extractCoverSummary(device);
+  const locale = normalizeLocale(rawLocale);
+  const cover = extractCoverSummary(device, locale);
   const raw = Array.isArray(device.lastRawStatus) ? device.lastRawStatus : [];
   const isSomfy =
     device.primaryVendor === 'somfy' || raw.some((item) => item.code === 'somfy:uiClass');
@@ -65,7 +69,7 @@ export function extractSomfyDisplaySummary(
   const rssiLevel =
     cover?.rssiLevel ??
     (typeof rssiRaw === 'string'
-      ? DISCRETE_RSSI_FR[rssiRaw.toLowerCase()] ?? rssiRaw
+      ? DISCRETE_RSSI_BY_LOCALE[locale][rssiRaw.toLowerCase()] ?? rssiRaw
       : null);
 
   let compactBadge: string;

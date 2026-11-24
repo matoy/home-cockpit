@@ -1,3 +1,5 @@
+import { normalizeLocale, type AppLocale } from '@/lib/i18n/types';
+import { toFiniteNumber } from '@/lib/utils';
 import type { DeviceRecord, RawDpStatus } from '@/types';
 
 export type SomfyProtocol = 'io' | 'RTS' | 'Zigbee' | 'Overkiz';
@@ -74,59 +76,285 @@ const DEPLOYMENT_UI_CLASSES_LOWER = new Set<string>([
   'pergola',
 ]);
 
-const UI_CLASS_KIND_META: Record<string, { kind: CoverKind; label: string }> = {
-  shutter: { kind: 'shutter', label: 'Volet' },
-  rollershutter: { kind: 'shutter', label: 'Volet roulant' },
-  swingingshutter: { kind: 'shutter', label: 'Volet battant' },
-  exteriorvenetianshutter: { kind: 'shutter', label: 'Volet vénitien' },
-  exteriorscreen: { kind: 'blind', label: 'Screen extérieur' },
-  screen: { kind: 'blind', label: 'Store écran' },
-  blind: { kind: 'blind', label: 'Store' },
-  exteriorblind: { kind: 'blind', label: 'Store extérieur' },
-  venetianblind: { kind: 'blind', label: 'Store vénitien' },
-  exteriorvenetianblind: { kind: 'blind', label: 'BSO (brise-soleil)' },
-  verticalinteriorblind: { kind: 'blind', label: 'Store intérieur vertical' },
-  veluxinteriorblind: { kind: 'blind', label: 'Store Velux' },
-  awning: { kind: 'awning', label: 'Store banne' },
-  horizontalawning: { kind: 'awning', label: 'Store banne' },
-  verticalexteriorawning: { kind: 'awning', label: 'Store vertical extérieur' },
-  pergola: { kind: 'awning', label: 'Pergola' },
-  curtain: { kind: 'curtain', label: 'Rideau motorisé' },
-  garagedoor: { kind: 'garage', label: 'Porte de garage' },
-  gate: { kind: 'gate', label: 'Portail' },
-  window: { kind: 'window', label: 'Fenêtre motorisée' },
-  roofwindow: { kind: 'window', label: 'Fenêtre de toit' },
+const UI_CLASS_KIND: Record<string, CoverKind> = {
+  shutter: 'shutter',
+  rollershutter: 'shutter',
+  swingingshutter: 'shutter',
+  exteriorvenetianshutter: 'shutter',
+  exteriorscreen: 'blind',
+  screen: 'blind',
+  blind: 'blind',
+  exteriorblind: 'blind',
+  venetianblind: 'blind',
+  exteriorvenetianblind: 'blind',
+  verticalinteriorblind: 'blind',
+  veluxinteriorblind: 'blind',
+  awning: 'awning',
+  horizontalawning: 'awning',
+  verticalexteriorawning: 'awning',
+  pergola: 'awning',
+  curtain: 'curtain',
+  garagedoor: 'garage',
+  gate: 'gate',
+  window: 'window',
+  roofwindow: 'window',
+};
+
+const UI_CLASS_LABELS_BY_LOCALE: Record<AppLocale, Record<string, string>> = {
+  fr: {
+    shutter: 'Volet',
+    rollershutter: 'Volet roulant',
+    swingingshutter: 'Volet battant',
+    exteriorvenetianshutter: 'Volet vénitien',
+    exteriorscreen: 'Screen extérieur',
+    screen: 'Store écran',
+    blind: 'Store',
+    exteriorblind: 'Store extérieur',
+    venetianblind: 'Store vénitien',
+    exteriorvenetianblind: 'BSO (brise-soleil)',
+    verticalinteriorblind: 'Store intérieur vertical',
+    veluxinteriorblind: 'Store Velux',
+    awning: 'Store banne',
+    horizontalawning: 'Store banne',
+    verticalexteriorawning: 'Store vertical extérieur',
+    pergola: 'Pergola',
+    curtain: 'Rideau motorisé',
+    garagedoor: 'Porte de garage',
+    gate: 'Portail',
+    window: 'Fenêtre motorisée',
+    roofwindow: 'Fenêtre de toit',
+  },
+  en: {
+    shutter: 'Shutter',
+    rollershutter: 'Roller shutter',
+    swingingshutter: 'Hinged shutter',
+    exteriorvenetianshutter: 'Venetian shutter',
+    exteriorscreen: 'Exterior screen',
+    screen: 'Screen blind',
+    blind: 'Blind',
+    exteriorblind: 'Exterior blind',
+    venetianblind: 'Venetian blind',
+    exteriorvenetianblind: 'Exterior venetian blind',
+    verticalinteriorblind: 'Vertical interior blind',
+    veluxinteriorblind: 'Velux blind',
+    awning: 'Awning',
+    horizontalawning: 'Horizontal awning',
+    verticalexteriorawning: 'Vertical exterior awning',
+    pergola: 'Pergola',
+    curtain: 'Motorized curtain',
+    garagedoor: 'Garage door',
+    gate: 'Gate',
+    window: 'Motorized window',
+    roofwindow: 'Roof window',
+  },
+  es: {
+    shutter: 'Persiana',
+    rollershutter: 'Persiana enrollable',
+    swingingshutter: 'Contraventana batiente',
+    exteriorvenetianshutter: 'Persiana veneciana',
+    exteriorscreen: 'Screen exterior',
+    screen: 'Estor screen',
+    blind: 'Estor',
+    exteriorblind: 'Estor exterior',
+    venetianblind: 'Estor veneciano',
+    exteriorvenetianblind: 'Celosía exterior',
+    verticalinteriorblind: 'Estor vertical interior',
+    veluxinteriorblind: 'Estor Velux',
+    awning: 'Toldo',
+    horizontalawning: 'Toldo horizontal',
+    verticalexteriorawning: 'Toldo vertical exterior',
+    pergola: 'Pérgola',
+    curtain: 'Cortina motorizada',
+    garagedoor: 'Puerta de garaje',
+    gate: 'Portal',
+    window: 'Ventana motorizada',
+    roofwindow: 'Ventana de techo',
+  },
+  de: {
+    shutter: 'Rollladen',
+    rollershutter: 'Rollladen',
+    swingingshutter: 'Klappladen',
+    exteriorvenetianshutter: 'Außenjalousie',
+    exteriorscreen: 'Außen-Screen',
+    screen: 'Screen-Rollo',
+    blind: 'Rollo / Jalousie',
+    exteriorblind: 'Außenraffstore',
+    venetianblind: 'Jalousie',
+    exteriorvenetianblind: 'Raffstore',
+    verticalinteriorblind: 'Vertikal-Innenrollo',
+    veluxinteriorblind: 'Velux-Rollo',
+    awning: 'Markise',
+    horizontalawning: 'Markise',
+    verticalexteriorawning: 'Senkrechtmarkise',
+    pergola: 'Pergola',
+    curtain: 'Motorisierter Vorhang',
+    garagedoor: 'Garagentor',
+    gate: 'Tor',
+    window: 'Motorisiertes Fenster',
+    roofwindow: 'Dachfenster',
+  },
+  it: {
+    shutter: 'Tapparella',
+    rollershutter: 'Tapparella avvolgibile',
+    swingingshutter: 'Persiana a battente',
+    exteriorvenetianshutter: 'Persiana veneziana',
+    exteriorscreen: 'Screen esterno',
+    screen: 'Tenda screen',
+    blind: 'Tenda',
+    exteriorblind: 'Tenda esterna',
+    venetianblind: 'Veneziana',
+    exteriorvenetianblind: 'Frangisole esterno',
+    verticalinteriorblind: 'Tenda verticale interna',
+    veluxinteriorblind: 'Tenda Velux',
+    awning: 'Tenda da sole',
+    horizontalawning: 'Tenda da sole',
+    verticalexteriorawning: 'Tenda verticale esterna',
+    pergola: 'Pergola',
+    curtain: 'Tenda motorizzata',
+    garagedoor: 'Porta garage',
+    gate: 'Cancello',
+    window: 'Finestra motorizzata',
+    roofwindow: 'Finestra da tetto',
+  },
+};
+
+const COVER_COPY: Record<
+  AppLocale,
+  {
+    fallbackCover: string;
+    tuyaShutter: string;
+    tuyaAwning: string;
+    tuyaCurtain: string;
+    tuyaMotor: string;
+    moving: string;
+    opening: string;
+    closing: string;
+    deployed: string;
+    retracted: string;
+    open: string;
+    closed: string;
+    openPct: (pct: number) => string;
+    rtsUnidirectional: string;
+    unknownState: string;
+    rssi: Record<string, string>;
+  }
+> = {
+  fr: {
+    fallbackCover: 'Volet / Store',
+    tuyaShutter: 'Volet / Moteur tubulaire',
+    tuyaAwning: 'Store / Moteur tubulaire',
+    tuyaCurtain: 'Rideau / Moteur tubulaire',
+    tuyaMotor: 'Moteur tubulaire (Tubular Motor)',
+    moving: 'En mouvement',
+    opening: 'Ouverture en cours',
+    closing: 'Fermeture en cours',
+    deployed: 'Déployé',
+    retracted: 'Replié',
+    open: 'Ouvert',
+    closed: 'Fermé',
+    openPct: (pct) => `Ouvert à ${pct} %`,
+    rtsUnidirectional: 'RTS unidirectionnel',
+    unknownState: 'État inconnu',
+    rssi: { good: 'Bon', normal: 'Moyen', low: 'Faible', verylow: 'Très faible' },
+  },
+  en: {
+    fallbackCover: 'Cover / Blind',
+    tuyaShutter: 'Shutter / Tubular motor',
+    tuyaAwning: 'Awning / Tubular motor',
+    tuyaCurtain: 'Curtain / Tubular motor',
+    tuyaMotor: 'Tubular motor',
+    moving: 'Moving',
+    opening: 'Opening',
+    closing: 'Closing',
+    deployed: 'Extended',
+    retracted: 'Retracted',
+    open: 'Open',
+    closed: 'Closed',
+    openPct: (pct) => `${pct}% open`,
+    rtsUnidirectional: 'RTS one-way',
+    unknownState: 'Unknown state',
+    rssi: { good: 'Good', normal: 'Fair', low: 'Low', verylow: 'Very low' },
+  },
+  es: {
+    fallbackCover: 'Persiana / Estor',
+    tuyaShutter: 'Persiana / Motor tubular',
+    tuyaAwning: 'Toldo / Motor tubular',
+    tuyaCurtain: 'Cortina / Motor tubular',
+    tuyaMotor: 'Motor tubular',
+    moving: 'En movimiento',
+    opening: 'Abriendo',
+    closing: 'Cerrando',
+    deployed: 'Desplegado',
+    retracted: 'Recogido',
+    open: 'Abierto',
+    closed: 'Cerrado',
+    openPct: (pct) => `Abierto al ${pct}%`,
+    rtsUnidirectional: 'RTS unidireccional',
+    unknownState: 'Estado desconocido',
+    rssi: { good: 'Bueno', normal: 'Medio', low: 'Bajo', verylow: 'Muy bajo' },
+  },
+  de: {
+    fallbackCover: 'Rollladen / Markise',
+    tuyaShutter: 'Rollladen / Rohrmotor',
+    tuyaAwning: 'Markise / Rohrmotor',
+    tuyaCurtain: 'Vorhang / Rohrmotor',
+    tuyaMotor: 'Rohrmotor',
+    moving: 'In Bewegung',
+    opening: 'Öffnet',
+    closing: 'Schließt',
+    deployed: 'Ausgefahren',
+    retracted: 'Eingefahren',
+    open: 'Offen',
+    closed: 'Geschlossen',
+    openPct: (pct) => `${pct} % offen`,
+    rtsUnidirectional: 'RTS unidirektional',
+    unknownState: 'Unbekannter Status',
+    rssi: { good: 'Gut', normal: 'Mittel', low: 'Schwach', verylow: 'Sehr schwach' },
+  },
+  it: {
+    fallbackCover: 'Tapparella / Tenda',
+    tuyaShutter: 'Tapparella / Motore tubolare',
+    tuyaAwning: 'Tenda / Motore tubolare',
+    tuyaCurtain: 'Tenda / Motore tubolare',
+    tuyaMotor: 'Motore tubolare',
+    moving: 'In movimento',
+    opening: 'In apertura',
+    closing: 'In chiusura',
+    deployed: 'Esteso',
+    retracted: 'Chiuso',
+    open: 'Aperto',
+    closed: 'Chiuso',
+    openPct: (pct) => `Aperto al ${pct}%`,
+    rtsUnidirectional: 'RTS unidirezionale',
+    unknownState: 'Stato sconosciuto',
+    rssi: { good: 'Buono', normal: 'Medio', low: 'Debole', verylow: 'Molto debole' },
+  },
 };
 
 function inferSomfyCoverKind(
   uiClass: string | null | undefined,
-  controllableName?: string | null
+  controllableName: string | null | undefined,
+  locale: AppLocale
 ): { kind: CoverKind; label: string } {
+  const labels = UI_CLASS_LABELS_BY_LOCALE[locale];
   const key = (uiClass ?? '').trim().toLowerCase();
-  if (key && UI_CLASS_KIND_META[key]) {
-    return UI_CLASS_KIND_META[key];
+  if (key && UI_CLASS_KIND[key]) {
+    return { kind: UI_CLASS_KIND[key], label: labels[key] ?? uiClass?.trim() ?? labels.shutter };
   }
   const combined = `${uiClass ?? ''} ${controllableName ?? ''}`.toLowerCase();
-  if (combined.includes('garage')) return { kind: 'garage', label: 'Porte de garage' };
-  if (combined.includes('gate')) return { kind: 'gate', label: 'Portail' };
+  if (combined.includes('garage')) return { kind: 'garage', label: labels.garagedoor };
+  if (combined.includes('gate')) return { kind: 'gate', label: labels.gate };
   if (combined.includes('awning') || combined.includes('pergola')) {
-    return { kind: 'awning', label: uiClass?.trim() || 'Store banne' };
+    return { kind: 'awning', label: uiClass?.trim() || labels.awning };
   }
-  if (combined.includes('curtain')) return { kind: 'curtain', label: 'Rideau motorisé' };
-  if (combined.includes('window')) return { kind: 'window', label: 'Fenêtre motorisée' };
+  if (combined.includes('curtain')) return { kind: 'curtain', label: labels.curtain };
+  if (combined.includes('window')) return { kind: 'window', label: labels.window };
   if (combined.includes('blind') || combined.includes('screen')) {
-    return { kind: 'blind', label: uiClass?.trim() || 'Store' };
+    return { kind: 'blind', label: uiClass?.trim() || labels.blind };
   }
-  if (combined.includes('shutter')) return { kind: 'shutter', label: uiClass?.trim() || 'Volet' };
-  return { kind: 'shutter', label: uiClass?.trim() || 'Volet / Store' };
+  if (combined.includes('shutter')) return { kind: 'shutter', label: uiClass?.trim() || labels.shutter };
+  return { kind: 'shutter', label: uiClass?.trim() || COVER_COPY[locale].fallbackCover };
 }
-
-const DISCRETE_RSSI_LABELS_FR: Record<string, string> = {
-  good: 'Bon',
-  normal: 'Moyen',
-  low: 'Faible',
-  verylow: 'Très faible',
-};
 
 function clampPct(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
@@ -143,25 +371,25 @@ function getRawMap(rawStatus: RawDpStatus[] | null | undefined): Map<string, unk
   return map;
 }
 
-function toFiniteNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function inferTuyaCoverKind(name: string | null | undefined): { kind: CoverKind; label: string } {
+function inferTuyaCoverKind(
+  name: string | null | undefined,
+  locale: AppLocale
+): { kind: CoverKind; label: string } {
   const lower = (name ?? '').toLowerCase();
-  if (lower.includes('volet')) return { kind: 'shutter', label: 'Volet / Moteur tubulaire' };
-  if (lower.includes('store') || lower.includes('banne')) {
-    return { kind: 'awning', label: 'Store / Moteur tubulaire' };
+  const labels = UI_CLASS_LABELS_BY_LOCALE[locale];
+  const copy = COVER_COPY[locale];
+  if (lower.includes('volet') || lower.includes('shutter') || lower.includes('persiana')) {
+    return { kind: 'shutter', label: copy.tuyaShutter };
   }
-  if (lower.includes('garage')) return { kind: 'garage', label: 'Porte de garage' };
-  if (lower.includes('portail')) return { kind: 'gate', label: 'Portail' };
-  if (lower.includes('rideau')) return { kind: 'curtain', label: 'Rideau / Moteur tubulaire' };
-  return { kind: 'shutter', label: 'Moteur tubulaire (Tubular Motor)' };
+  if (lower.includes('store') || lower.includes('banne') || lower.includes('awning')) {
+    return { kind: 'awning', label: copy.tuyaAwning };
+  }
+  if (lower.includes('garage')) return { kind: 'garage', label: labels.garagedoor };
+  if (lower.includes('portail') || lower.includes('gate')) return { kind: 'gate', label: labels.gate };
+  if (lower.includes('rideau') || lower.includes('curtain')) {
+    return { kind: 'curtain', label: copy.tuyaCurtain };
+  }
+  return { kind: 'shutter', label: copy.tuyaMotor };
 }
 
 function extractSomfyBatteryPct(rawMap: Map<string, unknown>): number | null {
@@ -241,7 +469,6 @@ export function isCoverDevice(
     return true;
   }
 
-  // Cas de secours pour appareils Tuya sans tuyaCategory normalisée mais dotés des DPs volets/rideaux
   if (
     device.category === 'other' &&
     (rawMap.has('percent_state') || rawMap.has('percent_control') || rawMap.has('situation_set'))
@@ -256,9 +483,12 @@ export function extractCoverSummary(
   device: Pick<
     DeviceRecord,
     'name' | 'primaryVendor' | 'tuyaCategory' | 'category' | 'lastRawStatus' | 'lastBatteryPct'
-  >
+  >,
+  rawLocale: AppLocale = 'fr'
 ): CoverSummary | null {
   if (!isCoverDevice(device)) return null;
+  const locale = normalizeLocale(rawLocale);
+  const copy = COVER_COPY[locale];
 
   const rawMap = getRawMap(device.lastRawStatus);
   const isSomfy = device.primaryVendor === 'somfy' || rawMap.has('somfy:uiClass');
@@ -280,7 +510,7 @@ export function extractCoverSummary(
         ? rawProto
         : 'Overkiz';
 
-    const kindMeta = inferSomfyCoverKind(uiClass, controllableName);
+    const kindMeta = inferSomfyCoverKind(uiClass, controllableName, locale);
     const isDeploymentDevice = DEPLOYMENT_UI_CLASSES_LOWER.has(uiClass.trim().toLowerCase());
 
     const deploymentRaw = toFiniteNumber(rawMap.get('core:DeploymentState'));
@@ -335,7 +565,7 @@ export function extractCoverSummary(
     const discreteRssi = rawMap.get('core:DiscreteRSSILevelState');
     const rssiLevel =
       typeof discreteRssi === 'string'
-        ? DISCRETE_RSSI_LABELS_FR[discreteRssi.toLowerCase()] ?? discreteRssi
+        ? copy.rssi[discreteRssi.toLowerCase()] ?? discreteRssi
         : null;
 
     const batteryPct = device.lastBatteryPct ?? extractSomfyBatteryPct(rawMap);
@@ -343,17 +573,17 @@ export function extractCoverSummary(
 
     let stateLabel: string;
     if (moving) {
-      stateLabel = 'En mouvement';
+      stateLabel = copy.moving;
     } else if (state === 'open') {
-      stateLabel = isDeploymentDevice ? 'Déployé' : 'Ouvert';
+      stateLabel = isDeploymentDevice ? copy.deployed : copy.open;
     } else if (state === 'closed') {
-      stateLabel = isDeploymentDevice ? 'Replié' : 'Fermé';
+      stateLabel = isDeploymentDevice ? copy.retracted : copy.closed;
     } else if (state === 'partial' && openPct !== null) {
-      stateLabel = `Ouvert à ${openPct} %`;
+      stateLabel = copy.openPct(openPct);
     } else if (unidirectional) {
-      stateLabel = 'RTS unidirectionnel';
+      stateLabel = copy.rtsUnidirectional;
     } else {
-      stateLabel = 'État inconnu';
+      stateLabel = copy.unknownState;
     }
 
     return {
@@ -376,8 +606,7 @@ export function extractCoverSummary(
     };
   }
 
-  // Appareil Tuya (Tubular Motors : cl, clkg, mc, ckmkzq)
-  const kindMeta = inferTuyaCoverKind(device.name);
+  const kindMeta = inferTuyaCoverKind(device.name, locale);
   const percentState = toFiniteNumber(rawMap.get('percent_state'));
   const percentControl = toFiniteNumber(rawMap.get('percent_control'));
   const rawPct = percentState ?? percentControl;
@@ -391,8 +620,6 @@ export function extractCoverSummary(
 
   if (rawPct !== null) {
     const pct = clampPct(rawPct);
-    // Tuya Tubular Motor standard : 0 = ouvert (0% fermé), 100 = fermé (100% fermé).
-    // Si situation_set === 'fully_open' avec valeur >= 95, ce firmware inverse le pourcentage en ouverture.
     const reversedScale = situationSet === 'fully_open' && pct >= 95;
     if (reversedScale) {
       openPct = pct;
@@ -419,17 +646,17 @@ export function extractCoverSummary(
   const moving = workState === 'opening' || workState === 'closing';
   let stateLabel: string;
   if (workState === 'opening') {
-    stateLabel = 'Ouverture en cours';
+    stateLabel = copy.opening;
   } else if (workState === 'closing') {
-    stateLabel = 'Fermeture en cours';
+    stateLabel = copy.closing;
   } else if (state === 'open') {
-    stateLabel = 'Ouvert';
+    stateLabel = copy.open;
   } else if (state === 'closed') {
-    stateLabel = 'Fermé';
+    stateLabel = copy.closed;
   } else if (state === 'partial' && openPct !== null) {
-    stateLabel = `Ouvert à ${openPct} %`;
+    stateLabel = copy.openPct(openPct);
   } else {
-    stateLabel = 'État inconnu';
+    stateLabel = copy.unknownState;
   }
 
   return {
@@ -454,8 +681,5 @@ export function extractCoverSummary(
 
 export function formatCoverCompactSummary(summary: CoverSummary): string {
   const protoTag = summary.protocol === 'Tuya' ? 'Tuya' : `Somfy ${summary.protocol}`;
-  if (summary.openPct !== null) {
-    return `${protoTag} • ${summary.stateLabel}`;
-  }
   return `${protoTag} • ${summary.stateLabel}`;
 }

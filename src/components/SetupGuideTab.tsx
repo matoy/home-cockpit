@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { BackupRestoreCard } from '@/components/BackupRestoreCard';
 import { useI18n } from '@/components/I18nProvider';
+import { AlertBanner, Card } from '@/components/ui';
 import type { DashboardPayload, GoogleHomeMode, TabId } from '@/types';
 
 interface SetupGuideTabProps {
@@ -29,7 +30,7 @@ interface SetupGuideTabProps {
 }
 
 export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { env } = data;
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [googleGuideMode, setGoogleGuideMode] = useState<GoogleHomeMode>(
@@ -61,126 +62,127 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
   const showXiaomi = env.xiaomiConfigured || env.xiaomiConnected;
   const showGoogleHomeApi = env.googleHomeApiEnabled;
 
+  const oauthStatusLabel = (connected: boolean) =>
+    connected ? t('guide.oauthConnected') : t('guide.oauthReady');
+
   const googleOAuthDetail = env.googleHomeConfigured
-    ? `Mode par défaut : ${env.googleHomeMode.toUpperCase()} · ${env.googleHomeConnected ? 'OAuth connecté' : 'Prêt pour connexion OAuth'
-    }${env.googleHomeMode === 'sdm'
-      ? env.googleSdmProjectConfigured
-        ? ' · GOOGLE_SDM_PROJECT_ID renseigné'
-        : ' · GOOGLE_SDM_PROJECT_ID manquant'
-      : env.googleSdmProjectConfigured
-        ? ' · GOOGLE_SDM_PROJECT_ID renseigné'
-        : ''
-    }`
-    : 'Optionnel — ajoutez GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET pour Google Home';
+    ? `${t('guide.chkGoogleDefaultMode', { mode: env.googleHomeMode.toUpperCase() })} · ${oauthStatusLabel(env.googleHomeConnected)}${
+        env.googleSdmProjectConfigured
+          ? ` · ${t('guide.chkGoogleSdmPresent')}`
+          : env.googleHomeMode === 'sdm'
+            ? ` · ${t('guide.chkGoogleSdmMissing')}`
+            : ''
+      }`
+    : t('guide.chkGoogleOpt');
 
   const checklist = [
     {
-      label: 'Base Neon Postgres (DATABASE_URL)',
+      label: t('guide.chkDbLabel'),
       ok: env.databaseConfigured,
-      detail: env.databaseConfigured
-        ? 'Connectée (mode persistant actif)'
-        : 'Non configurée (mode démo en mémoire actif)',
+      detail: env.databaseConfigured ? t('guide.chkDbConnected') : t('guide.chkDbDemo'),
     },
     {
-      label: 'Projet Tuya IoT Cloud (TUYA_ACCESS_ID & SECRET)',
+      label: t('guide.chkTuyaLabel'),
       ok: env.tuyaConfigured,
       detail: env.tuyaConfigured
-        ? `Région configurée : ${env.tuyaRegion.toUpperCase()}`
-        : 'Identifiants absents',
+        ? t('guide.chkTuyaConfigured', { region: env.tuyaRegion.toUpperCase() })
+        : t('guide.chkTuyaMissing'),
     },
     {
-      label: 'UID Utilisateur Smart Life (TUYA_USER_UID)',
+      label: t('guide.chkTuyaUidLabel'),
       ok: env.tuyaUserUidConfigured,
-      detail: env.tuyaUserUidConfigured
-        ? 'Renseigné pour liste directe /v1.0/users/{uid}/devices'
-        : 'Optionnel (repli sur associated-users)',
+      detail: env.tuyaUserUidConfigured ? t('guide.chkTuyaUidSet') : t('guide.chkTuyaUidOpt'),
     },
     ...(showKasa
       ? [
-        {
-          label: 'TP-Link Kasa Cloud (KASA_EMAIL & PASSWORD)',
-          ok: env.kasaConfigured,
-          detail: `Cloud 100 % lecture seule · Région : ${env.kasaRegion.toUpperCase()}`,
-        },
-      ]
+          {
+            label: t('guide.chkKasaLabel'),
+            ok: env.kasaConfigured,
+            detail: t('guide.chkKasaDetail', { region: env.kasaRegion.toUpperCase() }),
+          },
+        ]
       : []),
     ...(showHomeConnect
       ? [
-        {
-          label: 'Siemens Home Connect (SIEMENSHOMECONNET_CLIENT_ID & SECRET)',
-          ok: env.homeConnectConfigured,
-          detail: `Env : ${env.homeConnectEnv.toUpperCase()} · ${env.homeConnectConnected ? 'OAuth connecté' : 'Prêt pour connexion OAuth'
-            }`,
-        },
-      ]
+          {
+            label: t('guide.chkHcLabel'),
+            ok: env.homeConnectConfigured,
+            detail: t('guide.chkHcDetail', {
+              env: env.homeConnectEnv.toUpperCase(),
+              status: oauthStatusLabel(env.homeConnectConnected),
+            }),
+          },
+        ]
       : []),
     ...(showSomfy
       ? [
-        {
-          label: 'Somfy Cloud Kit de connectivité (SOMFY_EMAIL & PASSWORD)',
-          ok: env.somfyConfigured,
-          detail: `Overkiz Cloud 100 % lecture seule · Région : ${env.somfyRegion.toUpperCase()}`,
-        },
-      ]
+          {
+            label: t('guide.chkSomfyLabel'),
+            ok: env.somfyConfigured,
+            detail: t('guide.chkSomfyDetail', { region: env.somfyRegion.toUpperCase() }),
+          },
+        ]
       : []),
     ...(showDaikin
       ? [
-        {
-          label: 'Daikin Onecta Cloud (DAIKIN_CLIENT_ID & SECRET)',
-          ok: env.daikinConfigured,
-          detail: env.daikinConnected ? 'OAuth connecté' : 'Prêt pour connexion OAuth',
-        },
-      ]
+          {
+            label: t('guide.chkDaikinLabel'),
+            ok: env.daikinConfigured,
+            detail: oauthStatusLabel(env.daikinConnected),
+          },
+        ]
       : []),
     ...(showXSense
       ? [
-        {
-          label: 'X-Sense Security (XSENSE_EMAIL & PASSWORD)',
-          ok: env.xsenseConfigured,
-          detail: 'Cloud 100 % lecture seule · compte invité conseillé',
-        },
-      ]
+          {
+            label: t('guide.chkXSenseLabel'),
+            ok: env.xsenseConfigured,
+            detail: t('guide.chkXSenseDetail'),
+          },
+        ]
       : []),
     ...(showXiaomi
       ? [
-        {
-          label: 'Xiaomi Home / Mi Cloud',
-          ok: env.xiaomiConnected || env.xiaomiConfigured,
-          detail: env.xiaomiConnected
-            ? `Connecté (${env.xiaomiRegion.toUpperCase()})`
-            : `Serveur ${env.xiaomiRegion.toUpperCase()} · QR Code ou compte + 2FA`,
-        },
-      ]
+          {
+            label: t('guide.chkXiaomiLabel'),
+            ok: env.xiaomiConnected || env.xiaomiConfigured,
+            detail: env.xiaomiConnected
+              ? t('guide.chkXiaomiConnected', { region: env.xiaomiRegion.toUpperCase() })
+              : t('guide.chkXiaomiReady', { region: env.xiaomiRegion.toUpperCase() }),
+          },
+        ]
       : []),
     ...(showGoogleHomeApi
       ? [
-        {
-          label: 'Google Home OAuth (GOOGLE_CLIENT_ID & SECRET)',
-          ok:
-            env.googleHomeConfigured &&
-            (env.googleHomeMode !== 'sdm' || env.googleSdmProjectConfigured),
-          detail: googleOAuthDetail,
-        },
-      ]
+          {
+            label: t('guide.chkGoogleLabel'),
+            ok:
+              env.googleHomeConfigured &&
+              (env.googleHomeMode !== 'sdm' || env.googleSdmProjectConfigured),
+            detail: googleOAuthDetail,
+          },
+        ]
       : []),
     {
-      label: 'Protection Dashboard (APP_PASSWORD)',
+      label: t('guide.chkPwdLabel'),
       ok: env.appPasswordConfigured,
-      detail: env.appPasswordConfigured ? 'Mot de passe actif' : 'Dashboard actuellement ouvert',
+      detail: env.appPasswordConfigured ? t('guide.chkPwdActive') : t('guide.chkPwdOpen'),
     },
     {
-      label: 'Secret cron-job.org (SCHEDULE_SECRET)',
+      label: t('guide.chkCronLabel'),
       ok: env.scheduleSecretConfigured,
-      detail: env.scheduleSecretConfigured
-        ? 'Route /api/schedule/collect protégée par Bearer token'
-        : 'Ajoutez SCHEDULE_SECRET pour sécuriser la collecte',
+      detail: env.scheduleSecretConfigured ? t('guide.chkCronActive') : t('guide.chkCronMissing'),
     },
   ];
 
   return (
     <div className="space-y-6">
+      {locale !== 'fr' && (
+        <AlertBanner tone="info">{t('guide.langNote')}</AlertBanner>
+      )}
+
       {/* Checklist dynamique */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+      <Card padded={false} className="p-6">
         <h2 className="text-base font-semibold text-white mb-1">
           {t('guide.checklistTitle')}
         </h2>
@@ -209,7 +211,7 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
             </div>
           ))}
         </div>
-      </div>
+      </Card>
 
       {/* Sauvegarde & Restauration compressée (.json.gz) */}
       <BackupRestoreCard data={data} onRefresh={onRefresh} />
@@ -307,8 +309,17 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
             onClick={() => copyText('dbpush', 'npm run db:push')}
             className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
           >
-            {copiedKey === 'dbpush' ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
-            Copier
+            {copiedKey === 'dbpush' ? (
+              <>
+                <Check className="h-3 w-3 text-emerald-400" />
+                {t('guide.copied')}
+              </>
+            ) : (
+              <>
+                <Copy className="h-3 w-3" />
+                {t('guide.copy')}
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -344,8 +355,17 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
                 onClick={() => copyText('url', scheduleUrl)}
                 className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
               >
-                {copiedKey === 'url' ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
-                Copier
+                {copiedKey === 'url' ? (
+                  <>
+                    <Check className="h-3 w-3 text-emerald-400" />
+                    {t('guide.copied')}
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3 w-3" />
+                    {t('guide.copy')}
+                  </>
+                )}
               </button>
             </div>
 
@@ -369,8 +389,17 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
                 onClick={() => copyText('header', 'Authorization: Bearer VOTRE_SCHEDULE_SECRET')}
                 className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
               >
-                {copiedKey === 'header' ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
-                Copier
+                {copiedKey === 'header' ? (
+                  <>
+                    <Check className="h-3 w-3 text-emerald-400" />
+                    {t('guide.copied')}
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3 w-3" />
+                    {t('guide.copy')}
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -468,11 +497,16 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
                   className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
                 >
                   {copiedKey === 'kasa-env' ? (
-                    <Check className="h-3 w-3 text-emerald-400" />
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" />
+                      {t('guide.copied')}
+                    </>
                   ) : (
-                    <Copy className="h-3 w-3" />
+                    <>
+                      <Copy className="h-3 w-3" />
+                      {t('guide.copy')}
+                    </>
                   )}
-                  Copier
                 </button>
               </div>
               <pre className="font-mono text-[11px] text-teal-300 overflow-x-auto leading-relaxed">
@@ -635,11 +669,16 @@ KASA_REGION="eu" # eu, us, ap ou global`}
                     className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1 shrink-0"
                   >
                     {copiedKey === 'hc-uri' ? (
-                      <Check className="h-3 w-3 text-emerald-400" />
+                      <>
+                        <Check className="h-3 w-3 text-emerald-400" />
+                        {t('guide.copied')}
+                      </>
                     ) : (
-                      <Copy className="h-3 w-3" />
+                      <>
+                        <Copy className="h-3 w-3" />
+                        {t('guide.copy')}
+                      </>
                     )}
-                    Copier
                   </button>
                 </div>
                 {hcRedirectUri !== localHcRedirectUri && (
@@ -656,11 +695,16 @@ KASA_REGION="eu" # eu, us, ap ou global`}
                       className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1 shrink-0"
                     >
                       {copiedKey === 'hc-uri-local' ? (
-                        <Check className="h-3 w-3 text-emerald-400" />
+                        <>
+                          <Check className="h-3 w-3 text-emerald-400" />
+                          {t('guide.copied')}
+                        </>
                       ) : (
-                        <Copy className="h-3 w-3" />
+                        <>
+                          <Copy className="h-3 w-3" />
+                          {t('guide.copy')}
+                        </>
                       )}
-                      Copier
                     </button>
                   </div>
                 )}
@@ -689,7 +733,7 @@ KASA_REGION="eu" # eu, us, ap ou global`}
                   onClick={() =>
                     copyText(
                       'hc-env',
-                      'SIEMENSHOMECONNET_CLIENT_ID="votre-client-id"\nSIEMENSHOMECONNET_CLIENT_SECRET="votre-client-secret"\nSIEMENSHOMECONNET_ENV="prod"'
+                      'SIEMENS_HOME_CONNECT_CLIENT_ID="votre-client-id"\nSIEMENS_HOME_CONNECT_CLIENT_SECRET="votre-client-secret"\nSIEMENS_HOME_CONNECT_ENV="prod"'
                     )
                   }
                   className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
@@ -699,13 +743,13 @@ KASA_REGION="eu" # eu, us, ap ou global`}
                   ) : (
                     <Copy className="h-3 w-3" />
                   )}
-                  Copier
+                  {copiedKey === 'hc-env' ? t('guide.copied') : t('guide.copy')}
                 </button>
               </div>
               <pre className="font-mono text-[11px] text-cyan-300 overflow-x-auto leading-relaxed">
-{`SIEMENSHOMECONNET_CLIENT_ID="votre-client-id"
-SIEMENSHOMECONNET_CLIENT_SECRET="votre-client-secret"
-SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
+{`SIEMENS_HOME_CONNECT_CLIENT_ID="votre-client-id"
+SIEMENS_HOME_CONNECT_CLIENT_SECRET="votre-client-secret"
+SIEMENS_HOME_CONNECT_ENV="prod" # prod, simulator ou cn`}
               </pre>
               <p className="text-[11px] text-slate-400">
                 Sauvegardez <code>.env.local</code> et redémarrez <code>npm run dev</code> (ou
@@ -768,7 +812,7 @@ SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
               </li>
               <li>
                 <strong>Simulateur :</strong> basculez{' '}
-                <code>SIEMENSHOMECONNET_ENV=&quot;simulator&quot;</code> (ou le sélecteur avant
+                <code>SIEMENS_HOME_CONNECT_ENV=&quot;simulator&quot;</code> (ou le sélecteur avant
                 connexion) pour tester des appareils virtuels Siemens sur{' '}
                 <code>simulator.home-connect.com</code>.
               </li>
@@ -911,11 +955,16 @@ SIEMENSHOMECONNET_ENV="prod" # prod, simulator ou cn`}
                   className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
                 >
                   {copiedKey === 'somfy-env' ? (
-                    <Check className="h-3 w-3 text-emerald-400" />
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" />
+                      {t('guide.copied')}
+                    </>
                   ) : (
-                    <Copy className="h-3 w-3" />
+                    <>
+                      <Copy className="h-3 w-3" />
+                      {t('guide.copy')}
+                    </>
                   )}
-                  Copier
                 </button>
               </div>
               <pre className="font-mono text-[11px] text-amber-300 overflow-x-auto leading-relaxed">
@@ -1084,11 +1133,16 @@ SOMFY_REGION="eu" # eu (Europe / France), na (Amérique du Nord) ou oc (Océanie
                   className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
                 >
                   {copiedKey === 'daikin-redirect' ? (
-                    <Check className="h-3 w-3 text-emerald-400" />
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" />
+                      {t('guide.copied')}
+                    </>
                   ) : (
-                    <Copy className="h-3 w-3" />
+                    <>
+                      <Copy className="h-3 w-3" />
+                      {t('guide.copy')}
+                    </>
                   )}
-                  Copier
                 </button>
               </div>
               <code className="block font-mono text-[11px] text-blue-300 break-all">
@@ -1113,11 +1167,16 @@ SOMFY_REGION="eu" # eu (Europe / France), na (Amérique du Nord) ou oc (Océanie
                   className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
                 >
                   {copiedKey === 'daikin-env' ? (
-                    <Check className="h-3 w-3 text-emerald-400" />
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" />
+                      {t('guide.copied')}
+                    </>
                   ) : (
-                    <Copy className="h-3 w-3" />
+                    <>
+                      <Copy className="h-3 w-3" />
+                      {t('guide.copy')}
+                    </>
                   )}
-                  Copier
                 </button>
               </div>
               <pre className="font-mono text-[11px] text-blue-300 overflow-x-auto leading-relaxed">
@@ -1233,12 +1292,12 @@ DAIKIN_CLIENT_SECRET="votre_client_secret_daikin"
                   {copiedKey === 'xsense-env' ? (
                     <>
                       <Check className="h-3 w-3 text-emerald-400" />
-                      Copié
+                      {t('guide.copied')}
                     </>
                   ) : (
                     <>
                       <Copy className="h-3 w-3" />
-                      Copier
+                      {t('guide.copy')}
                     </>
                   )}
                 </button>
@@ -1354,12 +1413,12 @@ XSENSE_PASSWORD="votre_mot_de_passe"`}
                   {copiedKey === 'xiaomi-env' ? (
                     <>
                       <Check className="h-3 w-3 text-emerald-400" />
-                      Copié
+                      {t('guide.copied')}
                     </>
                   ) : (
                     <>
                       <Copy className="h-3 w-3" />
-                      Copier
+                      {t('guide.copy')}
                     </>
                   )}
                 </button>
@@ -1579,11 +1638,16 @@ XIAOMI_REGION="de" # de (Europe), cn, us, sg, ru ou i2`}
                   className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1 shrink-0"
                 >
                   {copiedKey === 'ghscope' ? (
-                    <Check className="h-3 w-3 text-emerald-400" />
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" />
+                      {t('guide.copied')}
+                    </>
                   ) : (
-                    <Copy className="h-3 w-3" />
+                    <>
+                      <Copy className="h-3 w-3" />
+                      {t('guide.copy')}
+                    </>
                   )}
-                  Copier
                 </button>
               </div>
             </div>
@@ -1663,11 +1727,16 @@ XIAOMI_REGION="de" # de (Europe), cn, us, sg, ru ou i2`}
                     className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
                   >
                     {copiedKey === 'ghredirect' ? (
-                      <Check className="h-3 w-3 text-emerald-400" />
+                      <>
+                        <Check className="h-3 w-3 text-emerald-400" />
+                        {t('guide.copied')}
+                      </>
                     ) : (
-                      <Copy className="h-3 w-3" />
+                      <>
+                        <Copy className="h-3 w-3" />
+                        {t('guide.copy')}
+                      </>
                     )}
-                    Copier
                   </button>
                 </div>
 
@@ -1687,11 +1756,16 @@ XIAOMI_REGION="de" # de (Europe), cn, us, sg, ru ou i2`}
                       className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
                     >
                       {copiedKey === 'ghredirect-local' ? (
-                        <Check className="h-3 w-3 text-emerald-400" />
+                        <>
+                          <Check className="h-3 w-3 text-emerald-400" />
+                          {t('guide.copied')}
+                        </>
                       ) : (
-                        <Copy className="h-3 w-3" />
+                        <>
+                          <Copy className="h-3 w-3" />
+                          {t('guide.copy')}
+                        </>
                       )}
-                      Copier
                     </button>
                   </div>
                 )}
@@ -1776,11 +1850,16 @@ XIAOMI_REGION="de" # de (Europe), cn, us, sg, ru ou i2`}
                     className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1"
                   >
                     {copiedKey === 'ghenv' ? (
-                      <Check className="h-3 w-3 text-emerald-400" />
+                      <>
+                        <Check className="h-3 w-3 text-emerald-400" />
+                        {t('guide.copied')}
+                      </>
                     ) : (
-                      <Copy className="h-3 w-3" />
+                      <>
+                        <Copy className="h-3 w-3" />
+                        {t('guide.copy')}
+                      </>
                     )}
-                    Copier bloc .env
                   </button>
                 </div>
                 <pre className="font-mono text-[11px] text-sky-300 overflow-x-auto leading-relaxed">
@@ -1817,11 +1896,16 @@ TOKEN_ENCRYPTION_KEY="" # optionnel : clé AES-256 64 car. hex`}
                   className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white flex items-center gap-1 shrink-0"
                 >
                   {copiedKey === 'genkey' ? (
-                    <Check className="h-3 w-3 text-emerald-400" />
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" />
+                      {t('guide.copied')}
+                    </>
                   ) : (
-                    <Copy className="h-3 w-3" />
+                    <>
+                      <Copy className="h-3 w-3" />
+                      {t('guide.copy')}
+                    </>
                   )}
-                  Copier
                 </button>
               </div>
 

@@ -2,9 +2,10 @@
 
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { Lock, Zap, Thermometer, AlertCircle, ArrowRight } from 'lucide-react';
+import { Lock, Zap, Thermometer, ArrowRight } from 'lucide-react';
 import { useI18n } from '@/components/I18nProvider';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { AlertBanner, Card } from '@/components/ui';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -39,7 +40,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#090d16] px-4">
-      <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-8 shadow-2xl backdrop-blur">
+      <Card padded={false} className="w-full max-w-md bg-slate-900/80 p-8 shadow-2xl backdrop-blur">
         <div className="mb-6 flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 shrink-0">
@@ -76,12 +77,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {error && (
-            <div className="flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
+          {error && <AlertBanner tone="error">{error}</AlertBanner>}
 
           <button
             type="submit"
@@ -96,7 +92,7 @@ export default function LoginPage() {
         <p className="mt-5 text-center text-xs text-slate-500">
           {t('login.footerNote', { envVar: 'APP_PASSWORD' })}
         </p>
-      </div>
+      </Card>
     </div>
   );
 }

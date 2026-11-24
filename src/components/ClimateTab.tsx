@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { isActiveClimateSensor } from '@/lib/device-utils';
 import { useI18n } from '@/components/I18nProvider';
+import { Card } from '@/components/ui';
 import type { DashboardPayload } from '@/types';
 
 interface ClimateTabProps {
@@ -120,7 +121,7 @@ export function ClimateTab({ data }: ClimateTabProps) {
       avgBatteryPct,
       minBatteryPct,
     };
-  }, [data.devices, data.selectedRoomId]);
+  }, [data.devices, data.selectedRoomId, data.selectedSystem]);
 
   const { kpis } = data;
 
@@ -452,111 +453,111 @@ export function ClimateTab({ data }: ClimateTabProps) {
       </div>
 
       {/* Tableau récapitulatif */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
+      <Card padded={false} className="overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-800">
           <h3 className="text-sm font-semibold text-white">{t('climate.statsTableTitle')}</h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider">
-              <tr>
-                <th className="px-4 py-3">{t('climate.colRoom')}</th>
-                <th className="px-4 py-3">{t('climate.colCurrentTemp')}</th>
-                <th className="px-4 py-3">{t('climate.colMinMaxAvg')}</th>
-                <th className="px-4 py-3">{t('climate.colAmplitude')}</th>
-                <th className="px-4 py-3">{t('climate.colHumidity')}</th>
-                <th className="px-4 py-3">{t('climate.colDewPoint')}</th>
-                <th className="px-4 py-3">{t('climate.colBatteries')}</th>
-                <th className="px-4 py-3">{t('climate.colStatus')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/80">
-              {data.roomSummaries.map((rs) => {
-                const amplitude =
-                  rs.maxTempC !== null && rs.minTempC !== null
-                    ? (rs.maxTempC - rs.minTempC).toFixed(1)
-                    : null;
-                const roomClimateSensors = rs.devices.filter((d) => isActiveClimateSensor(d));
-                return (
-                  <tr key={rs.room.id} className="hover:bg-slate-800/30">
-                    <td className="px-4 py-3 font-medium text-white flex items-center gap-2">
+        <table className="w-full table-fixed text-left text-xs">
+          <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider">
+            <tr>
+              <th className="w-[15%] px-3 py-3">{t('climate.colRoom')}</th>
+              <th className="w-[10%] px-3 py-3">{t('climate.colCurrentTemp')}</th>
+              <th className="w-[17%] px-3 py-3">{t('climate.colMinMaxAvg')}</th>
+              <th className="w-[9%] px-3 py-3">{t('climate.colAmplitude')}</th>
+              <th className="w-[14%] px-3 py-3">{t('climate.colHumidity')}</th>
+              <th className="w-[9%] px-3 py-3">{t('climate.colDewPoint')}</th>
+              <th className="w-[14%] px-3 py-3">{t('climate.colBatteries')}</th>
+              <th className="w-[12%] px-3 py-3">{t('climate.colStatus')}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/80">
+            {data.roomSummaries.map((rs) => {
+              const amplitude =
+                rs.maxTempC !== null && rs.minTempC !== null
+                  ? (rs.maxTempC - rs.minTempC).toFixed(1)
+                  : null;
+              const roomClimateSensors = rs.devices.filter((d) => isActiveClimateSensor(d));
+              return (
+                <tr key={rs.room.id} className="hover:bg-slate-800/30">
+                  <td className="px-3 py-3 font-medium text-white min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
                       <span
-                        className="h-2.5 w-2.5 rounded-full"
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
                         style={{ backgroundColor: rs.room.color }}
                       />
-                      {rs.room.name}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-emerald-300">
-                      {rs.currentTempC !== null ? `${rs.currentTempC.toFixed(1)} °C` : '—'}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-slate-300">
-                      {rs.minTempC !== null && rs.maxTempC !== null && rs.avgTempC !== null
-                        ? `${rs.minTempC.toFixed(1)} / ${rs.maxTempC.toFixed(1)} / ${rs.avgTempC.toFixed(1)} °C`
-                        : '—'}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-slate-400">
-                      {amplitude !== null ? `Δ ${amplitude} °C` : '—'}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-sky-300">
-                      {rs.avgHumidityPct !== null
-                        ? `${rs.avgHumidityPct.toFixed(0)}% (${rs.minHumidityPct?.toFixed(0)}-${rs.maxHumidityPct?.toFixed(0)}%)`
-                        : '—'}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-slate-300">
-                      {rs.dewPointC !== null ? `${rs.dewPointC.toFixed(1)} °C` : '—'}
-                    </td>
-                    <td className="px-4 py-3 font-mono">
-                      {roomClimateSensors.length === 0 ? (
-                        <span className="text-slate-500">—</span>
-                      ) : (
-                        <div className="flex flex-wrap gap-1.5">
-                          {roomClimateSensors.map((s) => {
-                            const pct = s.lastBatteryPct;
-                            const isMains = pct === null && !s.dpConfig?.battery?.code;
-                            const badgeColor =
-                              pct === null
-                                ? 'border-slate-700 bg-slate-800 text-slate-400'
-                                : pct <= 20
-                                  ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
-                                  : pct <= 40
-                                    ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
-                                    : 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300';
-                            const sensorName = s.customName || s.name;
-                            return (
-                              <span
-                                key={s.id}
-                                title={
-                                  isMains
-                                    ? t('climate.mainsTooltip', { name: sensorName })
-                                    : sensorName
-                                }
-                                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${badgeColor}`}
-                              >
-                                {s.isOnline ? (
-                                  <Wifi className="h-2.5 w-2.5" />
-                                ) : (
-                                  <WifiOff className="h-2.5 w-2.5" />
-                                )}
-                                {isMains && <Plug className="h-2.5 w-2.5" />}
-                                {pct !== null ? `${pct}%` : isMains ? t('climate.mainsBadge') : 'N/A'}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-[11px] text-slate-200">
-                        {rs.comfort.label}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                      <span className="truncate">{rs.room.name}</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 font-mono text-emerald-300 truncate">
+                    {rs.currentTempC !== null ? `${rs.currentTempC.toFixed(1)} °C` : '—'}
+                  </td>
+                  <td className="px-3 py-3 font-mono text-slate-300 truncate">
+                    {rs.minTempC !== null && rs.maxTempC !== null && rs.avgTempC !== null
+                      ? `${rs.minTempC.toFixed(1)} / ${rs.maxTempC.toFixed(1)} / ${rs.avgTempC.toFixed(1)} °C`
+                      : '—'}
+                  </td>
+                  <td className="px-3 py-3 font-mono text-slate-400 truncate">
+                    {amplitude !== null ? `Δ ${amplitude} °C` : '—'}
+                  </td>
+                  <td className="px-3 py-3 font-mono text-sky-300 truncate">
+                    {rs.avgHumidityPct !== null
+                      ? `${rs.avgHumidityPct.toFixed(0)}% (${rs.minHumidityPct?.toFixed(0)}-${rs.maxHumidityPct?.toFixed(0)}%)`
+                      : '—'}
+                  </td>
+                  <td className="px-3 py-3 font-mono text-slate-300 truncate">
+                    {rs.dewPointC !== null ? `${rs.dewPointC.toFixed(1)} °C` : '—'}
+                  </td>
+                  <td className="px-3 py-3 font-mono min-w-0">
+                    {roomClimateSensors.length === 0 ? (
+                      <span className="text-slate-500">—</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {roomClimateSensors.map((s) => {
+                          const pct = s.lastBatteryPct;
+                          const isMains = pct === null && !s.dpConfig?.battery?.code;
+                          const badgeColor =
+                            pct === null
+                              ? 'border-slate-700 bg-slate-800 text-slate-400'
+                              : pct <= 20
+                                ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                                : pct <= 40
+                                  ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                                  : 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300';
+                          const sensorName = s.customName || s.name;
+                          return (
+                            <span
+                              key={s.id}
+                              title={
+                                isMains
+                                  ? t('climate.mainsTooltip', { name: sensorName })
+                                  : sensorName
+                              }
+                              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${badgeColor}`}
+                            >
+                              {s.isOnline ? (
+                                <Wifi className="h-2.5 w-2.5" />
+                              ) : (
+                                <WifiOff className="h-2.5 w-2.5" />
+                              )}
+                              {isMains && <Plug className="h-2.5 w-2.5" />}
+                              {pct !== null ? `${pct}%` : isMains ? t('climate.mainsBadge') : 'N/A'}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-3 min-w-0">
+                    <span className="inline-block max-w-full truncate rounded-full bg-slate-800 px-2.5 py-0.5 text-[11px] text-slate-200">
+                      {rs.comfort.label}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
     </div>
   );
 }

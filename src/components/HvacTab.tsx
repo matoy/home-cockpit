@@ -69,7 +69,7 @@ function avg(nums: number[]): number | null {
 }
 
 export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabProps) {
-  const { t, intlLocale } = useI18n();
+  const { t, locale, intlLocale } = useI18n();
   const [hvacFilter, setHvacFilter] = useState<HvacFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -102,7 +102,7 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
       if (!isDaikinHvacDevice(dev)) continue;
       items.push({
         device: dev,
-        summary: extractDaikinSummary(dev.lastRawStatus),
+        summary: extractDaikinSummary(dev.lastRawStatus, locale),
         room: dev.roomId !== null ? (roomById.get(dev.roomId) ?? null) : null,
         energy: energyByDeviceId.get(dev.id) ?? null,
       });
@@ -116,7 +116,7 @@ export function HvacTab({ data, onNavigateTab, onResetGlobalFilters }: HvacTabPr
         intlLocale
       );
     });
-  }, [data.devices, roomById, energyByDeviceId, intlLocale]);
+  }, [data.devices, roomById, energyByDeviceId, locale, intlLocale]);
 
   const scopedHvac = useMemo(() => {
     return allHvac.filter(({ device }) => {

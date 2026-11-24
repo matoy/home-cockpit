@@ -96,7 +96,7 @@ export function SecurityTab({
   onNavigateTab,
   onResetGlobalFilters,
 }: SecurityTabProps) {
-  const { t, intlLocale } = useI18n();
+  const { t, locale, intlLocale } = useI18n();
   const [filter, setFilter] = useState<SecurityFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -126,8 +126,8 @@ export function SecurityTab({
     const items: SecurityItem[] = [];
     for (const dev of roomScopedAll) {
       if (!isSecurityOrHomeRelevant(dev)) continue;
-      const xs = extractXSenseSummary(dev.lastRawStatus);
-      const mi = extractXiaomiSummary(dev.lastRawStatus);
+      const xs = extractXSenseSummary(dev.lastRawStatus, locale);
+      const mi = extractXiaomiSummary(dev.lastRawStatus, locale);
       const isAlert = Boolean(xs?.isAlert || mi?.isAlert);
       const isLowBattery = dev.lastBatteryPct !== null && dev.lastBatteryPct < 20;
       items.push({
@@ -146,7 +146,7 @@ export function SecurityTab({
         intlLocale
       );
     });
-  }, [roomScopedAll, roomById, intlLocale]);
+  }, [roomScopedAll, roomById, locale, intlLocale]);
 
   const kpis = useMemo(() => {
     const total = allItems.length;

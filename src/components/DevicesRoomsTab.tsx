@@ -27,6 +27,8 @@ import { extractHomeConnectSummary } from '@/lib/vendors/home-connect-display';
 import { extractSomfyDisplaySummary } from '@/lib/vendors/somfy-display';
 import { extractXSenseSummary } from '@/lib/vendors/xsense-display';
 import { extractXiaomiSummary } from '@/lib/vendors/xiaomi-display';
+import type { AppLocale } from '@/lib/i18n/types';
+import { normalizeSearchText } from '@/lib/utils';
 import { useI18n } from './I18nProvider';
 import type {
   DashboardPayload,
@@ -47,19 +49,16 @@ interface DevicesRoomsTabProps {
   onOpenBackupSection?: () => void;
 }
 
-function normalizeSearchText(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-}
-
-function buildDeviceSearchHaystack(dev: DeviceRecord, roomName?: string): string {
-  const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
-  const dkSummary = extractDaikinSummary(dev.lastRawStatus);
-  const somfySummary = extractSomfyDisplaySummary(dev);
-  const xsSummary = extractXSenseSummary(dev.lastRawStatus);
-  const miSummary = extractXiaomiSummary(dev.lastRawStatus);
+function buildDeviceSearchHaystack(
+  dev: DeviceRecord,
+  locale: AppLocale,
+  roomName?: string
+): string {
+  const hcSummary = extractHomeConnectSummary(dev.lastRawStatus, locale);
+  const dkSummary = extractDaikinSummary(dev.lastRawStatus, locale);
+  const somfySummary = extractSomfyDisplaySummary(dev, locale);
+  const xsSummary = extractXSenseSummary(dev.lastRawStatus, locale);
+  const miSummary = extractXiaomiSummary(dev.lastRawStatus, locale);
   const parts: Array<string | number | null | undefined> = [
     dev.id,
     dev.id.startsWith('manual_') ? 'manuel manual' : null,
@@ -110,7 +109,7 @@ export function DevicesRoomsTab({
   onOpenSystemsTab,
   onOpenBackupSection,
 }: DevicesRoomsTabProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const scaleOptions = [
     { label: t('devices.scale1'), value: 1 },
     { label: t('devices.scale10'), value: 0.1 },
@@ -390,6 +389,7 @@ export function DevicesRoomsTab({
       if (searchTokens.length === 0) return true;
       const haystack = buildDeviceSearchHaystack(
         dev,
+        locale,
         dev.roomId !== null ? roomNameById.get(dev.roomId) : undefined
       );
       return searchTokens.every((token) => haystack.includes(token));
@@ -432,7 +432,7 @@ export function DevicesRoomsTab({
       roomDeviceCounts: counts,
       filteredDevices: filtered,
     };
-  }, [data.devices, data.rooms, roomFilter, systemFilter, searchQuery]);
+  }, [data.devices, data.rooms, roomFilter, systemFilter, searchQuery, locale]);
 
   const selectedDeviceIdSet = useMemo(
     () => new Set(selectedDeviceIds),
@@ -1412,26 +1412,34 @@ export function DevicesRoomsTab({
 
                       <td className="px-2.5 py-2.5 font-mono text-[10.5px] leading-tight min-w-0">
                         {(() => {
-                          const somfyNet = extractSomfyDisplaySummary(dev);
+                          const somfyNet = extractSomfyDisplaySummary(dev, locale);
                           const ipLabel = dev.ipAddress || '—';
                           const macLabel =
                             dev.macAddress ||
                             (somfyNet?.gatewayId ? `GW ${somfyNet.gatewayId}` : '—');
+                          const gatewayName =
+                            somfyNet?.gatewayId || t('devices.somfyGatewayLabel');
                           const ipTitle =
                             dev.ipAddress && somfyNet?.isGatewayNetwork
-                              ? `Passerelle Somfy (${somfyNet.gatewayId || 'Kit de connectivité'}) : ${dev.ipAddress}`
+                              ? t('devices.somfyGatewayIpTitle', {
+                                  gateway: gatewayName,
+                                  ip: dev.ipAddress,
+                                })
                               : somfyNet && !dev.ipAddress
-                                ? 'IP passerelle non exposée par Overkiz Cloud — définissez SOMFY_GATEWAY_IP ou cliquez sur DP pour la saisir'
+                                ? t('devices.somfyIpMissingTitle')
                                 : dev.primaryVendor === 'home_connect' && !dev.ipAddress
-                                  ? 'IP locale non exposée par le cloud Siemens Home Connect — cliquez sur DP pour la saisir'
+                                  ? t('devices.hcIpMissingTitle')
                                   : ipLabel;
                           const macTitle =
                             dev.macAddress && somfyNet?.isGatewayNetwork
-                              ? `MAC passerelle Somfy (${somfyNet.gatewayId || 'Kit de connectivité'}) : ${dev.macAddress}`
+                              ? t('devices.somfyGatewayMacTitle', {
+                                  gateway: gatewayName,
+                                  mac: dev.macAddress,
+                                })
                               : somfyNet && !dev.macAddress
-                                ? 'MAC passerelle non exposée par Overkiz Cloud — définissez SOMFY_GATEWAY_MAC si besoin'
+                                ? t('devices.somfyMacMissingTitle')
                                 : dev.primaryVendor === 'home_connect' && !dev.macAddress
-                                  ? 'MAC absente du haId — cliquez sur DP pour la saisir'
+                                  ? t('devices.hcMacMissingTitle')
                                   : macLabel;
                           return (
                             <>
@@ -1488,11 +1496,11 @@ export function DevicesRoomsTab({
 
                       <td className="px-2.5 py-2.5 font-mono text-[11px] text-slate-300 min-w-0">
                         {(() => {
-                          const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
-                          const dkSummary = extractDaikinSummary(dev.lastRawStatus);
-                          const somfySummary = extractSomfyDisplaySummary(dev);
-                          const xsSummary = extractXSenseSummary(dev.lastRawStatus);
-                          const miSummary = extractXiaomiSummary(dev.lastRawStatus);
+                          const hcSummary = extractHomeConnectSummary(dev.lastRawStatus, locale);
+                          const dkSummary = extractDaikinSummary(dev.lastRawStatus, locale);
+                          const somfySummary = extractSomfyDisplaySummary(dev, locale);
+                          const xsSummary = extractXSenseSummary(dev.lastRawStatus, locale);
+                          const miSummary = extractXiaomiSummary(dev.lastRawStatus, locale);
                           return (
                             <div className="flex flex-wrap gap-x-2 gap-y-0.5">
                               {dev.lastPowerW !== null && (
@@ -1823,7 +1831,7 @@ export function DevicesRoomsTab({
                     <div>
                       <label className="block text-[10px] text-slate-400 mb-1">{t('devices.colIpMac')}</label>
                       {(() => {
-                        const somfyNet = extractSomfyDisplaySummary(dev);
+                        const somfyNet = extractSomfyDisplaySummary(dev, locale);
                         const ipLabel = dev.ipAddress || '—';
                         const macLabel =
                           dev.macAddress ||
@@ -1874,11 +1882,11 @@ export function DevicesRoomsTab({
 
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                     {(() => {
-                      const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
-                      const dkSummary = extractDaikinSummary(dev.lastRawStatus);
-                      const somfySummary = extractSomfyDisplaySummary(dev);
-                      const xsSummary = extractXSenseSummary(dev.lastRawStatus);
-                      const miSummary = extractXiaomiSummary(dev.lastRawStatus);
+                      const hcSummary = extractHomeConnectSummary(dev.lastRawStatus, locale);
+                      const dkSummary = extractDaikinSummary(dev.lastRawStatus, locale);
+                      const somfySummary = extractSomfyDisplaySummary(dev, locale);
+                      const xsSummary = extractXSenseSummary(dev.lastRawStatus, locale);
+                      const miSummary = extractXiaomiSummary(dev.lastRawStatus, locale);
                       return (
                         <div className="flex flex-wrap gap-2 font-mono text-[11px] text-slate-300">
                           {somfySummary?.cover && (

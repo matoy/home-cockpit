@@ -1,3 +1,5 @@
+import { normalizeLocale, type AppLocale } from '@/lib/i18n/types';
+import { toFiniteNumber as toNum } from '@/lib/utils';
 import type { DeviceRecord, RawDpStatus } from '@/types';
 
 export type XSenseUnitType =
@@ -32,28 +34,106 @@ export interface XSenseDeviceSummary {
   searchableText: string;
 }
 
-const UNIT_TYPE_LABELS: Record<XSenseUnitType, string> = {
-  baseStation: 'Station de base',
-  smokeCoDetector: 'Détecteur Fumée / CO',
-  waterLeakSensor: 'Capteur Fuite d’eau',
-  thermoHygrometer: 'Thermo-hygromètre',
+const ALARM_TONES: Record<XSenseAlarmStatus, XSenseAlarmTone> = {
+  normal: 'emerald',
+  smoke: 'rose',
+  co: 'rose',
+  water_leak: 'rose',
+  muted: 'amber',
+  fault: 'amber',
 };
 
-const ALARM_META: Record<XSenseAlarmStatus, { label: string; tone: XSenseAlarmTone }> = {
-  normal: { label: 'Normal', tone: 'emerald' },
-  smoke: { label: 'ALERTE FUMÉE', tone: 'rose' },
-  co: { label: 'ALERTE CO', tone: 'rose' },
-  water_leak: { label: 'FUITE D’EAU', tone: 'rose' },
-  muted: { label: 'Silencieux', tone: 'amber' },
-  fault: { label: 'Anomalie', tone: 'amber' },
+const XSENSE_COPY: Record<
+  AppLocale,
+  {
+    unitTypes: Record<XSenseUnitType, string>;
+    alarms: Record<XSenseAlarmStatus, string>;
+  }
+> = {
+  fr: {
+    unitTypes: {
+      baseStation: 'Station de base',
+      smokeCoDetector: 'Détecteur Fumée / CO',
+      waterLeakSensor: 'Capteur Fuite d’eau',
+      thermoHygrometer: 'Thermo-hygromètre',
+    },
+    alarms: {
+      normal: 'Normal',
+      smoke: 'ALERTE FUMÉE',
+      co: 'ALERTE CO',
+      water_leak: 'FUITE D’EAU',
+      muted: 'Silencieux',
+      fault: 'Anomalie',
+    },
+  },
+  en: {
+    unitTypes: {
+      baseStation: 'Base Station',
+      smokeCoDetector: 'Smoke / CO Detector',
+      waterLeakSensor: 'Water Leak Sensor',
+      thermoHygrometer: 'Thermo-Hygrometer',
+    },
+    alarms: {
+      normal: 'Normal',
+      smoke: 'SMOKE ALERT',
+      co: 'CO ALERT',
+      water_leak: 'WATER LEAK',
+      muted: 'Muted',
+      fault: 'Fault',
+    },
+  },
+  es: {
+    unitTypes: {
+      baseStation: 'Estación base',
+      smokeCoDetector: 'Detector Humo / CO',
+      waterLeakSensor: 'Sensor Fuga de agua',
+      thermoHygrometer: 'Termo-higrómetro',
+    },
+    alarms: {
+      normal: 'Normal',
+      smoke: 'ALERTA HUMO',
+      co: 'ALERTA CO',
+      water_leak: 'FUGA DE AGUA',
+      muted: 'Silenciado',
+      fault: 'Anomalía',
+    },
+  },
+  de: {
+    unitTypes: {
+      baseStation: 'Basisstation',
+      smokeCoDetector: 'Rauch- / CO-Melder',
+      waterLeakSensor: 'Wasserlecksensor',
+      thermoHygrometer: 'Thermo-Hygrometer',
+    },
+    alarms: {
+      normal: 'Normal',
+      smoke: 'RAUCHALARM',
+      co: 'CO-ALARM',
+      water_leak: 'WASSERLECK',
+      muted: 'Stumm',
+      fault: 'Störung',
+    },
+  },
+  it: {
+    unitTypes: {
+      baseStation: 'Stazione base',
+      smokeCoDetector: 'Rilevatore Fumo / CO',
+      waterLeakSensor: 'Sensore Perdita d’acqua',
+      thermoHygrometer: 'Termo-igrometro',
+    },
+    alarms: {
+      normal: 'Normale',
+      smoke: 'ALLARME FUMO',
+      co: 'ALLARME CO',
+      water_leak: 'PERDITA D’ACQUA',
+      muted: 'Silenziato',
+      fault: 'Anomalia',
+    },
+  },
 };
 
 function toStr(val: unknown): string | null {
   return typeof val === 'string' && val.trim() ? val.trim() : null;
-}
-
-function toNum(val: unknown): number | null {
-  return typeof val === 'number' && Number.isFinite(val) ? val : null;
 }
 
 function normalizeUnitType(raw: string | null): XSenseUnitType {
@@ -93,7 +173,8 @@ export function isXSenseSecurityDevice(
 }
 
 export function extractXSenseSummary(
-  rawStatus: RawDpStatus[] | null | undefined
+  rawStatus: RawDpStatus[] | null | undefined,
+  rawLocale: AppLocale = 'fr'
 ): XSenseDeviceSummary | null {
   if (!Array.isArray(rawStatus) || rawStatus.length === 0) return null;
 
@@ -107,11 +188,15 @@ export function extractXSenseSummary(
   const hasXSenseKey = Array.from(map.keys()).some((k) => k.startsWith('xsense:'));
   if (!hasXSenseKey) return null;
 
+  const locale = normalizeLocale(rawLocale);
+  const copy = XSENSE_COPY[locale];
+
   const unitType = normalizeUnitType(toStr(map.get('xsense:unitType')));
-  const unitTypeLabel = UNIT_TYPE_LABELS[unitType];
+  const unitTypeLabel = copy.unitTypes[unitType];
   const model = toStr(map.get('xsense:model'));
   const alarmStatus = normalizeAlarmStatus(toStr(map.get('xsense:alarmStatus')));
-  const meta = ALARM_META[alarmStatus];
+  const alarmLabel = copy.alarms[alarmStatus];
+  const alarmTone = ALARM_TONES[alarmStatus];
 
   const smokeDetected = map.get('xsense:smokeDetected') === true;
   const coDetected = map.get('xsense:coDetected') === true;
@@ -128,7 +213,7 @@ export function extractXSenseSummary(
   const tempC = toNum(map.get('xsense:tempC'));
   const humidityPct = toNum(map.get('xsense:humidityPct'));
 
-  const parts: string[] = [meta.label];
+  const parts: string[] = [alarmLabel];
   if (coPpm !== null) parts.push(`${coPpm} ppm CO`);
   if (rfLevel !== null) parts.push(`RF ${rfLevel}/3`);
   if (wifiRssiDbm !== null) parts.push(`${wifiRssiDbm} dBm`);
@@ -139,12 +224,12 @@ export function extractXSenseSummary(
     unitType,
     unitTypeLabel,
     model,
-    meta.label,
+    alarmLabel,
     stationName,
     houseName,
     smokeDetected ? 'fumee smoke' : null,
     coDetected ? 'monoxyde co' : null,
-    waterLeakDetected ? 'fuite eau' : null,
+    waterLeakDetected ? 'fuite eau leak' : null,
   ]
     .filter(Boolean)
     .join(' ');
@@ -154,8 +239,8 @@ export function extractXSenseSummary(
     unitTypeLabel,
     model,
     alarmStatus,
-    alarmLabel: meta.label,
-    alarmTone: meta.tone,
+    alarmLabel,
+    alarmTone,
     isAlert,
     smokeDetected,
     coDetected,

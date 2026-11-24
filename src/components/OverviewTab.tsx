@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { hasValidHumidityMeasurement, hasValidTempMeasurement } from '@/lib/device-utils';
 import { useI18n } from '@/components/I18nProvider';
+import { AlertBanner, Button, EmptyState } from '@/components/ui';
 import { extractDaikinSummary } from '@/lib/vendors/daikin-display';
 import { extractHomeConnectSummary } from '@/lib/vendors/home-connect-display';
 import { extractSomfyDisplaySummary } from '@/lib/vendors/somfy-display';
@@ -37,7 +38,7 @@ const COMFORT_BADGE_CLASSES: Record<ComfortStatus['tone'], string> = {
 };
 
 export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabProps) {
-  const { t, intlLocale } = useI18n();
+  const { t, locale, intlLocale } = useI18n();
   const { kpis, roomSummaries, range, customFrom, customTo } = data;
   const rangeLabel =
     range === 'custom' && customFrom && customTo
@@ -182,15 +183,15 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
         </div>
 
         {roomSummaries.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-10 text-center">
-            <p className="text-sm text-slate-300">{t('overview.noRooms')}</p>
-            <button
-              onClick={() => onNavigateTab('rooms')}
-              className="mt-3 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-500"
-            >
-              {t('overview.createOrSyncRooms')}
-            </button>
-          </div>
+          <EmptyState
+            icon={<Cpu className="h-5 w-5" />}
+            title={t('overview.noRooms')}
+            action={
+              <Button variant="primary" size="md" onClick={() => onNavigateTab('rooms')}>
+                {t('overview.createOrSyncRooms')}
+              </Button>
+            }
+          />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {roomSummaries.map((rs) => {
@@ -277,11 +278,11 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                   {rs.devices.length > 0 && (
                     <div className="mt-3 space-y-1.5">
                       {rs.devices.map((dev) => {
-                        const dkSummary = extractDaikinSummary(dev.lastRawStatus);
-                        const hcSummary = extractHomeConnectSummary(dev.lastRawStatus);
-                        const somfySummary = extractSomfyDisplaySummary(dev);
-                        const xsSummary = extractXSenseSummary(dev.lastRawStatus);
-                        const miSummary = extractXiaomiSummary(dev.lastRawStatus);
+                        const dkSummary = extractDaikinSummary(dev.lastRawStatus, locale);
+                        const hcSummary = extractHomeConnectSummary(dev.lastRawStatus, locale);
+                        const somfySummary = extractSomfyDisplaySummary(dev, locale);
+                        const xsSummary = extractXSenseSummary(dev.lastRawStatus, locale);
+                        const miSummary = extractXiaomiSummary(dev.lastRawStatus, locale);
                         return (
                           <div
                             key={dev.id}
@@ -440,22 +441,24 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
 
       {/* Appareils non assignés si présents */}
       {data.devices.some((d) => d.roomId === null) && (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 text-sm text-amber-200">
-            <Cpu className="h-4 w-4 text-amber-400 shrink-0" />
-            <span>
-              {t('overview.unassignedAlert', {
-                count: data.devices.filter((d) => d.roomId === null).length,
-              })}
-            </span>
-          </div>
-          <button
-            onClick={() => onNavigateTab('devices')}
-            className="rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 px-3 py-1.5 text-xs font-medium text-amber-200 transition"
-          >
-            {t('overview.assignDevices')}
-          </button>
-        </div>
+        <AlertBanner
+          tone="warning"
+          icon={<Cpu className="h-4 w-4 text-amber-400 shrink-0" />}
+          className="rounded-2xl p-4 text-sm"
+          action={
+            <Button
+              size="sm"
+              onClick={() => onNavigateTab('devices')}
+              className="border-amber-500/40 bg-amber-500/20 text-amber-200 hover:bg-amber-500/30"
+            >
+              {t('overview.assignDevices')}
+            </Button>
+          }
+        >
+          {t('overview.unassignedAlert', {
+            count: data.devices.filter((d) => d.roomId === null).length,
+          })}
+        </AlertBanner>
       )}
     </div>
   );
