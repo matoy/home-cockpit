@@ -396,7 +396,7 @@ export async function verifyIdTokenJwt(params: {
   for (const jwk of candidates) {
     try {
       const publicKey = crypto.createPublicKey({
-        key: jwk as crypto.JsonWebKey,
+        key: jwk as crypto.JsonWebKeyInput['key'],
         format: 'jwk',
       });
       const verifyKey = algSpec.isEcdsa
