@@ -26,7 +26,7 @@ function validateBoundedString(
   maxLen: number,
   fieldLabel: string
 ): { value: string | null; error?: string } {
-  if (raw === null || raw === '') return { value: null };
+  if (raw === undefined || raw === null || raw === '') return { value: null };
   if (typeof raw !== 'string') {
     return { value: null, error: `${fieldLabel} invalide.` };
   }

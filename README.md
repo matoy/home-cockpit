@@ -148,6 +148,8 @@ See [`.env.example`](.env.example) for the complete annotated template.
 | `npm run start` | Run production server |
 | `npm run lint` | Run ESLint (`next lint`) |
 | `npm run typecheck` | Run TypeScript compiler check (`tsc --noEmit`) |
+| `npm test` | Run automated Vitest test suite (`vitest run`) |
+| `npm run test:watch` | Run Vitest in interactive watch mode |
 | `npm run db:push` | Push Drizzle schema directly to PostgreSQL |
 | `npm run db:generate` | Generate Drizzle SQL migrations |
 | `npm run db:studio` | Launch Drizzle Studio visual database explorer |
