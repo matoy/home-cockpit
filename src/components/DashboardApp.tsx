@@ -604,7 +604,12 @@ export function DashboardApp({
           badge: healthIssuesCount > 0 ? healthIssuesCount : undefined,
         },
         { id: 'energy', label: t('nav.energy'), icon: BarChart3 },
-        { id: 'climate', label: t('nav.climate'), icon: Thermometer },
+        {
+          id: 'climate',
+          label: t('nav.climate'),
+          icon: Thermometer,
+          badge: data.kpis.climateAlertsCount > 0 ? data.kpis.climateAlertsCount : undefined,
+        },
         {
           id: 'contacts',
           label: t('nav.contacts'),
@@ -635,25 +640,35 @@ export function DashboardApp({
           icon: ShieldAlert,
           badge: activeSecurityAlertsCount > 0 ? activeSecurityAlertsCount : undefined,
         },
-        {
-          id: 'automations',
-          label: t('nav.automations'),
-          icon: Workflow,
-          badge: data.automations.summary.warningCount,
-        },
       ],
     },
     {
       id: 'management',
       label: t('nav.groupManagement'),
       tabs: [
-        { id: 'devices', label: t('nav.devices'), icon: Cpu },
-        { id: 'rooms', label: t('nav.rooms'), icon: Home },
+        {
+          id: 'devices',
+          label: t('nav.devices'),
+          icon: Cpu,
+          badge: data.devices.length > 0 ? data.devices.length : undefined,
+        },
+        {
+          id: 'rooms',
+          label: t('nav.rooms'),
+          icon: Home,
+          badge: data.rooms.length > 0 ? data.rooms.length : undefined,
+        },
         {
           id: 'systems',
           label: t('nav.systems'),
           icon: Plug,
           badge: connectedSystemsCount > 0 ? connectedSystemsCount : undefined,
+        },
+        {
+          id: 'automations',
+          label: t('nav.automations'),
+          icon: Workflow,
+          badge: data.automations.summary.warningCount,
         },
         { id: 'tariffs', label: t('nav.tariffs'), icon: Euro },
         { id: 'guide', label: t('nav.guide'), icon: BookOpen },
