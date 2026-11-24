@@ -10,6 +10,7 @@ import { VENDOR_IDS, VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import { AlertBanner } from './ui';
 import { useI18n } from './I18nProvider';
 import { CollectionLogsCard } from './systems/CollectionLogsCard';
+import { ConsoApiVendorCard } from './systems/ConsoApiVendorCard';
 import { DaikinVendorCard } from './systems/DaikinVendorCard';
 import { GenericVendorCard } from './systems/GenericVendorCard';
 import { GoogleHomeVendorCard } from './systems/GoogleHomeVendorCard';
@@ -26,6 +27,7 @@ const CUSTOM_RENDERED_VENDORS = new Set<VendorId>([
   'xsense',
   'xiaomi',
   'google_home',
+  'conso_api',
 ]);
 import type { DashboardPayload, GoogleHomeMode, HomeConnectEnv, VendorId } from '@/types';
 
@@ -40,6 +42,7 @@ interface SystemsTabProps {
   onOpenXSenseGuide?: () => void;
   onOpenXiaomiGuide?: () => void;
   onOpenGoogleGuide?: () => void;
+  onOpenConsoApiGuide?: () => void;
 }
 
 export function SystemsTab({
@@ -53,6 +56,7 @@ export function SystemsTab({
   onOpenXSenseGuide,
   onOpenXiaomiGuide,
   onOpenGoogleGuide,
+  onOpenConsoApiGuide,
 }: SystemsTabProps) {
   const { t, intlLocale } = useI18n();
   const showKasa = data.env.kasaConfigured;
@@ -62,6 +66,7 @@ export function SystemsTab({
   const showXSense = data.env.xsenseConfigured || data.env.mode === 'demo';
   const showXiaomi = true;
   const showGoogleHomeApi = data.env.googleHomeApiEnabled;
+  const showConsoApi = true;
 
   const [syncingTuya, setSyncingTuya] = useState(false);
   const [syncingKasa, setSyncingKasa] = useState(false);
@@ -100,6 +105,9 @@ export function SystemsTab({
   );
   const [syncingGenericVendor, setSyncingGenericVendor] = useState<VendorId | null>(null);
   const [disconnectingGenericVendor, setDisconnectingGenericVendor] = useState<VendorId | null>(null);
+  const [savingConsoApi, setSavingConsoApi] = useState(false);
+  const [syncingConsoApi, setSyncingConsoApi] = useState(false);
+  const [disconnectingConsoApi, setDisconnectingConsoApi] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
   const [syncMessage, setSyncMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -616,6 +624,91 @@ export function SystemsTab({
   const isXiaomiConnected = Boolean(xiaomiVendor?.connected || data.env.xiaomiConnected);
   const ghVendor = data.vendors.find((v) => v.vendor === 'google_home');
   const isGhConnected = Boolean(ghVendor?.connected);
+  const consoVendor = data.vendors.find((v) => v.vendor === 'conso_api');
+  const isConsoConfigured = Boolean(data.env.consoApiConfigured || consoVendor?.configured);
+  const isConsoConnected = Boolean(data.env.consoApiConnected || consoVendor?.connected);
+
+  async function handleSaveConsoApiConfig(input: {
+    prm: string;
+    token?: string;
+    subscribedKva: number | null;
+  }): Promise<boolean> {
+    setSavingConsoApi(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/vendors/conso-api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        throw new Error(json.error || t('consoApi.errConfig'));
+      }
+      setSyncMessage({ ok: true, text: t('consoApi.okConfig') });
+      await onRefresh();
+      return true;
+    } catch (err) {
+      setSyncMessage({
+        ok: false,
+        text: err instanceof Error ? err.message : t('consoApi.errConfig'),
+      });
+      return false;
+    } finally {
+      setSavingConsoApi(false);
+    }
+  }
+
+  async function handleSyncConsoApi() {
+    setSyncingConsoApi(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/vendors/conso-api/sync', { method: 'POST' });
+      const json = (await res.json()) as { message?: string; error?: string };
+      if (!res.ok) {
+        throw new Error(json.error || t('systems.errSync', { vendor: 'Linky (Conso API)' }));
+      }
+      setSyncMessage({
+        ok: true,
+        text: json.message || t('systems.okSync', { vendor: 'Linky (Conso API)' }),
+      });
+      await onRefresh();
+    } catch (err) {
+      setSyncMessage({
+        ok: false,
+        text:
+          err instanceof Error
+            ? err.message
+            : t('systems.errVendor', { vendor: 'Linky (Conso API)' }),
+      });
+    } finally {
+      setSyncingConsoApi(false);
+    }
+  }
+
+  async function handleDisconnectConsoApi() {
+    setDisconnectingConsoApi(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/vendors/conso-api/disconnect', { method: 'POST' });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        throw new Error(json.error || t('systems.errDisconnect', { vendor: 'Linky (Conso API)' }));
+      }
+      setSyncMessage({ ok: true, text: t('systems.okDisconnect', { vendor: 'Linky (Conso API)' }) });
+      await onRefresh();
+    } catch (err) {
+      setSyncMessage({
+        ok: false,
+        text:
+          err instanceof Error
+            ? err.message
+            : t('systems.errDisconnectGeneric', { vendor: 'Linky (Conso API)' }),
+      });
+    } finally {
+      setDisconnectingConsoApi(false);
+    }
+  }
 
   const extraGenericVendorIds = VENDOR_IDS.filter((id) => !CUSTOM_RENDERED_VENDORS.has(id));
   const visibleGenericVendors = extraGenericVendorIds.filter((id) => {
@@ -705,6 +798,7 @@ export function SystemsTab({
     (showXSense ? 1 : 0) +
     (showXiaomi ? 1 : 0) +
     (showGoogleHomeApi ? 1 : 0) +
+    (showConsoApi ? 1 : 0) +
     visibleGenericVendors.length;
 
   const syncGridClass =
@@ -759,6 +853,12 @@ export function SystemsTab({
       targets.push({
         label: VENDOR_REGISTRY.google_home.label,
         endpoint: '/api/vendors/google-home/sync',
+      });
+    }
+    if (data.env.mode === 'demo' || isConsoConfigured) {
+      targets.push({
+        label: VENDOR_REGISTRY.conso_api.label,
+        endpoint: '/api/vendors/conso-api/sync',
       });
     }
     for (const id of visibleGenericVendors) {
@@ -1358,6 +1458,26 @@ export function SystemsTab({
             onSync={() => void handleSyncGoogleHome()}
             onDisconnect={() => void handleDisconnectGoogleHome()}
             onOpenGuide={onOpenGoogleGuide}
+          />
+        )}
+
+        {/* Compteur Linky (Conso API / Enedis) */}
+        {showConsoApi && (
+          <ConsoApiVendorCard
+            mode={data.env.mode}
+            summary={consoVendor}
+            configured={isConsoConfigured}
+            connected={isConsoConnected}
+            prmMasked={data.env.consoApiPrmMasked ?? null}
+            subscribedKva={data.env.consoApiSubscribedKva ?? null}
+            meter={data.meter}
+            syncing={syncingConsoApi}
+            disconnecting={disconnectingConsoApi}
+            savingConfig={savingConsoApi}
+            onSaveConfig={handleSaveConsoApiConfig}
+            onSync={() => void handleSyncConsoApi()}
+            onDisconnect={() => void handleDisconnectConsoApi()}
+            onOpenGuide={onOpenConsoApiGuide}
           />
         )}
 

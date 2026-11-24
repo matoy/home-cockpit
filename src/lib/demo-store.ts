@@ -6,6 +6,7 @@ import type {
   DeviceRecord,
   DeviceVendorLinkRecord,
   GoogleHomeMode,
+  MeterReadingRecord,
   MetricReadingRecord,
   RoomRecord,
   TariffPeriodRecord,
@@ -19,6 +20,7 @@ export interface DemoVendorConnectionState {
   | 'oauth_prod'
   | 'oauth_simulator'
   | 'oauth_cn'
+  | 'bearer_token'
   | GoogleHomeMode;
   connected: boolean;
   config?: Record<string, unknown>;
@@ -32,11 +34,14 @@ interface DemoState {
   vendorLinks: DeviceVendorLinkRecord[];
   vendorConnections: Record<VendorId, DemoVendorConnectionState>;
   readings: MetricReadingRecord[];
+  meterReadings: MeterReadingRecord[];
+  consoApiConfig: { prm: string; token: string; subscribedKva: number | null } | null;
   tariffs: TariffPeriodRecord[];
   automations: AutomationRecord[];
   logs: CollectionLogRecord[];
   nextRoomId: number;
   nextReadingId: number;
+  nextMeterReadingId: number;
   nextTariffId: number;
   nextLogId: number;
   nextLinkId: number;
@@ -1816,6 +1821,113 @@ function createInitialDemoState(): DemoState {
   for (const r of readings) {
     lastByDevice.set(r.deviceId, r);
   }
+
+  // Générer des relevés compteur Linky (Conso API) cohérents jusqu'à J-1 (décalage Enedis)
+  const demoPrm = '00000000001234';
+  const meterReadings: MeterReadingRecord[] = [];
+  let nextMeterReadingId = 1;
+  const parisDateFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const todayParisKey = parisDateFormatter.format(now);
+  const isoToDateKey = new Map<string, string>();
+  const getParisDateKey = (iso: string): string => {
+    let key = isoToDateKey.get(iso);
+    if (!key) {
+      key = parisDateFormatter.format(new Date(iso));
+      isoToDateKey.set(iso, key);
+    }
+    return key;
+  };
+
+  const daySlotEnergyMap = new Map<string, Map<string, number>>();
+  const dayTotalEnergyMap = new Map<string, number>();
+  const dayPeakMeasuredPowerMap = new Map<string, number>();
+  const slotTotalPowerMap = new Map<string, number>();
+
+  for (const r of readings) {
+    const dKey = getParisDateKey(r.recordedAt);
+    if (dKey >= todayParisKey) continue;
+    if (r.energyKwh !== null && r.energyKwh > 0) {
+      dayTotalEnergyMap.set(dKey, (dayTotalEnergyMap.get(dKey) ?? 0) + r.energyKwh);
+      const slotMap = daySlotEnergyMap.get(dKey) ?? new Map<string, number>();
+      slotMap.set(r.recordedAt, (slotMap.get(r.recordedAt) ?? 0) + r.energyKwh);
+      daySlotEnergyMap.set(dKey, slotMap);
+    }
+    if (r.powerW !== null && r.powerW > 0) {
+      slotTotalPowerMap.set(r.recordedAt, (slotTotalPowerMap.get(r.recordedAt) ?? 0) + r.powerW);
+    }
+  }
+  for (const [iso, slotPower] of slotTotalPowerMap.entries()) {
+    const dKey = getParisDateKey(iso);
+    const prevPeak = dayPeakMeasuredPowerMap.get(dKey) ?? 0;
+    if (slotPower > prevPeak) {
+      dayPeakMeasuredPowerMap.set(dKey, slotPower);
+    }
+  }
+
+  const publishedDates = Array.from(dayTotalEnergyMap.keys()).sort();
+  const recentCurveDates = new Set(publishedDates.slice(-7));
+
+  for (let dIdx = 0; dIdx < publishedDates.length; dIdx++) {
+    const dateKey = publishedDates[dIdx];
+    const measuredKwh = dayTotalEnergyMap.get(dateKey) ?? 0;
+    let meterDailyKwh = 0;
+
+    if (recentCurveDates.has(dateKey)) {
+      const slotMap = daySlotEnergyMap.get(dateKey) ?? new Map<string, number>();
+      const slots = Array.from(slotMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+      for (let sIdx = 0; sIdx < slots.length; sIdx++) {
+        const [slotIso, slotMeasuredKwh] = slots[sIdx];
+        const noise = pseudoNoise(dIdx * 100 + sIdx + 3);
+        // Poste non mesuré réaliste (box, VMC, éclairage, frigo/four): ~0.10-0.24 kWh par tranche 30 min
+        const baseUnmeasured = 0.08 + noise * 0.12;
+        const slotMeterKwh = Math.round((slotMeasuredKwh * 1.15 + baseUnmeasured) * 10000) / 10000;
+        meterDailyKwh += slotMeterKwh;
+        meterReadings.push({
+          id: nextMeterReadingId++,
+          pointId: demoPrm,
+          granularity: 'load_curve_30m',
+          recordedAt: slotIso,
+          dateKey,
+          energyKwh: slotMeterKwh,
+          powerW: Math.round(slotMeterKwh * 2000 * 10) / 10,
+        });
+      }
+    } else {
+      const noise = pseudoNoise(dIdx * 17 + 9);
+      meterDailyKwh = measuredKwh * 1.28 + 3.2 + noise * 1.4;
+    }
+
+    const [yy, mm, dd] = dateKey.split('-').map(Number);
+    const noonIso = new Date(Date.UTC(yy, mm - 1, dd, 11, 0, 0)).toISOString();
+    meterReadings.push({
+      id: nextMeterReadingId++,
+      pointId: demoPrm,
+      granularity: 'daily_kwh',
+      recordedAt: noonIso,
+      dateKey,
+      energyKwh: Math.round(meterDailyKwh * 1000) / 1000,
+      powerW: null,
+    });
+
+    const peakMeasuredW = dayPeakMeasuredPowerMap.get(dateKey) ?? 1800;
+    const peakNoise = pseudoNoise(dIdx * 31 + 5);
+    const maxPowerVa = Math.round(Math.max(3600, peakMeasuredW * 1.35 + 1100 + peakNoise * 1300));
+    const peakIso = new Date(Date.UTC(yy, mm - 1, dd, 18, 30, 0)).toISOString();
+    meterReadings.push({
+      id: nextMeterReadingId++,
+      pointId: demoPrm,
+      granularity: 'max_power_daily',
+      recordedAt: peakIso,
+      dateKey,
+      energyKwh: null,
+      powerW: maxPowerVa,
+    });
+  }
   for (const dev of devices) {
     const last = lastByDevice.get(dev.id);
     if (last) {
@@ -2180,6 +2292,13 @@ function createInitialDemoState(): DemoState {
       lastSyncedAt: syncedIso,
       lastError: null,
     },
+    conso_api: {
+      mode: 'bearer_token',
+      connected: true,
+      config: { prm: demoPrm, subscribedKva: 9, source: 'db' },
+      lastSyncedAt: syncedIso,
+      lastError: null,
+    },
   };
 
   return {
@@ -2188,11 +2307,14 @@ function createInitialDemoState(): DemoState {
     vendorLinks,
     vendorConnections,
     readings,
+    meterReadings,
+    consoApiConfig: { prm: demoPrm, token: 'demo-conso-api-token', subscribedKva: 9 },
     tariffs,
     automations: demoAutomations,
     logs,
     nextRoomId: rooms.length + 1,
     nextReadingId,
+    nextMeterReadingId,
     nextTariffId: tariffs.length + 1,
     nextLogId: logs.length + 1,
     nextLinkId,

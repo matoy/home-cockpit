@@ -168,3 +168,24 @@ export const alertEvents = pgTable('alert_events', {
   message: text('message').notNull(),
   lastSentAt: timestamp('last_sent_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const meterReadings = pgTable(
+  'meter_readings',
+  {
+    id: serial('id').primaryKey(),
+    pointId: text('point_id').notNull(),
+    granularity: text('granularity').notNull(), // 'daily_kwh' | 'load_curve_30m' | 'max_power_daily'
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+    dateKey: text('date_key').notNull(), // YYYY-MM-DD (Europe/Paris)
+    energyKwh: real('energy_kwh'),
+    powerW: real('power_w'),
+  },
+  (table) => [
+    uniqueIndex('idx_meter_readings_unique').on(
+      table.pointId,
+      table.granularity,
+      table.recordedAt
+    ),
+    index('idx_meter_readings_granularity_date').on(table.granularity, table.dateKey),
+  ]
+);

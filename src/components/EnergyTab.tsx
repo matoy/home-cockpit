@@ -16,7 +16,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Zap, Euro, Activity, Layers, Download, TrendingUp, Calendar } from 'lucide-react';
+import { Zap, Euro, Activity, Layers, Download, TrendingUp, Calendar, Gauge } from 'lucide-react';
 import { buildEnergyTimeSeriesCsv, triggerCsvDownload } from '@/lib/csv-export';
 import { useI18n } from '@/components/I18nProvider';
 import type { DashboardPayload } from '@/types';
@@ -40,11 +40,15 @@ const DEVICE_PALETTE = [
 ];
 
 export function EnergyTab({ data }: EnergyTabProps) {
-  const { t } = useI18n();
+  const { t, intlLocale } = useI18n();
   const [metric, setMetric] = useState<MetricType>('energy');
   const [groupBy, setGroupBy] = useState<GroupBy>('room');
 
-  const breakdown = groupBy === 'room' ? data.energyByRoom : data.energyByDevice;
+  const rawBreakdown = groupBy === 'room' ? data.energyByRoom : data.energyByDevice;
+  const breakdown = rawBreakdown.map((item) => ({
+    ...item,
+    name: item.isUnmeasured ? t('energy.unmeasuredLabel') : item.name,
+  }));
   const seriesKeys = breakdown.map((item, idx) => ({
     key: item.id,
     name: item.name,
@@ -148,6 +152,136 @@ export function EnergyTab({ data }: EnergyTabProps) {
           </button>
         </div>
       </div>
+
+      {/* Bandeau Compteur Linky (Conso API) : Couverture & Puissance max */}
+      {data.meter?.activeInCurrentView && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-2xl border border-lime-500/30 bg-slate-900/70 p-4 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="rounded-full border border-lime-500/40 bg-lime-500/15 px-2 py-0.5 text-[10px] font-semibold text-lime-300">
+                  Linky
+                </span>
+                <span className="text-xs font-semibold text-white">
+                  {t('energy.meterTitle')}
+                </span>
+              </div>
+              {data.meter.lastPublishedDate && (
+                <span className="text-[11px] text-slate-400">
+                  {t('energy.meterUntil', { date: data.meter.lastPublishedDate })}
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
+              <div>
+                <span className="text-slate-400">{t('energy.meterTotalLabel')} </span>
+                <span className="font-mono font-bold text-white">
+                  {data.meter.periodMeterEnergyKwh.toFixed(2)} kWh
+                </span>
+                <span className="text-emerald-400 font-mono ml-1">
+                  ({data.meter.periodMeterCostEur.toFixed(2)} €)
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400">{t('energy.meterMeasuredLabel')} </span>
+                <span className="font-mono font-semibold text-indigo-300">
+                  {data.meter.periodMeasuredEnergyKwh.toFixed(2)} kWh
+                  {data.meter.measuredCoveragePct !== null
+                    ? ` (${data.meter.measuredCoveragePct.toFixed(0)}%)`
+                    : ''}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400">{t('energy.meterUnmeasuredShort')} </span>
+                <span className="font-mono font-semibold text-slate-200">
+                  {data.meter.periodUnmeasuredEnergyKwh.toFixed(2)} kWh
+                </span>
+              </div>
+            </div>
+
+            {data.meter.todayLiveMeasuredKwh > 0 && (
+              <p className="text-[11px] text-slate-400">
+                {t('energy.meterTodayLiveNote', {
+                  kwh: data.meter.todayLiveMeasuredKwh.toFixed(2),
+                })}
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-semibold text-white">
+                <Gauge className="h-4 w-4 text-lime-400" />
+                {t('energy.meterMaxPowerTitle')}
+              </div>
+              {data.meter.subscribedPowerKva && (
+                <span className="text-[11px] font-mono text-slate-400">
+                  {t('energy.meterSubscribed', { kva: data.meter.subscribedPowerKva })}
+                </span>
+              )}
+            </div>
+
+            {data.meter.periodMaxPowerVa !== null ? (
+              <>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-lg font-bold font-mono text-white">
+                      {data.meter.periodMaxPowerVa.toLocaleString(intlLocale)} VA
+                    </span>
+                    {data.meter.periodMaxPowerAt && (
+                      <span className="text-[11px] text-slate-400">
+                        ({new Date(data.meter.periodMaxPowerAt).toLocaleDateString(intlLocale)})
+                      </span>
+                    )}
+                  </div>
+                  {data.meter.subscribedPowerKva && (() => {
+                    const pct = Math.round(
+                      (data.meter.periodMaxPowerVa / (data.meter.subscribedPowerKva * 1000)) * 100
+                    );
+                    return (
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                          pct >= 85
+                            ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                            : 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
+                        }`}
+                      >
+                        {t('energy.meterLoadPct', { pct })}
+                      </span>
+                    );
+                  })()}
+                </div>
+                {data.meter.subscribedPowerKva && (
+                  <div className="h-1.5 w-full rounded-full bg-slate-800 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${
+                        data.meter.periodMaxPowerVa / (data.meter.subscribedPowerKva * 1000) >= 0.85
+                          ? 'bg-amber-400'
+                          : 'bg-lime-400'
+                      }`}
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(
+                            3,
+                            Math.round(
+                              (data.meter.periodMaxPowerVa / (data.meter.subscribedPowerKva * 1000)) *
+                                100
+                            )
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-slate-500">{t('energy.meterNoMaxPower')}</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Comparaison période précédente & projection fin de mois */}
       {((data.kpis.energyDeltaPct !== null && data.kpis.energyDeltaPct !== undefined) ||

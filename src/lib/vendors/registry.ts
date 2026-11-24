@@ -9,6 +9,7 @@ export const VENDOR_IDS: readonly VendorId[] = [
   'xsense',
   'xiaomi',
   'google_home',
+  'conso_api',
 ];
 
 export type VendorAuthKind =
@@ -234,6 +235,28 @@ export const VENDOR_REGISTRY: Record<VendorId, VendorMeta> = {
     ],
     syncEndpoint: '/api/vendors/google-home/sync',
     disconnectEndpoint: '/api/vendors/google-home/disconnect',
+  },
+  conso_api: {
+    id: 'conso_api',
+    slug: 'conso-api',
+    label: 'Linky (Conso API)',
+    shortLabel: 'LK',
+    accentColor: '#84cc16',
+    badgeClass: 'border-lime-500/40 bg-lime-500/15 text-lime-300',
+    dotClass: 'bg-lime-400',
+    description:
+      'Compteur Linky via Conso API / Enedis (100 % lecture seule : conso totale J-1, courbe 30 min, puissance max VA)',
+    authKind: 'cloud_key',
+    capabilities: {
+      syncDevices: true,
+      collectTelemetry: true,
+      syncRooms: false,
+      supportsDisconnect: true,
+      domains: ['power'],
+    },
+    envVars: ['CONSO_API_TOKEN', 'CONSO_API_PRM', 'CONSO_API_SUBSCRIBED_KVA'],
+    syncEndpoint: '/api/vendors/conso-api/sync',
+    disconnectEndpoint: '/api/vendors/conso-api/disconnect',
   },
 };
 

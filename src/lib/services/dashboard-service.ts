@@ -5,6 +5,7 @@ import {
   collectionLogs,
   devices,
   deviceVendorLinks,
+  meterReadings,
   metricReadings,
   rooms,
   tariffPeriods,
@@ -17,6 +18,7 @@ import {
   mapDbAutomation,
   mapDbDevice,
   mapDbLog,
+  mapDbMeterReading,
   mapDbReading,
   mapDbRoom,
   mapDbTariff,
@@ -27,6 +29,7 @@ import {
   buildVendorConnectionSummariesFromState,
   VENDOR_SERVER_PLUGINS,
 } from '@/lib/services/vendors';
+import { loadEffectiveConsoApiConfig } from '@/lib/services/vendors/conso-api-sync';
 import { parseHomeConnectEnvFromMode } from '@/lib/services/vendors/home-connect-sync';
 import { normalizeTariffTimeline } from '@/lib/tariff-engine';
 import { getGoogleHomeConfig } from '@/lib/vendors/google-home-client';
@@ -158,7 +161,13 @@ export async function getDashboardData(
         ghState.connected,
         hcState.connected,
         daikinState.connected,
-        xiaomiState.connected
+        xiaomiState.connected,
+        {
+          configured: Boolean(state.consoApiConfig?.prm && state.consoApiConfig?.token),
+          connected: state.vendorConnections.conso_api.connected,
+          prm: state.consoApiConfig?.prm ?? null,
+          subscribedKva: state.consoApiConfig?.subscribedKva ?? null,
+        }
       ),
       googleHomeMode:
         ghState.mode === 'mcp' || ghState.mode === 'sdm'
@@ -188,6 +197,8 @@ export async function getDashboardData(
       devices: devicesWithLinks,
       vendors,
       readings: state.readings,
+      meterReadings: state.meterReadings,
+      subscribedPowerKva: state.consoApiConfig?.subscribedKva ?? null,
       tariffs: state.tariffs,
       automations: state.automations,
       logs: state.logs,
@@ -201,17 +212,38 @@ export async function getDashboardData(
   const prevStartDate = new Date(startMs - (endMs - startMs));
   const endDate = new Date(endMs);
 
-  const [roomRows, deviceRows, linkRows, connRows, mappedReadings, tariffRows, automationRows, logRows] =
-    await Promise.all([
-      db.select().from(rooms).orderBy(asc(rooms.id)),
-      db.select().from(devices).orderBy(asc(devices.name)),
-      db.select().from(deviceVendorLinks).orderBy(asc(deviceVendorLinks.id)),
-      db.select().from(vendorConnections),
-      loadMetricReadingsForWindow(db, range, prevStartDate, endDate, effectiveHours * 2),
-      db.select().from(tariffPeriods).orderBy(asc(tariffPeriods.startDate)),
-      db.select().from(automations).orderBy(asc(automations.name)),
-      db.select().from(collectionLogs).orderBy(desc(collectionLogs.executedAt)).limit(20),
-    ]);
+  const [
+    roomRows,
+    deviceRows,
+    linkRows,
+    connRows,
+    mappedReadings,
+    meterRows,
+    tariffRows,
+    automationRows,
+    logRows,
+  ] = await Promise.all([
+    db.select().from(rooms).orderBy(asc(rooms.id)),
+    db.select().from(devices).orderBy(asc(devices.name)),
+    db.select().from(deviceVendorLinks).orderBy(asc(deviceVendorLinks.id)),
+    db.select().from(vendorConnections),
+    loadMetricReadingsForWindow(db, range, prevStartDate, endDate, effectiveHours * 2),
+    db
+      .select()
+      .from(meterReadings)
+      .where(
+        range === 'custom'
+          ? and(
+              gte(meterReadings.recordedAt, prevStartDate),
+              lte(meterReadings.recordedAt, endDate)
+            )
+          : gte(meterReadings.recordedAt, prevStartDate)
+      )
+      .orderBy(asc(meterReadings.recordedAt)),
+    db.select().from(tariffPeriods).orderBy(asc(tariffPeriods.startDate)),
+    db.select().from(automations).orderBy(asc(automations.name)),
+    db.select().from(collectionLogs).orderBy(desc(collectionLogs.executedAt)).limit(20),
+  ]);
 
   const linksByDeviceId = new Map<string, DeviceVendorLinkRecord[]>();
   for (const row of linkRows) {
@@ -267,8 +299,20 @@ export async function getDashboardData(
       ? normalizeXiaomiRegion(xiaomiConnConfig.region)
       : xiaomiCfg.region;
 
+  const consoConn = connByVendor.get('conso_api');
+  const consoCfg = await loadEffectiveConsoApiConfig(db, consoConn);
+  const consoConnected = VENDOR_SERVER_PLUGINS.conso_api.isConnectedLive({
+    conn: consoConn,
+    devices: mappedDevices,
+  });
+
   const env: EnvStatus = {
-    ...getEnvStatus(ghConnected, hcConnected, daikinConnected, xiaomiConnected),
+    ...getEnvStatus(ghConnected, hcConnected, daikinConnected, xiaomiConnected, {
+      configured: consoCfg.config.configured,
+      connected: consoConnected,
+      prm: consoCfg.config.prm || null,
+      subscribedKva: consoCfg.config.subscribedKva,
+    }),
     xiaomiRegion,
     googleHomeMode: ghMode,
     homeConnectEnv: hcEnv,
@@ -290,6 +334,8 @@ export async function getDashboardData(
     devices: mappedDevices,
     vendors,
     readings: mappedReadings,
+    meterReadings: meterRows.map(mapDbMeterReading),
+    subscribedPowerKva: consoCfg.config.subscribedKva,
     tariffs: normalizeTariffTimeline(tariffRows.map(mapDbTariff)),
     automations: automationRows.map(mapDbAutomation),
     logs: logRows.map(mapDbLog),

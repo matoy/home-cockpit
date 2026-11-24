@@ -130,6 +130,10 @@ describe('backup-service Gzip export, preview, and restore', () => {
     });
     expect(replaceMetricsRes.imported.metricReadings).toBe(archiveOut.stats.metricReadings);
     expect(getDemoState().readings.length).toBe(archiveOut.stats.metricReadings);
+    expect(archiveOut.archive.data.meterReadings?.length ?? 0).toBeGreaterThan(0);
+    expect(getDemoState().meterReadings.length).toBe(
+      archiveOut.archive.data.meterReadings?.length ?? 0
+    );
 
     // Rejects invalid gzip or invalid JSON schema
     await expect(previewBackupArchive(Buffer.from('corrupt-bytes'))).rejects.toThrow();

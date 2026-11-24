@@ -5,6 +5,7 @@ import {
   collectionLogs,
   devices,
   deviceVendorLinks,
+  meterReadings,
   metricReadings,
   rooms,
   tariffPeriods,
@@ -15,6 +16,7 @@ import { getDemoState } from '@/lib/demo-store';
 import { sql } from 'drizzle-orm';
 import { extractMetricsFromStatus, getTuyaConfig, normalizeTuyaRule } from '@/lib/tuya-client';
 import { getDaikinConfig } from '@/lib/vendors/daikin-client';
+import { getConsoApiEnvConfig, maskPrm } from '@/lib/vendors/conso-api-client';
 import { getGoogleHomeConfig } from '@/lib/vendors/google-home-client';
 import { getHomeConnectConfig } from '@/lib/vendors/home-connect-client';
 import { getKasaConfig } from '@/lib/vendors/kasa-client';
@@ -34,6 +36,8 @@ import type {
   EnergyMode,
   EnergySource,
   EnvStatus,
+  MeterReadingGranularity,
+  MeterReadingRecord,
   MetricReadingRecord,
   RawDpStatus,
   RoomRecord,
@@ -60,7 +64,13 @@ export function getEnvStatus(
   googleHomeConnected = false,
   homeConnectConnected = false,
   daikinConnected = false,
-  xiaomiConnected = false
+  xiaomiConnected = false,
+  consoApiState?: {
+    configured?: boolean;
+    connected?: boolean;
+    prm?: string | null;
+    subscribedKva?: number | null;
+  }
 ): EnvStatus {
   const tuya = getTuyaConfig();
   const kasa = getKasaConfig();
@@ -70,8 +80,12 @@ export function getEnvStatus(
   const xsense = getXSenseConfig();
   const xiaomi = getXiaomiConfig();
   const google = getGoogleHomeConfig();
+  const consoApi = getConsoApiEnvConfig();
   const oidc = getOidcConfig();
   const databaseConfigured = isDatabaseConfigured();
+  const effectiveConsoConfigured = consoApiState?.configured ?? consoApi.configured;
+  const effectiveConsoPrm = consoApiState?.prm ?? (consoApi.prm || null);
+  const effectiveConsoKva = consoApiState?.subscribedKva ?? consoApi.subscribedKva;
   return {
     mode: databaseConfigured ? 'live' : 'demo',
     databaseConfigured,
@@ -100,6 +114,10 @@ export function getEnvStatus(
     googleHomeMode: google.defaultMode,
     googleHomeConnected: google.apiEnabled && googleHomeConnected,
     googleSdmProjectConfigured: Boolean(google.sdmProjectId),
+    consoApiConfigured: effectiveConsoConfigured,
+    consoApiConnected: Boolean(consoApiState?.connected),
+    consoApiPrmMasked: maskPrm(effectiveConsoPrm),
+    consoApiSubscribedKva: effectiveConsoKva,
   };
 }
 
@@ -162,6 +180,21 @@ export function mapDbDevice(
     lastHumidityPct: row.lastHumidityPct,
     lastBatteryPct: row.lastBatteryPct,
     lastContactOpen: row.lastContactOpen,
+  };
+}
+
+export function mapDbMeterReading(row: typeof meterReadings.$inferSelect): MeterReadingRecord {
+  const gran = row.granularity;
+  const granularity: MeterReadingGranularity =
+    gran === 'load_curve_30m' || gran === 'max_power_daily' ? gran : 'daily_kwh';
+  return {
+    id: row.id,
+    pointId: row.pointId,
+    granularity,
+    recordedAt: row.recordedAt.toISOString(),
+    dateKey: row.dateKey,
+    energyKwh: row.energyKwh,
+    powerW: row.powerW,
   };
 }
 
@@ -286,6 +319,7 @@ export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
             AND to_regclass('public.device_vendor_links') IS NOT NULL
             AND to_regclass('public.vendor_connections') IS NOT NULL
             AND to_regclass('public.alert_events') IS NOT NULL
+            AND to_regclass('public.meter_readings') IS NOT NULL
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'devices' AND column_name = 'systems')
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'devices' AND column_name = 'ignore_offline_alert')
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'devices' AND column_name = 'exclude_from_totals')
@@ -484,6 +518,23 @@ export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
           "message" text NOT NULL,
           "last_sent_at" timestamp with time zone DEFAULT now() NOT NULL
         )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS "meter_readings" (
+          "id" serial PRIMARY KEY NOT NULL,
+          "point_id" text NOT NULL,
+          "granularity" text NOT NULL,
+          "recorded_at" timestamp with time zone NOT NULL,
+          "date_key" text NOT NULL,
+          "energy_kwh" real,
+          "power_w" real
+        )
+      `);
+      await db.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS "idx_meter_readings_unique" ON "meter_readings" ("point_id", "granularity", "recorded_at")
+      `);
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS "idx_meter_readings_granularity_date" ON "meter_readings" ("granularity", "date_key")
       `);
       await db.execute(sql`
         INSERT INTO "device_vendor_links" ("device_id", "vendor", "external_id", "external_name", "is_primary_telemetry")

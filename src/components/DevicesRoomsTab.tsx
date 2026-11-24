@@ -365,6 +365,7 @@ export function DevicesRoomsTab({
       xsense: 0,
       xiaomi: 0,
       google_home: 0,
+      conso_api: 0,
       multi: 0,
       manual: 0,
     };

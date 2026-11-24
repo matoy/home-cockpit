@@ -24,6 +24,8 @@ import type {
   EnergyBreakdownItem,
   EnrichedAutomation,
   EnvStatus,
+  LinkyMeterSummary,
+  MeterReadingRecord,
   MetricReadingRecord,
   RoomRecord,
   RoomSummary,
@@ -298,14 +300,14 @@ export function buildAutomationsPayload(
     selectedSystem === 'all'
       ? roomScopedRules
       : roomScopedRules.filter((r) => {
-          if ((r.vendor ?? 'tuya') === selectedSystem) return true;
-          return [...r.triggerDevices, ...r.targetDevices].some((ref) => {
-            const dev = deviceMap.get(ref.deviceId);
-            return dev
-              ? normalizeSystems(dev.systems, dev.primaryVendor).includes(selectedSystem)
-              : false;
-          });
+        if ((r.vendor ?? 'tuya') === selectedSystem) return true;
+        return [...r.triggerDevices, ...r.targetDevices].some((ref) => {
+          const dev = deviceMap.get(ref.deviceId);
+          return dev
+            ? normalizeSystems(dev.systems, dev.primaryVendor).includes(selectedSystem)
+            : false;
         });
+      });
 
   // Détection des conflits / chevauchements entre automatisations actives ciblant le même appareil
   const targetRulesByDevice = new Map<string, EnrichedAutomation[]>();
@@ -488,9 +490,9 @@ export function buildAutomationsPayload(
   const lastSyncedAt =
     scopedRules.length > 0
       ? scopedRules.reduce(
-          (latest, r) => (r.syncedAt > latest ? r.syncedAt : latest),
-          scopedRules[0].syncedAt
-        )
+        (latest, r) => (r.syncedAt > latest ? r.syncedAt : latest),
+        scopedRules[0].syncedAt
+      )
       : null;
 
   return {
@@ -527,6 +529,8 @@ export function buildDashboardPayload(params: {
   devices: DeviceRecord[];
   vendors?: VendorConnectionSummary[];
   readings: MetricReadingRecord[];
+  meterReadings?: MeterReadingRecord[];
+  subscribedPowerKva?: number | null;
   tariffs: TariffPeriodRecord[];
   automations?: AutomationRecord[];
   logs: CollectionLogRecord[];
@@ -543,6 +547,8 @@ export function buildDashboardPayload(params: {
     devices,
     vendors = [],
     readings,
+    meterReadings = [],
+    subscribedPowerKva = null,
     tariffs,
     automations = [],
     logs,
@@ -862,6 +868,292 @@ export function buildDashboardPayload(params: {
     }
   }
 
+  // Intégration compteur Linky (Conso API) : référence globale sur jours publiés + poste « Autres / Non mesuré »
+  const energyMeterReadings = meterReadings.filter(
+    (m) => (m.granularity === 'daily_kwh' || m.granularity === 'load_curve_30m') && m.energyKwh !== null
+  );
+  const curveDates = new Set(
+    energyMeterReadings.filter((m) => m.granularity === 'load_curve_30m').map((m) => m.dateKey)
+  );
+  const publishedMeterDates = new Set(energyMeterReadings.map((m) => m.dateKey));
+  const sortedPublishedDates = Array.from(publishedMeterDates).sort();
+  const lastPublishedDate =
+    sortedPublishedDates.length > 0 ? sortedPublishedDates[sortedPublishedDates.length - 1] : null;
+
+  const meterEnabled = Boolean(env.consoApiConfigured || env.consoApiConnected || energyMeterReadings.length > 0);
+  const meterActiveInView =
+    selectedRoomNumeric === null &&
+    (selectedSystem === 'all' || selectedSystem === 'conso_api') &&
+    energyMeterReadings.length > 0;
+
+  let periodMeterEnergyKwh = 0;
+  let periodMeterCostEur = 0;
+  let periodMeasuredOnMeterDaysKwh = 0;
+  let periodUnmeasuredEnergyKwh = 0;
+  let periodUnmeasuredCostEur = 0;
+  let todayLiveMeasuredKwh = 0;
+
+  if (meterActiveInView) {
+    // Calculer les énergies/coûts mesurés par bucket et distinguer jours publiés Linky vs jour J temps réel
+    const measuredByBucket = new Map<
+      string,
+      { energyKwh: number; costEur: number; hpKwh: number; hcKwh: number; baseKwh: number; hpCost: number; hcCost: number; baseCost: number }
+    >();
+    const dayPeriodMixByDate = new Map<
+      string,
+      { hpKwh: number; hcKwh: number; baseKwh: number; totalKwh: number }
+    >();
+
+    for (const r of filteredReadings) {
+      const dev = deviceMap.get(r.deviceId);
+      if (!dev || dev.excludeFromTotals) continue;
+      const e = r.energyKwh ?? 0;
+      if (e <= 0) continue;
+      const dt = new Date(r.recordedAt);
+      const { dateStr } = getParisDateAndTime(dt);
+      const { key: bk } = getBucketInfo(dt, range, effectiveHours);
+      const c = computeReadingCost(dt, e, tariffs);
+
+      const mb = measuredByBucket.get(bk) ?? {
+        energyKwh: 0,
+        costEur: 0,
+        hpKwh: 0,
+        hcKwh: 0,
+        baseKwh: 0,
+        hpCost: 0,
+        hcCost: 0,
+        baseCost: 0,
+      };
+      mb.energyKwh += e;
+      mb.costEur += c.costEur;
+      if (c.periodType === 'HP') {
+        mb.hpKwh += e;
+        mb.hpCost += c.costEur;
+      } else if (c.periodType === 'HC') {
+        mb.hcKwh += e;
+        mb.hcCost += c.costEur;
+      } else {
+        mb.baseKwh += e;
+        mb.baseCost += c.costEur;
+      }
+      measuredByBucket.set(bk, mb);
+
+      const dm = dayPeriodMixByDate.get(dateStr) ?? {
+        hpKwh: 0,
+        hcKwh: 0,
+        baseKwh: 0,
+        totalKwh: 0,
+      };
+      dm.totalKwh += e;
+      if (c.periodType === 'HP') dm.hpKwh += e;
+      else if (c.periodType === 'HC') dm.hcKwh += e;
+      else dm.baseKwh += e;
+      dayPeriodMixByDate.set(dateStr, dm);
+
+      if (publishedMeterDates.has(dateStr)) {
+        periodMeasuredOnMeterDaysKwh += e;
+      } else if (!lastPublishedDate || dateStr > lastPublishedDate) {
+        todayLiveMeasuredKwh += e;
+      }
+    }
+
+    const meterByBucket = new Map<
+      string,
+      {
+        label: string;
+        energyKwh: number;
+        costEur: number;
+        hpKwh: number;
+        hcKwh: number;
+        baseKwh: number;
+        hpCost: number;
+        hcCost: number;
+        baseCost: number;
+      }
+    >();
+
+    for (const m of energyMeterReadings) {
+      const usePoint =
+        m.granularity === 'load_curve_30m' ||
+        (m.granularity === 'daily_kwh' && !curveDates.has(m.dateKey));
+      if (!usePoint) continue;
+
+      const ts = new Date(m.recordedAt).getTime();
+      if (ts < startMs || ts > endMs) continue;
+
+      const e = m.energyKwh ?? 0;
+      if (e <= 0) continue;
+      const dt = new Date(ts);
+      const { key: bk, label: bLabel } = getBucketInfo(dt, range, effectiveHours);
+
+      const acc = meterByBucket.get(bk) ?? {
+        label: bLabel,
+        energyKwh: 0,
+        costEur: 0,
+        hpKwh: 0,
+        hcKwh: 0,
+        baseKwh: 0,
+        hpCost: 0,
+        hcCost: 0,
+        baseCost: 0,
+      };
+
+      if (m.granularity === 'load_curve_30m') {
+        const c = computeReadingCost(dt, e, tariffs);
+        acc.energyKwh += e;
+        acc.costEur += c.costEur;
+        if (c.periodType === 'HP') {
+          acc.hpKwh += e;
+          acc.hpCost += c.costEur;
+        } else if (c.periodType === 'HC') {
+          acc.hcKwh += e;
+          acc.hcCost += c.costEur;
+        } else {
+          acc.baseKwh += e;
+          acc.baseCost += c.costEur;
+        }
+      } else {
+        // Repli daily_kwh (> 7j) : si des données HP/HC existent sur ce jour, pondérer HP vs HC
+        const dm = dayPeriodMixByDate.get(m.dateKey);
+        if (dm && dm.totalKwh > 0 && (dm.hpKwh > 0 || dm.hcKwh > 0)) {
+          const hpRatio = dm.hpKwh / dm.totalKwh;
+          const hcRatio = dm.hcKwh / dm.totalKwh;
+          const hpPart = e * hpRatio;
+          const hcPart = e * hcRatio;
+          const basePart = Math.max(0, e - hpPart - hcPart);
+          const middayCost = computeReadingCost(dt, e, tariffs);
+          acc.energyKwh += e;
+          if (middayCost.periodType === 'BASE') {
+            acc.costEur += middayCost.costEur;
+            acc.baseKwh += e;
+            acc.baseCost += middayCost.costEur;
+          } else {
+            const hpDt = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate(), 12, 0, 0));
+            const hcDt = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate(), 2, 0, 0));
+            const hpC = computeReadingCost(hpDt, hpPart, tariffs);
+            const hcC = computeReadingCost(hcDt, hcPart, tariffs);
+            const bC = computeReadingCost(dt, basePart, tariffs);
+            acc.costEur += hpC.costEur + hcC.costEur + bC.costEur;
+            acc.hpKwh += hpPart;
+            acc.hcKwh += hcPart;
+            acc.baseKwh += basePart;
+            acc.hpCost += hpC.costEur;
+            acc.hcCost += hcC.costEur;
+            acc.baseCost += bC.costEur;
+          }
+        } else {
+          const c = computeReadingCost(dt, e, tariffs);
+          acc.energyKwh += e;
+          acc.costEur += c.costEur;
+          if (c.periodType === 'HP') {
+            acc.hpKwh += e;
+            acc.hpCost += c.costEur;
+          } else if (c.periodType === 'HC') {
+            acc.hcKwh += e;
+            acc.hcCost += c.costEur;
+          } else {
+            acc.baseKwh += e;
+            acc.baseCost += c.costEur;
+          }
+        }
+      }
+
+      meterByBucket.set(bk, acc);
+      periodMeterEnergyKwh += e;
+    }
+
+    for (const [bk, mAcc] of meterByBucket.entries()) {
+      periodMeterCostEur += mAcc.costEur;
+      const mb = measuredByBucket.get(bk);
+      const measuredE = mb?.energyKwh ?? 0;
+      const measuredC = mb?.costEur ?? 0;
+      const unmKwh = Math.max(0, mAcc.energyKwh - measuredE);
+      const unmCost = Math.max(0, mAcc.costEur - measuredC);
+
+      if (unmKwh > 0.0001 || unmCost > 0.001) {
+        let targetBucket = buckets.get(bk);
+        if (!targetBucket) {
+          targetBucket = {
+            bucket: bk,
+            label: mAcc.label,
+            byRoomEnergy: {},
+            byRoomCost: {},
+            byRoomDevicePower: {},
+            byDeviceEnergy: {},
+            byDeviceCost: {},
+            byDevicePower: {},
+            byRoomTemp: {},
+            byRoomHumidity: {},
+          };
+          buckets.set(bk, targetBucket);
+        }
+
+        targetBucket.byRoomEnergy.unmeasured =
+          (targetBucket.byRoomEnergy.unmeasured ?? 0) + unmKwh;
+        targetBucket.byRoomCost.unmeasured =
+          (targetBucket.byRoomCost.unmeasured ?? 0) + unmCost;
+        targetBucket.byDeviceEnergy.unmeasured =
+          (targetBucket.byDeviceEnergy.unmeasured ?? 0) + unmKwh;
+        targetBucket.byDeviceCost.unmeasured =
+          (targetBucket.byDeviceCost.unmeasured ?? 0) + unmCost;
+
+        periodUnmeasuredEnergyKwh += unmKwh;
+        periodUnmeasuredCostEur += unmCost;
+        periodEnergyKwh += unmKwh;
+        periodCostEur += unmCost;
+
+        const surplusHp = Math.max(0, mAcc.hpKwh - (mb?.hpKwh ?? 0));
+        const surplusHc = Math.max(0, mAcc.hcKwh - (mb?.hcKwh ?? 0));
+        const surplusBase = Math.max(0, mAcc.baseKwh - (mb?.baseKwh ?? 0));
+        const surplusSum = surplusHp + surplusHc + surplusBase;
+        if (surplusSum > 0) {
+          hpEnergyKwh += unmKwh * (surplusHp / surplusSum);
+          hcEnergyKwh += unmKwh * (surplusHc / surplusSum);
+          baseEnergyKwh += unmKwh * (surplusBase / surplusSum);
+          const surplusHpCost = Math.max(0, mAcc.hpCost - (mb?.hpCost ?? 0));
+          const surplusHcCost = Math.max(0, mAcc.hcCost - (mb?.hcCost ?? 0));
+          const surplusBaseCost = Math.max(0, mAcc.baseCost - (mb?.baseCost ?? 0));
+          const costSum = surplusHpCost + surplusHcCost + surplusBaseCost;
+          if (costSum > 0) {
+            hpCostEur += unmCost * (surplusHpCost / costSum);
+            hcCostEur += unmCost * (surplusHcCost / costSum);
+            baseCostEur += unmCost * (surplusBaseCost / costSum);
+          } else {
+            baseCostEur += unmCost;
+          }
+        } else {
+          baseEnergyKwh += unmKwh;
+          baseCostEur += unmCost;
+        }
+      }
+    }
+
+    if (periodUnmeasuredEnergyKwh > 0.001) {
+      const avgPowerUnmeasured =
+        effectiveHours > 0 ? round2((periodUnmeasuredEnergyKwh * 1000) / effectiveHours) : 0;
+      energyByRoomAcc.set('unmeasured', {
+        id: 'unmeasured',
+        name: 'Autres / Non mesuré',
+        color: '#64748b',
+        energyKwh: periodUnmeasuredEnergyKwh,
+        costEur: periodUnmeasuredCostEur,
+        powerSamples: avgPowerUnmeasured > 0 ? [avgPowerUnmeasured] : [],
+        maxPowerW: avgPowerUnmeasured,
+      });
+      energyByDeviceAcc.set('unmeasured', {
+        id: 'unmeasured',
+        name: 'Autres / Non mesuré',
+        color: '#64748b',
+        roomName: 'Linky',
+        excludeFromTotals: false,
+        energyKwh: periodUnmeasuredEnergyKwh,
+        costEur: periodUnmeasuredCostEur,
+        powerSamples: avgPowerUnmeasured > 0 ? [avgPowerUnmeasured] : [],
+        maxPowerW: avgPowerUnmeasured,
+      });
+    }
+  }
+
   const timeSeries: TimeSeriesPoint[] = Array.from(buckets.values())
     .sort((a, b) => a.bucket.localeCompare(b.bucket))
     .map((b) => {
@@ -938,6 +1230,7 @@ export function buildDashboardPayload(params: {
       id: item.id,
       name: item.name,
       color: item.color,
+      ...(item.id === 'unmeasured' ? { isUnmeasured: true } : {}),
       energyKwh: round3(item.energyKwh),
       costEur: round2(item.costEur),
       avgPowerW:
@@ -956,6 +1249,7 @@ export function buildDashboardPayload(params: {
       color: item.color,
       roomName: item.roomName,
       excludeFromTotals: item.excludeFromTotals,
+      ...(item.id === 'unmeasured' ? { isUnmeasured: true } : {}),
       energyKwh: round3(item.energyKwh),
       costEur: round2(item.costEur),
       avgPowerW:
@@ -1028,10 +1322,61 @@ export function buildDashboardPayload(params: {
     }
   }
 
+  let prevMeterReadingCount = 0;
+  if (meterActiveInView) {
+    const prevMeasuredByBucket = new Map<string, { energyKwh: number; costEur: number }>();
+    for (const r of readings) {
+      if (!filteredDeviceIds.has(r.deviceId)) continue;
+      const dev = deviceMap.get(r.deviceId);
+      if (!dev || dev.excludeFromTotals) continue;
+      const ts = new Date(r.recordedAt).getTime();
+      if (ts < prevStartMs || ts >= startMs) continue;
+      const energy = r.energyKwh ?? 0;
+      if (energy <= 0) continue;
+      const dt = new Date(ts);
+      const { key: bk } = getBucketInfo(dt, range, effectiveHours);
+      const cur = prevMeasuredByBucket.get(bk) ?? { energyKwh: 0, costEur: 0 };
+      cur.energyKwh += energy;
+      cur.costEur += computeReadingCost(dt, energy, tariffs).costEur;
+      prevMeasuredByBucket.set(bk, cur);
+    }
+
+    const prevMeterByBucket = new Map<string, { energyKwh: number; costEur: number }>();
+    for (const m of energyMeterReadings) {
+      const usePoint =
+        m.granularity === 'load_curve_30m' ||
+        (m.granularity === 'daily_kwh' && !curveDates.has(m.dateKey));
+      if (!usePoint) continue;
+      const ts = new Date(m.recordedAt).getTime();
+      if (ts < prevStartMs || ts >= startMs) continue;
+      const e = m.energyKwh ?? 0;
+      if (e <= 0) continue;
+      prevMeterReadingCount += 1;
+      const dt = new Date(ts);
+      const { key: bk } = getBucketInfo(dt, range, effectiveHours);
+      const cur = prevMeterByBucket.get(bk) ?? { energyKwh: 0, costEur: 0 };
+      cur.energyKwh += e;
+      cur.costEur += computeReadingCost(dt, e, tariffs).costEur;
+      prevMeterByBucket.set(bk, cur);
+    }
+
+    for (const [bk, mBucket] of prevMeterByBucket.entries()) {
+      const measBucket = prevMeasuredByBucket.get(bk);
+      const unmKwh = Math.max(0, mBucket.energyKwh - (measBucket?.energyKwh ?? 0));
+      const unmCost = Math.max(0, mBucket.costEur - (measBucket?.costEur ?? 0));
+      prevEnergyKwhAcc += unmKwh;
+      prevCostEurAcc += unmCost;
+    }
+  }
+
   const prevPeriodEnergyKwh =
-    prevReadingCount > 0 && prevEnergyKwhAcc > 0 ? round3(prevEnergyKwhAcc) : null;
+    (prevReadingCount > 0 || prevMeterReadingCount > 0) && prevEnergyKwhAcc > 0
+      ? round3(prevEnergyKwhAcc)
+      : null;
   const prevPeriodCostEur =
-    prevReadingCount > 0 && prevEnergyKwhAcc > 0 ? round2(prevCostEurAcc) : null;
+    (prevReadingCount > 0 || prevMeterReadingCount > 0) && prevEnergyKwhAcc > 0
+      ? round2(prevCostEurAcc)
+      : null;
   const energyDeltaPct =
     prevPeriodEnergyKwh !== null && prevPeriodEnergyKwh > 0
       ? round2(((periodEnergyKwh - prevPeriodEnergyKwh) / prevPeriodEnergyKwh) * 100)
@@ -1059,14 +1404,14 @@ export function buildDashboardPayload(params: {
   const avgTempC =
     roomsWithTemp.length > 0
       ? round2(
-          roomsWithTemp.reduce((s, rs) => s + (rs.currentTempC ?? 0), 0) / roomsWithTemp.length
-        )
+        roomsWithTemp.reduce((s, rs) => s + (rs.currentTempC ?? 0), 0) / roomsWithTemp.length
+      )
       : null;
   const avgHumidityPct =
     roomsWithHum.length > 0
       ? round2(
-          roomsWithHum.reduce((s, rs) => s + (rs.currentHumidityPct ?? 0), 0) / roomsWithHum.length
-        )
+        roomsWithHum.reduce((s, rs) => s + (rs.currentHumidityPct ?? 0), 0) / roomsWithHum.length
+      )
       : null;
   const climateAlertsCount = roomSummaries.filter(
     (rs) => rs.comfort.label !== 'Optimal' && rs.comfort.label !== 'Aucun capteur'
@@ -1302,6 +1647,52 @@ export function buildDashboardPayload(params: {
     ),
   };
 
+  const dailyMaxPowers: LinkyMeterSummary['dailyMaxPowers'] = [];
+  let periodMaxPowerVa: number | null = null;
+  let periodMaxPowerAt: string | null = null;
+  if (meterEnabled) {
+    for (const m of meterReadings) {
+      if (m.granularity !== 'max_power_daily' || m.powerW === null) continue;
+      const ts = new Date(m.recordedAt).getTime();
+      if (ts < startMs || ts > endMs) continue;
+      const val = Math.round(m.powerW);
+      const [, mm, dd] = m.dateKey.split('-');
+      dailyMaxPowers.push({
+        dateKey: m.dateKey,
+        label: mm && dd ? `${dd}/${mm}` : m.dateKey,
+        maxPowerVa: val,
+        recordedAt: m.recordedAt,
+      });
+      if (periodMaxPowerVa === null || val > periodMaxPowerVa) {
+        periodMaxPowerVa = val;
+        periodMaxPowerAt = m.recordedAt;
+      }
+    }
+    dailyMaxPowers.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+  }
+
+  const meterSummary: LinkyMeterSummary | undefined = meterEnabled
+    ? {
+      enabled: true,
+      activeInCurrentView: meterActiveInView,
+      lastPublishedDate,
+      periodMeterEnergyKwh: round3(periodMeterEnergyKwh),
+      periodMeterCostEur: round2(periodMeterCostEur),
+      periodMeasuredEnergyKwh: round3(periodMeasuredOnMeterDaysKwh),
+      periodUnmeasuredEnergyKwh: round3(periodUnmeasuredEnergyKwh),
+      periodUnmeasuredCostEur: round2(periodUnmeasuredCostEur),
+      measuredCoveragePct:
+        periodMeterEnergyKwh > 0
+          ? Math.min(100, round2((periodMeasuredOnMeterDaysKwh / periodMeterEnergyKwh) * 100))
+          : null,
+      todayLiveMeasuredKwh: round3(todayLiveMeasuredKwh),
+      subscribedPowerKva: env.consoApiSubscribedKva ?? subscribedPowerKva ?? null,
+      periodMaxPowerVa,
+      periodMaxPowerAt,
+      dailyMaxPowers,
+    }
+    : undefined;
+
   const automationsPayload = buildAutomationsPayload(
     automations,
     devices,
@@ -1356,6 +1747,7 @@ export function buildDashboardPayload(params: {
     contacts,
     covers,
     automations: automationsPayload,
+    ...(meterSummary ? { meter: meterSummary } : {}),
     logs: logs.slice(0, 20),
   };
 }

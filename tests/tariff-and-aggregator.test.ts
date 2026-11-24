@@ -415,4 +415,199 @@ describe('tariff-engine & dashboard aggregator', () => {
     expect(payload.kpis.projectedMonthEnergyKwh).toBeCloseTo(1.5 * 31, 1);
     expect(payload.kpis.projectedMonthCostEur).toBeGreaterThan(15);
   });
+
+  it('integrates Linky meter reference with J-1 smart toggle, unmeasured load, max VA peak, and room filter isolation', () => {
+    const now = new Date('2026-01-15T14:00:00.000Z');
+    const rooms: RoomRecord[] = [
+      {
+        id: 1,
+        name: 'Salon',
+        icon: 'Sofa',
+        color: '#6366f1',
+        targetTempMin: 19,
+        targetTempMax: 22,
+        targetHumidityMin: 40,
+        targetHumidityMax: 60,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ];
+    const devices: DeviceRecord[] = [
+      {
+        id: 'dev1',
+        name: 'Plug 1',
+        customName: null,
+        primaryVendor: 'tuya',
+        systems: ['tuya'],
+        roomId: 1,
+        category: 'power',
+        tuyaCategory: 'cz',
+        productName: null,
+        ipAddress: null,
+        macAddress: null,
+        isOnline: true,
+        isMonitored: true,
+        excludeFromTotals: false,
+        energyMode: 'hybrid',
+        dpConfig: {},
+        lastRawStatus: null,
+        lastSeenAt: now.toISOString(),
+        lastPowerW: 200,
+        lastVoltageV: 230,
+        lastAddEleKwh: 2,
+        lastTempC: null,
+        lastHumidityPct: null,
+        lastBatteryPct: null,
+        lastContactOpen: null,
+      },
+    ];
+    const readings: MetricReadingRecord[] = [
+      // Published day J-1 (2026-01-14): measured 3.0 kWh
+      {
+        id: 1,
+        deviceId: 'dev1',
+        roomId: 1,
+        recordedAt: '2026-01-14T20:00:00.000Z',
+        powerW: 600,
+        voltageV: 230,
+        energyKwh: 3.0,
+        energySource: 'add_ele',
+        tempC: null,
+        humidityPct: null,
+        contactOpen: null,
+      },
+      // Live day J (2026-01-15, not yet published by Enedis): measured 1.2 kWh
+      {
+        id: 2,
+        deviceId: 'dev1',
+        roomId: 1,
+        recordedAt: '2026-01-15T10:00:00.000Z',
+        powerW: 200,
+        voltageV: 230,
+        energyKwh: 1.2,
+        energySource: 'add_ele',
+        tempC: null,
+        humidityPct: null,
+        contactOpen: null,
+      },
+    ];
+    const meterReadings = [
+      {
+        id: 1,
+        pointId: '12345678901234',
+        granularity: 'load_curve_30m' as const,
+        recordedAt: '2026-01-14T20:00:00.000Z',
+        dateKey: '2026-01-14',
+        energyKwh: 5.0,
+        powerW: 10000,
+      },
+      {
+        id: 2,
+        pointId: '12345678901234',
+        granularity: 'max_power_daily' as const,
+        recordedAt: '2026-01-14T19:00:00.000Z',
+        dateKey: '2026-01-14',
+        energyKwh: null,
+        powerW: 6150,
+      },
+    ];
+    const env: EnvStatus = {
+      mode: 'live',
+      databaseConfigured: true,
+      tuyaConfigured: true,
+      tuyaRegion: 'eu',
+      tuyaUserUidConfigured: true,
+      kasaConfigured: false,
+      kasaRegion: 'eu',
+      homeConnectConfigured: false,
+      homeConnectConnected: false,
+      homeConnectEnv: 'prod',
+      somfyConfigured: false,
+      somfyRegion: 'eu',
+      daikinConfigured: false,
+      daikinConnected: false,
+      xsenseConfigured: false,
+      xiaomiConfigured: false,
+      xiaomiConnected: false,
+      xiaomiRegion: 'de',
+      appPasswordConfigured: false,
+      oidcConfigured: false,
+      oidcProviderName: null,
+      scheduleSecretConfigured: false,
+      googleHomeApiEnabled: false,
+      googleHomeConfigured: false,
+      googleHomeMode: 'mcp',
+      googleHomeConnected: false,
+      googleSdmProjectConfigured: false,
+      consoApiConfigured: true,
+      consoApiConnected: true,
+      consoApiPrmMasked: '••••••••••1234',
+      consoApiSubscribedKva: 9,
+    };
+
+    const tariffs: TariffPeriodRecord[] = [
+      {
+        id: 1,
+        label: 'Base 0.20',
+        startDate: '2026-01-01',
+        endDate: null,
+        mode: 'BASE',
+        baseRateEur: 0.2,
+        hpRateEur: null,
+        hcRateEur: null,
+        hcSlots: [],
+        monthlySubscriptionEur: 0,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ];
+
+    const globalPayload = buildDashboardPayload({
+      env,
+      range: '24h',
+      selectedRoomId: 'all',
+      selectedSystem: 'all',
+      rooms,
+      devices,
+      readings,
+      meterReadings,
+      subscribedPowerKva: 9,
+      tariffs,
+      logs: [],
+      now,
+    });
+
+    // Global total = J-1 Linky (5.0) + J live measured (1.2) = 6.2 kWh
+    expect(globalPayload.kpis.periodEnergyKwh).toBeCloseTo(6.2, 3);
+    expect(globalPayload.meter).toMatchObject({
+      enabled: true,
+      activeInCurrentView: true,
+      lastPublishedDate: '2026-01-14',
+      periodMeterEnergyKwh: 5.0,
+      periodMeasuredEnergyKwh: 3.0,
+      periodUnmeasuredEnergyKwh: 2.0,
+      measuredCoveragePct: 60,
+      todayLiveMeasuredKwh: 1.2,
+      periodMaxPowerVa: 6150,
+      subscribedPowerKva: 9,
+    });
+    expect(globalPayload.energyByRoom.some((r) => r.id === 'unmeasured' && r.isUnmeasured)).toBe(true);
+
+    // Room-filtered view keeps only that room's measured energy (3.0 + 1.2 = 4.2 kWh)
+    const roomPayload = buildDashboardPayload({
+      env,
+      range: '24h',
+      selectedRoomId: '1',
+      selectedSystem: 'all',
+      rooms,
+      devices,
+      readings,
+      meterReadings,
+      subscribedPowerKva: 9,
+      tariffs,
+      logs: [],
+      now,
+    });
+    expect(roomPayload.meter?.activeInCurrentView).toBe(false);
+    expect(roomPayload.kpis.periodEnergyKwh).toBeCloseTo(4.2, 3);
+    expect(roomPayload.energyByRoom.some((r) => r.id === 'unmeasured')).toBe(false);
+  });
 });

@@ -7,6 +7,7 @@ import { sanitizeDeviceDpConfig } from '@/lib/device-utils';
 import { runMetricsRetention } from '@/lib/services/retention-service';
 import { mapDbLog, seedDefaultDataIfEmpty } from '@/lib/services/shared';
 import { VENDOR_SERVER_PLUGINS } from '@/lib/services/vendors';
+import { loadEffectiveConsoApiConfig } from '@/lib/services/vendors/conso-api-sync';
 import {
   collectTuyaIntermediateEvents,
   syncTuyaDevices,
@@ -217,19 +218,25 @@ async function runSecondaryVendorsCollection(params: {
 }> {
   let anyActiveVendor = false;
 
+  const consoConfigured = (await loadEffectiveConsoApiConfig(params.db)).config.configured;
+
   const activeEntries = SECONDARY_VENDORS.map((vendorId) => {
     const plugin = VENDOR_SERVER_PLUGINS[vendorId];
     const list = params.grouped.get(vendorId) ?? [];
     const visible = plugin.isVisible ? plugin.isVisible() : true;
-    const active =
-      visible &&
-      Boolean(plugin.collectReadings) &&
-      (plugin.isConfigured() || (vendorId === 'xiaomi' && list.length > 0));
+    const isVendorActive =
+      plugin.isConfigured() ||
+      (vendorId === 'xiaomi' && list.length > 0) ||
+      (vendorId === 'conso_api' && consoConfigured);
+    const active = visible && Boolean(plugin.collectReadings) && isVendorActive;
     return { vendorId, plugin, list, active };
   }).filter((entry) => entry.active);
 
   anyActiveVendor = activeEntries.some(
-    (e) => e.plugin.isConfigured() || e.list.length > 0
+    (e) =>
+      e.plugin.isConfigured() ||
+      e.list.length > 0 ||
+      (e.vendorId === 'conso_api' && consoConfigured)
   );
 
   const settled = await Promise.all(

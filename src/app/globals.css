@@ -112,6 +112,9 @@ html.light {
   --color-purple-200: #6b21a8;
   --color-purple-300: #7e22ce;
   --color-purple-400: #9333ea;
+  --color-lime-200: #3f6212;
+  --color-lime-300: #4d7c0f;
+  --color-lime-400: #65a30d;
 }
 
 html.light body,
@@ -167,7 +170,7 @@ html.light .bg-rose-500\/10 {
   background-color: #fff1f2;
 }
 
-html.light .text-white:not([class*="bg-indigo-6"]):not([class*="bg-indigo-500"]):not([class*="bg-emerald-6"]):not([class*="bg-blue-6"]):not([class*="bg-sky-6"]):not([class*="bg-amber-6"]):not([class*="bg-rose-6"]):not([class*="bg-red-6"]):not([class*="bg-orange-6"]):not([class*="bg-teal-6"]):not([class*="bg-cyan-6"]):not([class*="bg-violet-6"]):not([class*="bg-purple-6"]) {
+html.light .text-white:not([class*="bg-indigo-6"]):not([class*="bg-indigo-500"]):not([class*="bg-emerald-6"]):not([class*="bg-blue-6"]):not([class*="bg-sky-6"]):not([class*="bg-amber-6"]):not([class*="bg-rose-6"]):not([class*="bg-red-6"]):not([class*="bg-orange-6"]):not([class*="bg-teal-6"]):not([class*="bg-cyan-6"]):not([class*="bg-violet-6"]):not([class*="bg-purple-6"]):not([class*="bg-lime-6"]) {
   color: #0f172a;
 }
 

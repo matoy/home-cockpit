@@ -7,6 +7,7 @@ import {
   collectionLogs,
   devices,
   deviceVendorLinks,
+  meterReadings,
   metricReadings,
   rooms,
   tariffPeriods,
@@ -36,6 +37,8 @@ import type {
   EnergyMode,
   EnergySource,
   HcSlot,
+  MeterReadingGranularity,
+  MeterReadingRecord,
   MetricReadingRecord,
   RawDpStatus,
   RoomRecord,
@@ -90,6 +93,7 @@ export interface BackupArchiveV1 {
     automations: AutomationRecord[];
     vendorConnections: BackupVendorConnectionItem[];
     metricReadings: MetricReadingRecord[];
+    meterReadings?: MeterReadingRecord[];
     collectionLogs: CollectionLogRecord[];
   };
 }
@@ -247,6 +251,12 @@ export async function exportBackupArchive(options?: {
           .map((r) => ({ ...r }))
       : [];
 
+    const exportedMeterReadings: MeterReadingRecord[] = includeMetrics
+      ? state.meterReadings
+          .filter((r) => !cutoffIso || r.recordedAt >= cutoffIso)
+          .map((r) => ({ ...r }))
+      : [];
+
     const exportedLogs = includeMetrics
       ? state.logs
           .filter((l) => !cutoffIso || l.executedAt >= cutoffIso)
@@ -285,6 +295,7 @@ export async function exportBackupArchive(options?: {
       automations: state.automations.map((a) => ({ ...a })),
       vendorConnections: exportedVendorConnections,
       metricReadings: exportedReadings,
+      meterReadings: exportedMeterReadings,
       collectionLogs: exportedLogs,
     };
   } else {
@@ -299,6 +310,7 @@ export async function exportBackupArchive(options?: {
       automationRows,
       connRows,
       readingRows,
+      meterReadingRows,
       logRows,
     ] = await Promise.all([
       db.select().from(rooms).orderBy(asc(rooms.id)),
@@ -318,6 +330,18 @@ export async function exportBackupArchive(options?: {
               .select()
               .from(metricReadings)
               .orderBy(asc(metricReadings.recordedAt), asc(metricReadings.id))
+        : Promise.resolve([]),
+      includeMetrics
+        ? cutoff
+          ? db
+              .select()
+              .from(meterReadings)
+              .where(gte(meterReadings.recordedAt, cutoff))
+              .orderBy(asc(meterReadings.recordedAt), asc(meterReadings.id))
+          : db
+              .select()
+              .from(meterReadings)
+              .orderBy(asc(meterReadings.recordedAt), asc(meterReadings.id))
         : Promise.resolve([]),
       includeMetrics
         ? cutoff
@@ -446,6 +470,18 @@ export async function exportBackupArchive(options?: {
         contactOpen: r.contactOpen,
         coverState: sanitizeCoverState(r.coverState),
         coverOpenPct: r.coverOpenPct,
+      })),
+      meterReadings: meterReadingRows.map((m) => ({
+        id: m.id,
+        pointId: m.pointId,
+        granularity:
+          m.granularity === 'load_curve_30m' || m.granularity === 'max_power_daily'
+            ? (m.granularity as MeterReadingGranularity)
+            : 'daily_kwh',
+        recordedAt: m.recordedAt.toISOString(),
+        dateKey: m.dateKey,
+        energyKwh: m.energyKwh,
+        powerW: m.powerW,
       })),
       collectionLogs: logRows.map((l) => ({
         id: l.id,
@@ -579,6 +615,7 @@ export function parseAndValidateBackupBuffer(rawBuffer: Buffer): {
   const rawAutomations = Array.isArray(dataRec.automations) ? dataRec.automations : [];
   const rawConns = Array.isArray(dataRec.vendorConnections) ? dataRec.vendorConnections : [];
   const rawReadings = Array.isArray(dataRec.metricReadings) ? dataRec.metricReadings : [];
+  const rawMeterReadings = Array.isArray(dataRec.meterReadings) ? dataRec.meterReadings : [];
   const rawLogs = Array.isArray(dataRec.collectionLogs) ? dataRec.collectionLogs : [];
 
   const parsedRooms: RoomRecord[] = [];
@@ -767,6 +804,27 @@ export function parseAndValidateBackupBuffer(rawBuffer: Buffer): {
     });
   }
 
+  const parsedMeterReadings: MeterReadingRecord[] = [];
+  for (const item of rawMeterReadings) {
+    const rec = asRecord(item);
+    const pointId = toStringOrNull(rec?.pointId);
+    const recordedAt = normalizeIsoDateOrNull(rec?.recordedAt);
+    const dateKey = toStringOrNull(rec?.dateKey);
+    if (!rec || !pointId || !recordedAt || !dateKey) continue;
+    const rawGran = toStringOrNull(rec.granularity);
+    const granularity: MeterReadingGranularity =
+      rawGran === 'load_curve_30m' || rawGran === 'max_power_daily' ? rawGran : 'daily_kwh';
+    parsedMeterReadings.push({
+      id: Math.trunc(toFiniteNumber(rec.id, parsedMeterReadings.length + 1)),
+      pointId,
+      granularity,
+      recordedAt,
+      dateKey,
+      energyKwh: toNullableNumber(rec.energyKwh),
+      powerW: toNullableNumber(rec.powerW),
+    });
+  }
+
   const parsedLogs: CollectionLogRecord[] = [];
   for (const item of rawLogs) {
     const rec = asRecord(item);
@@ -792,6 +850,7 @@ export function parseAndValidateBackupBuffer(rawBuffer: Buffer): {
     automations: parsedAutomations,
     vendorConnections: parsedConns,
     metricReadings: parsedReadings,
+    ...(parsedMeterReadings.length > 0 ? { meterReadings: parsedMeterReadings } : {}),
     collectionLogs: parsedLogs,
   };
 
@@ -912,6 +971,7 @@ async function resetPostgresSequences(db: AppDatabase): Promise<void> {
     ['device_vendor_links', 'id'],
     ['tariff_periods', 'id'],
     ['metric_readings', 'id'],
+    ['meter_readings', 'id'],
     ['collection_logs', 'id'],
   ] as const;
 
@@ -931,6 +991,7 @@ function mapConnectionModeToDemo(mode: string): DemoVendorConnectionState['mode'
     mode === 'oauth_prod' ||
     mode === 'oauth_simulator' ||
     mode === 'oauth_cn' ||
+    mode === 'bearer_token' ||
     mode === 'mcp' ||
     mode === 'sdm'
   ) {
@@ -1034,6 +1095,12 @@ export async function importBackupArchive(
             roomId: r.roomId !== null && validRoomIds.has(r.roomId) ? r.roomId : null,
           }));
         imported.metricReadings = state.readings.length;
+
+        if (archive.data.meterReadings) {
+          state.meterReadings = archive.data.meterReadings.map((m) => ({ ...m }));
+        } else {
+          state.meterReadings = [];
+        }
 
         state.logs = archive.data.collectionLogs.map((l) => ({ ...l }));
         imported.collectionLogs = state.logs.length;
@@ -1200,6 +1267,21 @@ export async function importBackupArchive(
           state.logs.push({ ...l, id: state.nextLogId++, executedAt: iso });
           imported.collectionLogs++;
         }
+
+        if (archive.data.meterReadings && archive.data.meterReadings.length > 0) {
+          const existingMeterKeys = new Set(
+            state.meterReadings.map(
+              (m) => `${m.pointId}::${m.granularity}::${normalizeIsoDate(m.recordedAt)}`
+            )
+          );
+          for (const m of archive.data.meterReadings) {
+            const iso = normalizeIsoDate(m.recordedAt);
+            const key = `${m.pointId}::${m.granularity}::${iso}`;
+            if (existingMeterKeys.has(key)) continue;
+            existingMeterKeys.add(key);
+            state.meterReadings.push({ ...m, id: state.nextMeterReadingId++, recordedAt: iso });
+          }
+        }
       }
     }
 
@@ -1225,6 +1307,7 @@ export async function importBackupArchive(
     await db.delete(tariffPeriods);
     if (importMetrics) {
       await db.delete(metricReadings);
+      await db.delete(meterReadings);
       await db.delete(collectionLogs);
     }
 
@@ -1485,6 +1568,31 @@ export async function importBackupArchive(
         const chunk = logValues.slice(i, i + METRIC_INSERT_CHUNK_SIZE);
         await db.insert(collectionLogs).values(chunk);
         imported.collectionLogs += chunk.length;
+      }
+    }
+
+    if (importMetrics && archive.data.meterReadings && archive.data.meterReadings.length > 0) {
+      const meterValues = archive.data.meterReadings.map((m) => ({
+        pointId: m.pointId,
+        granularity: m.granularity,
+        recordedAt: new Date(m.recordedAt),
+        dateKey: m.dateKey,
+        energyKwh: m.energyKwh,
+        powerW: m.powerW,
+      }));
+      for (let i = 0; i < meterValues.length; i += METRIC_INSERT_CHUNK_SIZE) {
+        const chunk = meterValues.slice(i, i + METRIC_INSERT_CHUNK_SIZE);
+        await db
+          .insert(meterReadings)
+          .values(chunk)
+          .onConflictDoUpdate({
+            target: [meterReadings.pointId, meterReadings.granularity, meterReadings.recordedAt],
+            set: {
+              dateKey: sql`excluded.date_key`,
+              energyKwh: sql`excluded.energy_kwh`,
+              powerW: sql`excluded.power_w`,
+            },
+          });
       }
     }
 
@@ -1820,6 +1928,31 @@ export async function importBackupArchive(
           const chunk = logValues.slice(i, i + METRIC_INSERT_CHUNK_SIZE);
           await db.insert(collectionLogs).values(chunk);
           imported.collectionLogs += chunk.length;
+        }
+      }
+
+      if (archive.data.meterReadings && archive.data.meterReadings.length > 0) {
+        const meterValues = archive.data.meterReadings.map((m) => ({
+          pointId: m.pointId,
+          granularity: m.granularity,
+          recordedAt: new Date(m.recordedAt),
+          dateKey: m.dateKey,
+          energyKwh: m.energyKwh,
+          powerW: m.powerW,
+        }));
+        for (let i = 0; i < meterValues.length; i += METRIC_INSERT_CHUNK_SIZE) {
+          const chunk = meterValues.slice(i, i + METRIC_INSERT_CHUNK_SIZE);
+          await db
+            .insert(meterReadings)
+            .values(chunk)
+            .onConflictDoUpdate({
+              target: [meterReadings.pointId, meterReadings.granularity, meterReadings.recordedAt],
+              set: {
+                dateKey: sql`excluded.date_key`,
+                energyKwh: sql`excluded.energy_kwh`,
+                powerW: sql`excluded.power_w`,
+              },
+            });
         }
       }
     }

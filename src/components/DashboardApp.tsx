@@ -491,6 +491,17 @@ export function DashboardApp({
     }, 60);
   }
 
+  function handleOpenConsoApiGuide() {
+    setActiveTab('guide');
+    setTimeout(() => {
+      const detailsEl = document.getElementById('setup-conso-api-details');
+      if (detailsEl instanceof HTMLDetailsElement) detailsEl.open = true;
+      document
+        .getElementById('setup-conso-api')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  }
+
   function handleOpenRoomDevices(targetRoomId: string) {
     setDevicesRoomFilter(targetRoomId);
     setActiveTab('devices');
@@ -1046,6 +1057,7 @@ export function DashboardApp({
             onOpenXSenseGuide={handleOpenXSenseGuide}
             onOpenXiaomiGuide={handleOpenXiaomiGuide}
             onOpenGoogleGuide={handleOpenGoogleGuide}
+            onOpenConsoApiGuide={handleOpenConsoApiGuide}
           />
         )}
         {activeTab === 'tariffs' && (

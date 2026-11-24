@@ -61,6 +61,7 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
   const showXSense = env.xsenseConfigured;
   const showXiaomi = env.xiaomiConfigured || env.xiaomiConnected;
   const showGoogleHomeApi = env.googleHomeApiEnabled;
+  const showConsoApi = Boolean(env.consoApiConfigured || env.consoApiConnected);
 
   const oauthStatusLabel = (connected: boolean) =>
     connected ? t('guide.oauthConnected') : t('guide.oauthReady');
@@ -160,6 +161,17 @@ export function SetupGuideTab({ data, onNavigateTab, onRefresh }: SetupGuideTabP
               env.googleHomeConfigured &&
               (env.googleHomeMode !== 'sdm' || env.googleSdmProjectConfigured),
             detail: googleOAuthDetail,
+          },
+        ]
+      : []),
+    ...(showConsoApi
+      ? [
+          {
+            label: t('guide.chkConsoLabel'),
+            ok: Boolean(env.consoApiConfigured),
+            detail: env.consoApiConnected
+              ? t('guide.chkConsoConnected', { prm: env.consoApiPrmMasked ?? '—' })
+              : t('guide.chkConsoConfigured', { prm: env.consoApiPrmMasked ?? '—' }),
           },
         ]
       : []),
@@ -1447,6 +1459,108 @@ XIAOMI_REGION="de" # de (Europe), cn, us, sg, ru ou i2`}
                 >
                   {t('guide.openSecurity')}
                   <ArrowRight className="h-3.5 w-3.5 text-orange-400" />
+                </button>
+              </div>
+            )}
+          </div>
+        </details>
+      </div>
+
+      {/* Étape Linky / Conso API (toujours visible dans Guide Setup, repliable) */}
+      <div
+        id="setup-conso-api"
+        className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-4 scroll-mt-24"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-xl bg-lime-500/15 p-2 text-lime-400">
+              <Cloud className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-white">{t('guide.consoTitle')}</h3>
+              <p className="text-xs text-slate-400">{t('guide.consoSub')}</p>
+            </div>
+          </div>
+
+          <span
+            className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${
+              env.consoApiConfigured
+                ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                : 'border-slate-700 bg-slate-800 text-slate-400'
+            }`}
+          >
+            {env.consoApiConfigured
+              ? `${t('common.configured')}${env.consoApiPrmMasked ? ` (${env.consoApiPrmMasked})` : ''}`
+              : t('guide.optionalNotConfigured')}
+          </span>
+        </div>
+
+        <details
+          id="setup-conso-api-details"
+          open={showConsoApi}
+          className="group rounded-xl border border-slate-800/90 bg-slate-950/40 p-4"
+        >
+          <summary className="cursor-pointer select-none text-xs font-medium text-lime-300 hover:text-lime-200 flex items-center justify-between gap-2">
+            <span>{t('guide.consoSummary')}</span>
+            <span className="text-[11px] text-slate-400 group-open:hidden">
+              {t('guide.clickToExpand')}
+            </span>
+            <span className="text-[11px] text-slate-400 hidden group-open:inline">
+              {t('guide.clickToCollapse')}
+            </span>
+          </summary>
+
+          <div className="mt-4 space-y-4 text-xs text-slate-300 leading-relaxed">
+            <div className="rounded-xl border border-lime-500/25 bg-lime-500/5 p-3.5 text-[11px] text-slate-300 space-y-1">
+              <div>
+                <strong>Compteur global &amp; « Autres / Non mesuré » :</strong> les relevés Linky
+                alimentent automatiquement une table SQL dédiée (<code>meter_readings</code>). En vue
+                globale, ils portent le total officiel du logement sur tous les jours publiés (≤ J-1)
+                sans double comptage avec vos prises Tuya / Kasa / Daikin.
+              </div>
+              <div>
+                <strong>Protection stricte anti-ban conso.boris.sh :</strong> 3 requêtes au premier
+                import (365j quotidien, 365j puissance max VA, 7j courbe 30 min) puis au maximum{' '}
+                <strong>1 synchro automatique par jour</strong> après 08h00 (Europe/Paris) si J-1
+                manque.
+              </div>
+            </div>
+
+            <ol className="list-decimal list-inside space-y-2">
+              <li>
+                Rendez-vous sur{' '}
+                <a
+                  href="https://conso.boris.sh/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-lime-300 underline inline-flex items-center gap-1"
+                >
+                  conso.boris.sh <ExternalLink className="h-3 w-3" />
+                </a>{' '}
+                et connectez votre compte client Enedis pour accorder le consentement et copier votre
+                <strong> Token Bearer</strong> ainsi que votre <strong>PRM à 14 chiffres</strong>.
+              </li>
+              <li>
+                Renseignez-les directement dans l&apos;onglet <strong>Systèmes</strong> (carte{' '}
+                <em>Linky (Conso API)</em>, stockage chiffré AES-256-GCM en base) ou via variables
+                d&apos;environnement (<code>CONSO_API_TOKEN</code>, <code>CONSO_API_PRM</code>,{' '}
+                <code>CONSO_API_SUBSCRIBED_KVA</code>).
+              </li>
+              <li>
+                Lancez une première synchronisation : vos 365 derniers jours et pics VA apparaissent
+                dans <strong>Vue d&apos;ensemble</strong> et <strong>Énergie &amp; Coûts</strong>.
+              </li>
+            </ol>
+
+            {onNavigateTab && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('systems')}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-lime-600 hover:bg-lime-500 px-3 py-1.5 text-xs font-medium text-white transition"
+                >
+                  {t('guide.syncConsoSystems')}
+                  <ArrowRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             )}

@@ -81,10 +81,17 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
-              {t('overview.kpiEnergyCost', { range: rangeLabel })}
-            </span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                {t('overview.kpiEnergyCost', { range: rangeLabel })}
+              </span>
+              {data.meter?.activeInCurrentView && (
+                <span className="rounded-full border border-lime-500/40 bg-lime-500/15 px-2 py-0.5 text-[9.5px] font-semibold text-lime-300">
+                  Linky
+                </span>
+              )}
+            </div>
             <div className="rounded-lg bg-emerald-500/15 p-2 text-emerald-400">
               <Euro className="h-4 w-4" />
             </div>
@@ -122,6 +129,16 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                 cost: kpis.projectedMonthCostEur.toFixed(0),
                 kwh: (kpis.projectedMonthEnergyKwh ?? 0).toFixed(0),
               })}
+            </p>
+          )}
+          {data.meter?.activeInCurrentView && (
+            <p className="mt-1 text-[11px] text-lime-300/90">
+              {data.meter.measuredCoveragePct !== null
+                ? t('overview.meterCoverage', {
+                    pct: data.meter.measuredCoveragePct.toFixed(0),
+                    date: data.meter.lastPublishedDate ?? '—',
+                  })
+                : t('overview.meterUntil', { date: data.meter.lastPublishedDate ?? '—' })}
             </p>
           )}
         </div>

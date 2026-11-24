@@ -1,5 +1,6 @@
 import type { vendorConnections } from '@/db/schema';
 import type { DemoVendorConnectionState } from '@/lib/demo-store';
+import { consoApiPlugin } from '@/lib/services/vendors/conso-api-sync';
 import { daikinPlugin } from '@/lib/services/vendors/daikin-sync';
 import { googleHomePlugin } from '@/lib/services/vendors/google-home-sync';
 import { homeConnectPlugin } from '@/lib/services/vendors/home-connect-sync';
@@ -30,6 +31,7 @@ export const VENDOR_SERVER_PLUGINS: Record<VendorId, VendorServerPlugin> = {
   xsense: xsensePlugin,
   xiaomi: xiaomiPlugin,
   google_home: googleHomePlugin,
+  conso_api: consoApiPlugin,
 };
 
 export function getVendorServerPlugin(vendor: VendorId): VendorServerPlugin {

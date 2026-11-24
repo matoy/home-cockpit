@@ -8,7 +8,8 @@ export type VendorId =
   | 'daikin'
   | 'xsense'
   | 'xiaomi'
-  | 'google_home';
+  | 'google_home'
+  | 'conso_api';
 
 export type SystemFilter = 'all' | VendorId;
 
@@ -65,7 +66,14 @@ export interface DeviceVendorLinkRecord {
 export interface VendorConnectionSummary {
   vendor: VendorId;
   label: string;
-  mode: 'cloud_key' | 'cloud_account' | 'oauth_prod' | 'oauth_simulator' | 'oauth_cn' | GoogleHomeMode;
+  mode:
+    | 'cloud_key'
+    | 'cloud_account'
+    | 'oauth_prod'
+    | 'oauth_simulator'
+    | 'oauth_cn'
+    | 'bearer_token'
+    | GoogleHomeMode;
   configured: boolean;
   connected: boolean;
   devicesCount: number;
@@ -224,11 +232,46 @@ export interface EnergyBreakdownItem {
   color: string;
   roomName?: string;
   excludeFromTotals?: boolean;
+  isUnmeasured?: boolean;
   energyKwh: number;
   costEur: number;
   avgPowerW: number;
   maxPowerW: number;
   sharePct: number;
+}
+
+export type MeterReadingGranularity = 'daily_kwh' | 'load_curve_30m' | 'max_power_daily';
+
+export interface MeterReadingRecord {
+  id: number;
+  pointId: string;
+  granularity: MeterReadingGranularity;
+  recordedAt: string;
+  dateKey: string;
+  energyKwh: number | null;
+  powerW: number | null;
+}
+
+export interface LinkyMeterSummary {
+  enabled: boolean;
+  activeInCurrentView: boolean;
+  lastPublishedDate: string | null;
+  periodMeterEnergyKwh: number;
+  periodMeterCostEur: number;
+  periodMeasuredEnergyKwh: number;
+  periodUnmeasuredEnergyKwh: number;
+  periodUnmeasuredCostEur: number;
+  measuredCoveragePct: number | null;
+  todayLiveMeasuredKwh: number;
+  subscribedPowerKva: number | null;
+  periodMaxPowerVa: number | null;
+  periodMaxPowerAt: string | null;
+  dailyMaxPowers: Array<{
+    dateKey: string;
+    label: string;
+    maxPowerVa: number;
+    recordedAt: string;
+  }>;
 }
 
 export interface TimeSeriesPoint {
@@ -275,6 +318,10 @@ export interface EnvStatus {
   googleHomeMode: GoogleHomeMode;
   googleHomeConnected: boolean;
   googleSdmProjectConfigured: boolean;
+  consoApiConfigured?: boolean;
+  consoApiConnected?: boolean;
+  consoApiPrmMasked?: string | null;
+  consoApiSubscribedKva?: number | null;
 }
 
 export interface ContactSensorStat {
@@ -532,6 +579,7 @@ export interface DashboardPayload {
   contacts: ContactsPayload;
   covers: CoversPayload;
   automations: AutomationsPayload;
+  meter?: LinkyMeterSummary;
   logs: CollectionLogRecord[];
 }
 
