@@ -2,11 +2,55 @@ import { NextResponse } from 'next/server';
 import { createTariff, deleteTariff, updateTariff } from '@/lib/data-service';
 import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 import { asRecord } from '@/lib/utils';
-import type { HcSlot, TariffMode } from '@/types';
+import type { HcSlot, TariffMode, TempoConfig, TempoDayColor } from '@/types';
 
 const DATE_ISO_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_HHMM_REGEX = /^\d{2}:\d{2}$/;
-const VALID_TARIFF_MODES = new Set<TariffMode>(['BASE', 'HP_HC']);
+const VALID_TARIFF_MODES = new Set<TariffMode>(['BASE', 'HP_HC', 'TEMPO']);
+const VALID_TEMPO_COLORS = new Set<TempoDayColor>(['BLUE', 'WHITE', 'RED']);
+
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function parseTempoConfig(raw: unknown): TempoConfig | null {
+  const rec = asRecord(raw);
+  if (!rec) return null;
+  const fields = [
+    'blueHpRateEur',
+    'blueHcRateEur',
+    'whiteHpRateEur',
+    'whiteHcRateEur',
+    'redHpRateEur',
+    'redHcRateEur',
+  ] as const;
+  for (const key of fields) {
+    if (!isNonNegativeFiniteNumber(rec[key])) return null;
+  }
+
+  let dayColors: Record<string, TempoDayColor> | undefined;
+  if (rec.dayColors !== undefined) {
+    const dcRec = asRecord(rec.dayColors);
+    if (!dcRec) return null;
+    dayColors = {};
+    for (const [k, v] of Object.entries(dcRec)) {
+      if (!DATE_ISO_REGEX.test(k) || typeof v !== 'string' || !VALID_TEMPO_COLORS.has(v as TempoDayColor)) {
+        return null;
+      }
+      dayColors[k] = v as TempoDayColor;
+    }
+  }
+
+  return {
+    blueHpRateEur: rec.blueHpRateEur as number,
+    blueHcRateEur: rec.blueHcRateEur as number,
+    whiteHpRateEur: rec.whiteHpRateEur as number,
+    whiteHcRateEur: rec.whiteHcRateEur as number,
+    redHpRateEur: rec.redHpRateEur as number,
+    redHcRateEur: rec.redHcRateEur as number,
+    ...(dayColors ? { dayColors } : {}),
+  };
+}
 
 function isNonNegativeNullableNumber(value: unknown): value is number | null {
   if (value === null) return true;
@@ -91,6 +135,15 @@ export async function POST(request: Request) {
       );
     }
 
+    let tempoConfig: TempoConfig | null = null;
+    if (body.tempoConfig !== undefined && body.tempoConfig !== null) {
+      const parsedTempo = parseTempoConfig(body.tempoConfig);
+      if (!parsedTempo) {
+        return NextResponse.json({ error: 'Configuration Tempo invalide.' }, { status: 400 });
+      }
+      tempoConfig = parsedTempo;
+    }
+
     const tariffs = await createTariff({
       label,
       startDate,
@@ -100,12 +153,13 @@ export async function POST(request: Request) {
       hpRateEur,
       hcRateEur,
       hcSlots,
+      tempoConfig,
       monthlySubscriptionEur,
     });
     return NextResponse.json({ tariffs }, { status: 201 });
   } catch (err) {
     if (err instanceof Error && err.message === 'INVALID_MODE') {
-      return NextResponse.json({ error: 'Mode tarifaire invalide (BASE ou HP_HC).' }, { status: 400 });
+      return NextResponse.json({ error: 'Mode tarifaire invalide (BASE, HP_HC ou TEMPO).' }, { status: 400 });
     }
     return apiErrorResponse('api/tariffs POST', err, 'Erreur création tarif');
   }
@@ -199,6 +253,18 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: 'Créneaux heures creuses invalides.' }, { status: 400 });
       }
       updates.hcSlots = slots;
+    }
+
+    if (body.tempoConfig !== undefined) {
+      if (body.tempoConfig === null) {
+        updates.tempoConfig = null;
+      } else {
+        const parsedTempo = parseTempoConfig(body.tempoConfig);
+        if (!parsedTempo) {
+          return NextResponse.json({ error: 'Configuration Tempo invalide.' }, { status: 400 });
+        }
+        updates.tempoConfig = parsedTempo;
+      }
     }
 
     const tariffs = await updateTariff(id, updates);

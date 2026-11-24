@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Lock, Zap, Thermometer, ArrowRight, ShieldCheck } from 'lucide-react';
 import { useI18n } from '@/components/I18nProvider';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { AlertBanner, Card } from '@/components/ui';
 
 interface AuthProvidersState {
@@ -98,7 +99,10 @@ export default function LoginPage() {
               </p>
             </div>
           </div>
-          <LanguageSwitcher compact />
+          <div className="flex items-center gap-1.5">
+            <LanguageSwitcher compact />
+            <ThemeToggle />
+          </div>
         </div>
 
         <div className="space-y-4">

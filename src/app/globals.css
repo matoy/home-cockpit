@@ -40,3 +40,104 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* Light theme overrides (Tailwind CSS v4 CSS variables) */
+html.light {
+  color-scheme: light;
+  --color-slate-950: #f1f5f9;
+  --color-slate-900: #ffffff;
+  --color-slate-800: #e2e8f0;
+  --color-slate-700: #cbd5e1;
+  --color-slate-600: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-400: #475569;
+  --color-slate-300: #334155;
+  --color-slate-200: #1e293b;
+  --color-slate-100: #0f172a;
+  --color-slate-50: #020617;
+
+  /* Darken -200/-300/-400 accents for legible text on light surfaces */
+  --color-indigo-200: #3730a3;
+  --color-indigo-300: #4338ca;
+  --color-indigo-400: #4f46e5;
+  --color-emerald-200: #065f46;
+  --color-emerald-300: #047857;
+  --color-emerald-400: #059669;
+  --color-amber-200: #92400e;
+  --color-amber-300: #b45309;
+  --color-amber-400: #d97706;
+  --color-rose-200: #9f1239;
+  --color-rose-300: #be123c;
+  --color-rose-400: #e11d48;
+  --color-red-200: #991b1b;
+  --color-red-300: #b91c1c;
+  --color-red-400: #dc2626;
+  --color-sky-200: #075985;
+  --color-sky-300: #0369a1;
+  --color-sky-400: #0284c7;
+  --color-cyan-200: #155e75;
+  --color-cyan-300: #0e7490;
+  --color-cyan-400: #0891b2;
+  --color-teal-200: #115e59;
+  --color-teal-300: #0f766e;
+  --color-teal-400: #0d9488;
+  --color-orange-200: #9a3412;
+  --color-orange-300: #c2410c;
+  --color-orange-400: #ea580c;
+  --color-blue-200: #1e40af;
+  --color-blue-300: #1d4ed8;
+  --color-blue-400: #2563eb;
+  --color-violet-200: #5b21b6;
+  --color-violet-300: #6d28d9;
+  --color-violet-400: #7c3aed;
+  --color-purple-200: #6b21a8;
+  --color-purple-300: #7e22ce;
+  --color-purple-400: #9333ea;
+}
+
+html.light body,
+html.light .bg-\[\#090d16\] {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+html.light .bg-\[\#090d16\]\/85 {
+  background-color: rgb(255 255 255 / 0.88);
+}
+
+html.light .bg-slate-900\/70,
+html.light .bg-slate-900\/80,
+html.light .bg-slate-900\/60 {
+  box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+}
+
+html.light .text-white:not([class*="bg-indigo-6"]):not([class*="bg-indigo-500"]):not([class*="bg-emerald-6"]):not([class*="bg-blue-6"]):not([class*="bg-sky-6"]):not([class*="bg-amber-6"]):not([class*="bg-rose-6"]):not([class*="bg-red-6"]):not([class*="bg-orange-6"]):not([class*="bg-teal-6"]):not([class*="bg-cyan-6"]):not([class*="bg-violet-6"]):not([class*="bg-purple-6"]) {
+  color: #0f172a;
+}
+
+html.light .recharts-cartesian-grid line {
+  stroke: #e2e8f0;
+}
+
+html.light .recharts-default-tooltip {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 10px 25px -5px rgb(15 23 42 / 0.12);
+}
+
+html.light .recharts-tooltip-label {
+  color: #0f172a !important;
+}
+
+html.light ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

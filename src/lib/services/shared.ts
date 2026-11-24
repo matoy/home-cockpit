@@ -193,6 +193,7 @@ export function mapDbTariff(row: typeof tariffPeriods.$inferSelect): TariffPerio
     hpRateEur: row.hpRateEur,
     hcRateEur: row.hcRateEur,
     hcSlots: row.hcSlots ?? [],
+    tempoConfig: row.tempoConfig ?? null,
     monthlySubscriptionEur: row.monthlySubscriptionEur,
     createdAt: row.createdAt.toISOString(),
   };
@@ -283,10 +284,12 @@ export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
             AND to_regclass('public.automations') IS NOT NULL
             AND to_regclass('public.device_vendor_links') IS NOT NULL
             AND to_regclass('public.vendor_connections') IS NOT NULL
+            AND to_regclass('public.alert_events') IS NOT NULL
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'devices' AND column_name = 'systems')
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'devices' AND column_name = 'exclude_from_totals')
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'metric_readings' AND column_name = 'cover_open_pct')
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'automations' AND column_name = 'vendor')
+            AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'tariff_periods' AND column_name = 'tempo_config')
           ) AS ready
         `);
         if (isSchemaProbeReady(probe)) {
@@ -392,9 +395,13 @@ export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
           "hp_rate_eur" real,
           "hc_rate_eur" real,
           "hc_slots" jsonb DEFAULT '[]'::jsonb NOT NULL,
+          "tempo_config" jsonb,
           "monthly_subscription_eur" real DEFAULT 0 NOT NULL,
           "created_at" timestamp with time zone DEFAULT now() NOT NULL
         )
+      `);
+      await db.execute(sql`
+        ALTER TABLE "tariff_periods" ADD COLUMN IF NOT EXISTS "tempo_config" jsonb
       `);
       await db.execute(sql`
         CREATE TABLE IF NOT EXISTS "collection_logs" (
@@ -463,6 +470,14 @@ export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
       `);
       await db.execute(sql`
         ALTER TABLE "automations" ADD COLUMN IF NOT EXISTS "vendor" text DEFAULT 'tuya' NOT NULL
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS "alert_events" (
+          "dedup_key" text PRIMARY KEY NOT NULL,
+          "severity" text DEFAULT 'warning' NOT NULL,
+          "message" text NOT NULL,
+          "last_sent_at" timestamp with time zone DEFAULT now() NOT NULL
+        )
       `);
       await db.execute(sql`
         INSERT INTO "device_vendor_links" ("device_id", "vendor", "external_id", "external_name", "is_primary_telemetry")

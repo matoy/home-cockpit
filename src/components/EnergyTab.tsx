@@ -16,7 +16,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Zap, Euro, Activity, Layers } from 'lucide-react';
+import { Zap, Euro, Activity, Layers, Download, TrendingUp, Calendar } from 'lucide-react';
+import { buildEnergyTimeSeriesCsv, triggerCsvDownload } from '@/lib/csv-export';
 import { useI18n } from '@/components/I18nProvider';
 import type { DashboardPayload } from '@/types';
 
@@ -74,6 +75,10 @@ export function EnergyTab({ data }: EnergyTabProps) {
 
   const unit = metric === 'energy' ? 'kWh' : metric === 'power' ? 'W' : '€';
   const hasHpHc = data.kpis.hpEnergyKwh > 0 || data.kpis.hcEnergyKwh > 0;
+  const sortTooltipDesc = (item: { value?: unknown }) =>
+    typeof item.value === 'number' && Number.isFinite(item.value)
+      ? -item.value
+      : Number.POSITIVE_INFINITY;
 
   return (
     <div className="space-y-6">
@@ -104,7 +109,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
           ))}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-slate-400 mr-1 flex items-center gap-1.5">
             <Layers className="h-3.5 w-3.5" /> {t('energy.breakdownLabel')}
           </span>
@@ -128,8 +133,81 @@ export function EnergyTab({ data }: EnergyTabProps) {
           >
             {t('energy.byDevice')}
           </button>
+          <button
+            type="button"
+            onClick={() =>
+              triggerCsvDownload(
+                `home-cockpit-energy-${data.range}.csv`,
+                buildEnergyTimeSeriesCsv(data)
+              )
+            }
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
+          >
+            <Download className="h-3.5 w-3.5 text-indigo-400" />
+            {t('energy.exportCsv')}
+          </button>
         </div>
       </div>
+
+      {/* Comparaison période précédente & projection fin de mois */}
+      {((data.kpis.energyDeltaPct !== null && data.kpis.energyDeltaPct !== undefined) ||
+        (data.kpis.projectedMonthCostEur !== null &&
+          data.kpis.projectedMonthCostEur !== undefined)) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                <TrendingUp className="h-3.5 w-3.5 text-indigo-400" />
+                {t('energy.compTitle')}
+              </div>
+              {data.kpis.prevPeriodEnergyKwh !== null &&
+              data.kpis.prevPeriodEnergyKwh !== undefined ? (
+                <div className="text-xs text-slate-300">
+                  {t('energy.compPrevPeriod', {
+                    kwh: data.kpis.prevPeriodEnergyKwh.toFixed(2),
+                    cost: (data.kpis.prevPeriodCostEur ?? 0).toFixed(2),
+                  })}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-500">{t('energy.compNoPrev')}</div>
+              )}
+            </div>
+            {data.kpis.energyDeltaPct !== null && data.kpis.energyDeltaPct !== undefined && (
+              <span
+                className={`rounded-full border px-3 py-1 text-xs font-semibold shrink-0 ${
+                  data.kpis.energyDeltaPct > 0
+                    ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                    : 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                }`}
+              >
+                {data.kpis.energyDeltaPct > 0 ? '+' : ''}
+                {data.kpis.energyDeltaPct.toFixed(1)}%
+              </span>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5 text-emerald-400" />
+                {t('energy.projTitle')}
+              </div>
+              <div className="text-xs text-slate-400">{t('energy.projSub')}</div>
+            </div>
+            {data.kpis.projectedMonthCostEur !== null &&
+              data.kpis.projectedMonthCostEur !== undefined && (
+                <div className="text-right shrink-0">
+                  <div className="text-base font-bold text-white font-mono">
+                    {data.kpis.projectedMonthCostEur.toFixed(2)} €
+                  </div>
+                  <div className="text-[11px] text-emerald-400 font-mono">
+                    {(data.kpis.projectedMonthEnergyKwh ?? 0).toFixed(0)} kWh
+                  </div>
+                </div>
+              )}
+          </div>
+        </div>
+      )}
 
       {/* Graphique empilé principal */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
@@ -178,6 +256,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
                       borderRadius: '12px',
                       fontSize: '12px',
                     }}
+                    itemSorter={sortTooltipDesc}
                     formatter={(val) => `${Number(val ?? 0).toFixed(1)} ${unit}`}
                   />
                   <Legend wrapperStyle={{ fontSize: '12px' }} />
@@ -206,6 +285,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
                       borderRadius: '12px',
                       fontSize: '12px',
                     }}
+                    itemSorter={sortTooltipDesc}
                     formatter={(val) =>
                       `${Number(val ?? 0).toFixed(metric === 'energy' ? 3 : 2)} ${unit}`
                     }

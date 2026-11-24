@@ -5,3 +5,8 @@ export { Badge, type BadgeProps, type BadgeTone } from './Badge';
 export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from './Button';
 export { AlertBanner, type AlertBannerProps, type AlertTone } from './AlertBanner';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
+export {
+  ConnectivityBatteryKpi,
+  type ConnectivityBatteryKpiProps,
+  type ConnectivityBatterySensor,
+} from './ConnectivityBatteryKpi';

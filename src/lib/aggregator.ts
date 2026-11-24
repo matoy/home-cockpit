@@ -1002,6 +1002,57 @@ export function buildDashboardPayload(params: {
     ? round2((effectiveHours / 24 / 30.4375) * (latestTariff.monthlySubscriptionEur ?? 0))
     : 0;
 
+  // Comparaison avec la période précédente équivalente & projection fin de mois
+  const durationMs = Math.max(3_600_000, endMs - startMs);
+  const prevStartMs = startMs - durationMs;
+  let prevEnergyKwhAcc = 0;
+  let prevCostEurAcc = 0;
+  let prevReadingCount = 0;
+
+  for (const r of readings) {
+    if (!filteredDeviceIds.has(r.deviceId)) continue;
+    const dev = deviceMap.get(r.deviceId);
+    if (!dev || dev.excludeFromTotals) continue;
+    if (selectedRoomNumeric !== null) {
+      const effectiveRoomId = r.roomId ?? dev.roomId ?? null;
+      if (effectiveRoomId !== selectedRoomNumeric) continue;
+    }
+    const ts = new Date(r.recordedAt).getTime();
+    if (ts >= prevStartMs && ts < startMs) {
+      prevReadingCount += 1;
+      const energy = r.energyKwh ?? 0;
+      if (energy > 0) {
+        prevEnergyKwhAcc += energy;
+        prevCostEurAcc += computeReadingCost(new Date(ts), energy, tariffs).costEur;
+      }
+    }
+  }
+
+  const prevPeriodEnergyKwh =
+    prevReadingCount > 0 && prevEnergyKwhAcc > 0 ? round3(prevEnergyKwhAcc) : null;
+  const prevPeriodCostEur =
+    prevReadingCount > 0 && prevEnergyKwhAcc > 0 ? round2(prevCostEurAcc) : null;
+  const energyDeltaPct =
+    prevPeriodEnergyKwh !== null && prevPeriodEnergyKwh > 0
+      ? round2(((periodEnergyKwh - prevPeriodEnergyKwh) / prevPeriodEnergyKwh) * 100)
+      : null;
+  const costDeltaPct =
+    prevPeriodCostEur !== null && prevPeriodCostEur > 0
+      ? round2(((periodCostEur - prevPeriodCostEur) / prevPeriodCostEur) * 100)
+      : null;
+
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const effectiveDays = effectiveHours / 24;
+  const monthlySub = latestTariff?.monthlySubscriptionEur ?? 0;
+  const projectedMonthEnergyKwh =
+    periodEnergyKwh > 0 && effectiveDays > 0
+      ? round2((periodEnergyKwh / effectiveDays) * daysInMonth)
+      : null;
+  const projectedMonthCostEur =
+    periodEnergyKwh > 0 && effectiveDays > 0
+      ? round2((periodCostEur / effectiveDays) * daysInMonth + monthlySub)
+      : null;
+
   // Climat moyen
   const roomsWithTemp = roomSummaries.filter((rs) => rs.currentTempC !== null);
   const roomsWithHum = roomSummaries.filter((rs) => rs.currentHumidityPct !== null);
@@ -1286,6 +1337,12 @@ export function buildDashboardPayload(params: {
       avgTempC,
       avgHumidityPct,
       climateAlertsCount,
+      prevPeriodEnergyKwh,
+      prevPeriodCostEur,
+      energyDeltaPct,
+      costDeltaPct,
+      projectedMonthEnergyKwh,
+      projectedMonthCostEur,
     },
     rooms,
     roomSummaries,

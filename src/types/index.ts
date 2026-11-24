@@ -20,12 +20,25 @@ export type EnergyMode = 'hybrid' | 'add_ele' | 'integration';
 
 export type EnergySource = 'add_ele' | 'integration';
 
-export type TariffMode = 'BASE' | 'HP_HC';
+export type TariffMode = 'BASE' | 'HP_HC' | 'TEMPO';
+
+export type TempoDayColor = 'BLUE' | 'WHITE' | 'RED';
+
+export interface TempoConfig {
+  blueHpRateEur: number;
+  blueHcRateEur: number;
+  whiteHpRateEur: number;
+  whiteHcRateEur: number;
+  redHpRateEur: number;
+  redHcRateEur: number;
+  dayColors?: Record<string, TempoDayColor>;
+}
 
 export type TimeRange = '24h' | '7d' | '30d' | '365d' | 'custom';
 
 export type TabId =
   | 'overview'
+  | 'health'
   | 'energy'
   | 'climate'
   | 'contacts'
@@ -165,6 +178,7 @@ export interface TariffPeriodRecord {
   hpRateEur: number | null;
   hcRateEur: number | null;
   hcSlots: HcSlot[];
+  tempoConfig?: TempoConfig | null;
   monthlySubscriptionEur: number;
   createdAt: string;
 }
@@ -498,6 +512,12 @@ export interface DashboardPayload {
     avgTempC: number | null;
     avgHumidityPct: number | null;
     climateAlertsCount: number;
+    prevPeriodEnergyKwh?: number | null;
+    prevPeriodCostEur?: number | null;
+    energyDeltaPct?: number | null;
+    costDeltaPct?: number | null;
+    projectedMonthEnergyKwh?: number | null;
+    projectedMonthCostEur?: number | null;
   };
   rooms: RoomRecord[];
   roomSummaries: RoomSummary[];

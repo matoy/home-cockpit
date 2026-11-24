@@ -13,8 +13,6 @@ import {
 import {
   DoorOpen,
   DoorClosed,
-  Battery,
-  BatteryWarning,
   Clock,
   Activity,
   ShieldCheck,
@@ -23,6 +21,7 @@ import {
   WifiOff,
   Filter,
 } from 'lucide-react';
+import { ConnectivityBatteryKpi } from './ui';
 import { useI18n } from './I18nProvider';
 import type { DashboardPayload, TabId } from '@/types';
 
@@ -63,34 +62,15 @@ export function ContactsTab({ data, onNavigateTab }: ContactsTabProps) {
     });
   }, [contacts.events, selectedDeviceId, transitionsOnly]);
 
-  const contactHealth = useMemo(() => {
+  const contactSensorsHealth = useMemo(() => {
     const deviceById = new Map(data.devices.map((d) => [d.id, d]));
-    const sensors = contacts.sensors;
-    const withBattery = sensors.filter(
-      (s): s is typeof s & { batteryPct: number } =>
-        s.batteryPct !== null && Number.isFinite(s.batteryPct)
-    );
-    const mainsPoweredCount = sensors.filter(
-      (s) => s.batteryPct === null && !deviceById.get(s.deviceId)?.dpConfig?.battery?.code
-    ).length;
-    const lowBatteryCount = withBattery.filter((s) => s.batteryPct <= 20).length;
-    const avgBatteryPct =
-      withBattery.length > 0
-        ? Math.round(withBattery.reduce((sum, s) => sum + s.batteryPct, 0) / withBattery.length)
-        : null;
-    const minBatteryPct =
-      withBattery.length > 0 ? Math.min(...withBattery.map((s) => s.batteryPct)) : null;
-
-    return {
-      sensors,
-      totalCount: contacts.summary.totalSensors,
-      onlineCount: contacts.summary.onlineCount,
-      mainsPoweredCount,
-      lowBatteryCount,
-      avgBatteryPct,
-      minBatteryPct,
-    };
-  }, [contacts.sensors, contacts.summary.onlineCount, contacts.summary.totalSensors, data.devices]);
+    return contacts.sensors.map((s) => ({
+      name: s.name,
+      isOnline: s.isOnline,
+      batteryPct: s.batteryPct,
+      isMains: s.batteryPct === null && !deviceById.get(s.deviceId)?.dpConfig?.battery?.code,
+    }));
+  }, [contacts.sensors, data.devices]);
 
   if (contacts.summary.totalSensors === 0) {
     return (
@@ -199,66 +179,13 @@ export function ContactsTab({ data, onNavigateTab }: ContactsTabProps) {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
-              {t('contacts.kpiConnectivity')}
-            </span>
-            <div
-              className={`rounded-lg p-2 ${
-                contactHealth.lowBatteryCount > 0
-                  ? 'bg-rose-500/15 text-rose-400'
-                  : 'bg-emerald-500/15 text-emerald-400'
-              }`}
-            >
-              {contactHealth.lowBatteryCount > 0 ? (
-                <BatteryWarning className="h-4 w-4" />
-              ) : (
-                <Battery className="h-4 w-4" />
-              )}
-            </div>
-          </div>
-          <div
-            className="mt-3 flex items-baseline gap-2"
-            title={
-              contactHealth.sensors
-                .map(
-                  (s) =>
-                    `${s.name} (${s.isOnline ? t('common.online') : t('common.offline')})`
-                )
-                .join(' • ') || t('contacts.noActiveSensor')
-            }
-          >
-            <span className="text-3xl font-bold tracking-tight text-white">
-              {contactHealth.onlineCount} / {contactHealth.totalCount}
-            </span>
-            <span className="text-xs text-slate-400">{t('climate.onlineWord')}</span>
-          </div>
-          <p
-            className={`mt-2 text-xs ${
-              contactHealth.lowBatteryCount > 0 ? 'text-rose-300' : 'text-slate-400'
-            }`}
-          >
-            {contactHealth.lowBatteryCount > 0
-              ? `${t('contacts.lowBatteryCount', { count: contactHealth.lowBatteryCount })}${
-                  contactHealth.mainsPoweredCount > 0
-                    ? t('climate.onMainsSuffix', { count: contactHealth.mainsPoweredCount })
-                    : ''
-                }`
-              : contactHealth.avgBatteryPct !== null
-                ? `${t('climate.avgMinBattery', {
-                    avg: contactHealth.avgBatteryPct,
-                    min: contactHealth.minBatteryPct ?? 0,
-                  })}${
-                    contactHealth.mainsPoweredCount > 0
-                      ? t('climate.onMainsSuffix', { count: contactHealth.mainsPoweredCount })
-                      : ''
-                  }`
-                : contactHealth.mainsPoweredCount > 0
-                  ? t('contacts.mainsCount', { count: contactHealth.mainsPoweredCount })
-                  : t('climate.noBatteryReported')}
-          </p>
-        </div>
+        <ConnectivityBatteryKpi
+          title={t('contacts.kpiConnectivity')}
+          sensors={contactSensorsHealth}
+          noActiveSensorLabel={t('contacts.noActiveSensor')}
+          mainsCountLabel={(count) => t('contacts.mainsCount', { count })}
+          lowBatteryLabel={(count) => t('contacts.lowBatteryCount', { count })}
+        />
       </div>
 
       {/* État temps réel des capteurs */}
