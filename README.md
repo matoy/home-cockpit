@@ -1,88 +1,161 @@
-# tuya-power-temp
+# Home Cockpit
 
-Application web **Next.js (App Router, TypeScript)** pour agréger, historiser et visualiser la **puissance électrique**, l'**énergie (kWh)**, le **coût (€)** et les métriques de **température / humidité** de vos appareils **Tuya / Smart Life** par pièce et par période.
-
-Conçue pour un hébergement gratuit sur **Vercel (Plan Hobby)**, une base **Neon Serverless Postgres** (`drizzle-orm`) et une collecte planifiée toutes les **30 minutes via `cron-job.org`**.
+**Home Cockpit** is a full-stack multi-vendor smart home monitoring and analytics dashboard built with Next.js 15, Drizzle ORM, and PostgreSQL (Neon). It unifies power metering, indoor climate telemetry, covers, HVAC units, connected appliances, safety detectors, cross-vendor device deduplication, and electricity tariff cost analytics inside a single cockpit.
 
 ---
 
-## Architecture
+## Key Features
 
-- **Frontend & API :** Next.js 15 App Router + Tailwind CSS + Recharts.
-- **Base de données :** Neon Serverless Postgres (`@neondatabase/serverless` + Drizzle ORM).
-  - Tables : `rooms`, `devices`, `metric_readings`, `tariff_periods`, `collection_logs`.
-  - **Mode Démo automatique :** tant que `DATABASE_URL` n'est pas configuré, l'application démarre sur un jeu de données simulées sur 30 jours (au pas de 30 min) pour tester l'interface immédiatement.
-- **Calcul hybride de l'énergie (`src/lib/tariff-engine.ts`) :**
-  - Utilise le compteur d'énergie Tuya (`add_ele`) lorsqu'il progresse de manière cohérente, sinon calcule par intégration (`W × Δt`, ~`0.5 h` avec un schedule toutes les 30 min).
-  - Configurable par appareil (`Hybride Auto`, `Compteur add_ele`, `Intégration W × 0.5h`).
-- **Moteur tarifaire multi-périodes :**
-  - Gère les changements annuels de prix du kWh avec dates de validité (`start_date` / `end_date`) et clôture automatique du tarif précédent la veille.
-  - Supporte l'option **Base** et l'option **Heures Pleines / Heures Creuses (HP/HC)** avec plages horaires configurables (y compris à cheval sur minuit).
+- **12 Dedicated Tabs**:
+  - **Overview** — Real-time consumption, indoor temperature & humidity, alerts, connected ecosystems, and top power consumers.
+  - **Rooms** — Room-by-room comfort monitoring with configurable min/max temperature and humidity thresholds and cross-vendor room sync.
+  - **Energy** — Power consumption history, energy source breakdown (`total_energy` vs integrated `power_w`), and estimated EUR costs.
+  - **Climate** — Multi-room temperature and humidity comparison charts and comfort deviation tracking.
+  - **Covers** — Unified view of shutters, blinds, awnings, and gates (position %, tilt/orientation, radio protocol, RSSI).
+  - **Appliances & HVAC** — Heat pumps, split AC units, and connected household appliances with active programs and remaining time.
+  - **Security** — Smoke/CO alarms, water leak sensors, online/offline diagnostics, and battery levels.
+  - **Contacts** — Door and window contact sensors with open/closed state tracking.
+  - **Automations** — Synced cloud rules and scenes from Tuya Smart.
+  - **Tariffs** — French-style **BASE** and **HP/HC** (peak/off-peak) electricity tariff engine with monthly subscription calculation and historical periods.
+  - **Systems & Connections** — Unified management hub for all 8 cloud integrations, sync logs, manual device creation, encrypted Gzip JSON backup & restore, and diagnostics.
+  - **Setup Guide** — Interactive step-by-step setup wizard with dynamic redirect URIs and copyable configuration snippets.
+- **5-Language Internationalization (i18n)**: Automatic browser locale detection + switcher for **English (`en`)**, **Français (`fr`)**, **Español (`es`)**, **Deutsch (`de`)**, and **Italiano (`it`)**, backed by localized vendor status formatters and `Intl` date/number formatting.
+- **Cross-Vendor Device Linking & Deduplication**: Merge identical physical devices exposed by multiple clouds (e.g., Tuya + Google Home) into a single canonical device while choosing a primary telemetry source and preserving multi-vendor links.
+- **Zero-Config Demo Mode**: Works immediately without a database or vendor credentials using an interactive in-memory demo store populated with realistic multi-vendor devices, rooms, and historical telemetry.
+- **Encrypted Token Storage & Full Backup**: OAuth/QR tokens stored in PostgreSQL using **AES-256-GCM**, plus Gzip-compressed JSON export/import (`Merge` or `Replace all` modes).
 
 ---
 
-## Guide de mise en place pas-à-pas
+## Supported Ecosystems
 
-### 1. Créer un projet dédié sur Tuya IoT Platform (`iot.tuya.com`)
+| Vendor ID (`VendorId`) | Ecosystem | Auth / Protocol | Primary Capabilities |
+| :--- | :--- | :--- | :--- |
+| `tuya` | **Tuya / Smart Life** | Access ID & Secret (HMAC Cloud API v2) | Power meters, plugs, climate sensors, contact sensors, automations |
+| `google_home` | **Google Home / Nest** | OAuth 2.0 (Home MCP JSON-RPC or SDM API) | Thermostats, sensors, room discovery, cross-vendor linking |
+| `kasa` | **TP-Link Kasa Cloud** | Email / Password (Kasa Cloud JSON-RPC) | Smart plugs (`KP115` / `HS110`), real-time power & daily energy |
+| `home_connect` | **Bosch / Siemens Home Connect** | OAuth 2.0 (Simulator & Production) | Washers, dryers, dishwashers, ovens, active programs, door alerts |
+| `somfy` | **Somfy TaHoma / Overkiz** | Email / Password (Overkiz Cloud API) | Shutters, blinds, exterior screens, garage doors, gates |
+| `daikin` | **Daikin Onecta** | OAuth 2.0 (PKCE / OAuth Flow) | Air conditioning splits, heat pumps, setpoints, COP / energy stats |
+| `xsense` | **X-Sense** | Email / Password (`xsense-api` Cloud) | Smoke, CO, and water-leak alarms, base stations, battery status |
+| `xiaomi` | **Xiaomi Home** | Email / Password, 2FA, or QR Login (`MiOT`) | Climate sensors, fans, purifiers, plugs, room sync |
+| *Manual* | **Manual Devices** | Built-in UI & API | Custom/offline hardware and standalone room assignment |
 
-1. Allez sur **[iot.tuya.com](https://iot.tuya.com)** → **Cloud** → **Development** → **Create Cloud Project**.
-2. Renseignez :
-   - **Industry :** `Smart Home`
-   - **Development Method :** `Smart Home`
-   - **Data Center :** `Central Europe` (`TUYA_REGION="eu"`) ou `Western Europe` (`TUYA_REGION="weu"`), selon votre compte Smart Life.
-3. À l'étape **Authorize API Services**, activez les services gratuits :
-   - **IoT Core** *(lecture des statuts en batch et des pièces)*
-   - **Authorization Token Management**
-   - **Smart Home Basic Service** *(selon région, pour les endpoints `/v1.0/homes`)*
-4. Dans le projet créé, ouvrez **Devices** → **Link Tuya App Account** → **Add App Account** et scannez le QR code depuis votre application mobile **Smart Life** (ou **Tuya Smart**).
-5. Récupérez :
-   - **UID** de votre compte lié → `TUYA_USER_UID`
-   - **Access ID** et **Access Secret** (onglet **Overview**) → `TUYA_ACCESS_ID` et `TUYA_ACCESS_SECRET`.
+---
 
-### 2. Créer la base Neon Postgres
+## Architecture Overview
 
-1. Créez une base gratuite sur **[neon.tech](https://neon.tech)** (ou via **Storage → Neon** dans le dashboard Vercel).
-2. Copiez la chaîne de connexion `DATABASE_URL` dans votre fichier `.env.local` (ou dans les variables d'environnement Vercel).
-3. Poussez le schéma Postgres :
-   ```bash
-   npm install
-   npm run db:push
-   ```
+Home Cockpit is structured around declarative vendor registries (`VENDOR_REGISTRY` and `VENDOR_SERVER_PLUGINS`) so new ecosystems integrate cleanly without wiring boilerplate across every layer:
 
-### 3. Variables d'environnement
-
-Copiez `.env.example` vers `.env.local` :
-
-```env
-DATABASE_URL="postgresql://user:password@ep-xxx.eu-central-1.aws.neon.tech/neondb?sslmode=require"
-APP_PASSWORD="votre-mot-de-passe-dashboard"
-SCHEDULE_SECRET="secret-long-aleatoire-pour-cron-job-org"
-TUYA_ACCESS_ID="votre_access_id_tuya"
-TUYA_ACCESS_SECRET="votre_access_secret_tuya"
-TUYA_REGION="eu"
-TUYA_USER_UID="votre_uid_compte_app_smart_life"
+```mermaid
+flowchart LR
+  UI["Next.js 15 App Router UI (12 Tabs + UI Kit + 5-Lang i18n)"] --> API["API Routes (/api/dashboard, /api/vendors/[vendor]/sync|disconnect, /api/schedule/collect)"]
+  API --> Facade["Service Layer (src/lib/services/*)"]
+  Facade --> Plugins["VENDOR_SERVER_PLUGINS Registry (src/lib/services/vendors/)"]
+  Plugins --> Clients["Vendor API Clients & Localized Display Extractors (src/lib/vendors/)"]
+  Facade --> DB["Drizzle ORM + PostgreSQL (Neon)"]
+  UI --> Display["VENDOR_DISPLAY_EXTRACTORS (src/lib/vendors/display-registry.ts)"]
 ```
 
-### 4. Planifier la collecte toutes les 30 minutes (`cron-job.org`)
+### Database Schema (`src/db/schema.ts`)
 
-Le plan Hobby de Vercel limite les crons natifs à une exécution par jour. L'application expose une route dédiée sécurisée pour être appelée par un scheduler externe toutes les 30 minutes :
+PostgreSQL schema managed with Drizzle ORM (`npm run db:push`):
 
-1. Créez un compte gratuit sur **[cron-job.org](https://cron-job.org)**.
-2. Créez un nouveau job :
-   - **URL :** `https://<votre-app>.vercel.app/api/schedule/collect`
-   - **Planification :** Toutes les 30 minutes (`*/30 * * * *`)
-   - **Méthode HTTP :** `GET` ou `POST`
-   - **En-tête HTTP (Advanced → Headers) :**
-     - Clé : `Authorization`
-     - Valeur : `Bearer <VOTRE_SCHEDULE_SECRET>`
+1. `rooms` — Room definitions with custom icon, color, and comfort target ranges (temperature/humidity min/max).
+2. `devices` — Unified physical device inventory, category, network metadata (`ip_address`, `mac_address`), DP config, and latest cached telemetry.
+3. `device_vendor_links` — Many-to-one mapping between vendor external IDs (`(vendor, external_id)`) and canonical devices, supporting multi-vendor deduplication.
+4. `vendor_connections` — Per-vendor mode, sync status, AES-256-GCM encrypted OAuth/QR tokens, and error state.
+5. `metric_readings` — Time-series telemetry (power, voltage, energy, temperature, humidity, contact state, cover position).
+6. `tariff_periods` — Electricity pricing contracts (`BASE` or `HP/HC`), time slots, and monthly subscription fees.
+7. `collection_logs` — Audit trail for manual and scheduled 30-minute telemetry collection runs.
+8. `automations` — Synced cloud rules, triggers, and actions.
 
 ---
 
-## Développement local
+## Quick Start
+
+### 1. Install dependencies
 
 ```bash
 npm install
+```
+
+### 2. Configure environment variables (optional for Demo Mode)
+
+```bash
+cp .env.example .env.local
+```
+
+> **Demo Mode:** If `DATABASE_URL` is not set, Home Cockpit automatically boots into an in-memory **Demo Mode** with preloaded multi-vendor rooms, devices, telemetry, and sample connections.
+
+### 3. Push database schema & start dev server
+
+```bash
+npm run db:push
 npm run dev
 ```
 
-Puis ouvrez [http://localhost:3000](http://localhost:3000).
+Open `http://localhost:3000`. Use the **Setup Guide** tab inside the app for interactive vendor-by-vendor configuration snippets and copyable OAuth callback URLs.
+
+---
+
+## Environment Variables Reference
+
+See [`.env.example`](.env.example) for the complete annotated template.
+
+| Group | Variable | Required | Description |
+| :--- | :--- | :--- | :--- |
+| **Core** | `DATABASE_URL` | For live persistence | PostgreSQL / Neon connection string (omit for Demo Mode) |
+| **Core** | `APP_PASSWORD` | Recommended | Password protecting the cockpit login (`hc_session` cookie) |
+| **Core** | `SCHEDULE_SECRET` | For cron collection | Bearer secret checked by `GET/POST /api/schedule/collect` |
+| **Core** | `NEXT_PUBLIC_APP_URL` | Recommended | Public base URL used for OAuth redirect URI generation |
+| **Core** | `TOKEN_ENCRYPTION_KEY` | Optional (Recommended) | 64-char hex AES-256-GCM key for encrypting tokens in `vendor_connections` |
+| **Tuya** | `TUYA_ACCESS_ID`, `TUYA_ACCESS_SECRET` | For Tuya | Tuya Cloud IoT project credentials |
+| **Tuya** | `TUYA_ENDPOINT`, `TUYA_USER_UID` | For Tuya | Regional datacenter URL (e.g. `https://openapi.tuyaeu.com`) and linked app UID |
+| **Google Home** | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | For Google Home | Google Cloud OAuth 2.0 credentials |
+| **Google Home** | `GOOGLE_HOME_MODE` | Optional | `mcp` (default), `sdm`, or `off` |
+| **Google Home** | `GOOGLE_SDM_PROJECT_ID`, `GOOGLE_REDIRECT_URI` | For SDM / custom callback | Device Access UUID (`sdm`) and optional OAuth callback override |
+| **Kasa** | `KASA_EMAIL`, `KASA_PASSWORD`, `KASA_REGION` | For TP-Link Kasa | Kasa Cloud credentials and region (`eu`, `us`, `ap`, `global`) |
+| **Home Connect** | `SIEMENS_HOME_CONNECT_CLIENT_ID`, `SIEMENS_HOME_CONNECT_CLIENT_SECRET` | For Home Connect | Bosch/Siemens Home Connect OAuth credentials |
+| **Home Connect** | `SIEMENS_HOME_CONNECT_ENV`, `SIEMENS_HOME_CONNECT_REDIRECT_URI` | Optional | `live` or `sim` (simulator), plus optional callback URL override |
+| **Somfy** | `SOMFY_EMAIL`, `SOMFY_PASSWORD`, `SOMFY_REGION` | For Somfy Overkiz | Account credentials and region (`eu`, `na`, `oc`) |
+| **Somfy** | `SOMFY_CLOUD_URL`, `SOMFY_GATEWAY_IP`, `SOMFY_GATEWAY_MAC` | Optional | Overkiz API URL and local gateway fallback metadata |
+| **Daikin** | `DAIKIN_CLIENT_ID`, `DAIKIN_CLIENT_SECRET`, `DAIKIN_REDIRECT_URI` | For Daikin Onecta | Daikin Developer Portal OAuth credentials |
+| **X-Sense** | `XSENSE_EMAIL`, `XSENSE_PASSWORD` | For X-Sense | Dedicated secondary shared-account credentials |
+| **Xiaomi** | `XIAOMI_USERNAME`, `XIAOMI_PASSWORD`, `XIAOMI_REGION` | Optional (`env` auth) | Xiaomi account fallback (`de`, `cn`, `us`, `sg`, `ru`, `i2`); interactive 2FA/QR also supported in UI |
+
+> **Backward Compatibility Note:** `SIEMENSHOMECONNET_CLIENT_ID`, `SIEMENSHOMECONNET_CLIENT_SECRET`, `SIEMENSHOMECONNET_ENV`, and `SIEMENSHOMECONNET_REDIRECT_URI` (legacy typo without underscores) remain supported as fallback aliases in `home-connect-client.ts`, though new setups should always use `SIEMENS_HOME_CONNECT_*`.
+
+---
+
+## Production Deployment (Vercel + Neon + Cron)
+
+1. Provision a serverless PostgreSQL database on **Neon** and set `DATABASE_URL`.
+2. Deploy the Next.js application to **Vercel** and configure the environment variables above in your Vercel Project Settings.
+3. Run `npm run db:push` once against your production database.
+4. Configure a free scheduled job (e.g. on **cron-job.org**) every **30 minutes** (`*/30 * * * *`):
+   - **URL:** `https://<your-domain>/api/schedule/collect`
+   - **Method:** `GET` or `POST`
+   - **Header:** `Authorization: Bearer <YOUR_SCHEDULE_SECRET>`
+
+---
+
+## Available Scripts
+
+| Command | Description |
+| :--- | :--- |
+| `npm run dev` | Start Next.js development server |
+| `npm run build` | Build production bundle (`next build`) |
+| `npm run start` | Run production server |
+| `npm run lint` | Run ESLint (`next lint`) |
+| `npm run typecheck` | Run TypeScript compiler check (`tsc --noEmit`) |
+| `npm run db:push` | Push Drizzle schema directly to PostgreSQL |
+| `npm run db:generate` | Generate Drizzle SQL migrations |
+| `npm run db:studio` | Launch Drizzle Studio visual database explorer |
+
+---
+
+## Contributing
+
+Want to add support for a new smart home ecosystem or integrate another vendor protocol?
+
+Read the **[Vendor Contribution Guide](docs/ADDING_A_VENDOR.md)** to see how **Home Cockpit** uses `VENDOR_REGISTRY`, `VENDOR_SERVER_PLUGINS`, and `VENDOR_DISPLAY_EXTRACTORS` so new vendors automatically inherit unified device sync, dynamic `/api/vendors/[vendor]/{sync,disconnect}` endpoints, 30-minute telemetry collection, cross-vendor deduplication, room sync, and 5-language UI rendering.
