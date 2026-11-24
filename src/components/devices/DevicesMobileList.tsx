@@ -30,6 +30,7 @@ interface DevicesMobileListProps {
       customName: string | null;
       roomId: number | null;
       isMonitored: boolean;
+      ignoreOfflineAlert: boolean;
       excludeFromTotals: boolean;
       energyMode: EnergyMode;
     }>
@@ -360,7 +361,7 @@ export function DevicesMobileList({
                   );
                 })()}
 
-                <div className="flex items-center gap-4 text-[11px] text-slate-300">
+                <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-300">
                   <label className="inline-flex items-center gap-1.5 cursor-pointer">
                     <input
                       type="checkbox"
@@ -382,6 +383,20 @@ export function DevicesMobileList({
                       className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-amber-500"
                     />
                     {t('devices.colExclude')}
+                  </label>
+                  <label
+                    className="inline-flex items-center gap-1.5 cursor-pointer"
+                    title={t('devices.ignoreOfflineTitle')}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean(dev.ignoreOfflineAlert)}
+                      onChange={(e) =>
+                        onUpdateDevice(dev.id, { ignoreOfflineAlert: e.target.checked })
+                      }
+                      className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-slate-400"
+                    />
+                    {t('devices.ignoreOfflineLabel')}
                   </label>
                 </div>
               </div>

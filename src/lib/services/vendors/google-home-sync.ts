@@ -551,7 +551,10 @@ export async function syncRoomsFromGoogleHome(): Promise<VendorRoomSyncResult> {
 
 export const googleHomePlugin: VendorServerPlugin = {
   id: 'google_home',
-  isConfigured: () => getGoogleHomeConfig().configured,
+  isConfigured: () => {
+    const cfg = getGoogleHomeConfig();
+    return cfg.apiEnabled && cfg.configured;
+  },
   isVisible: () => getGoogleHomeConfig().apiEnabled,
   getConnectionMode: (conn) =>
     conn?.mode === 'mcp' || conn?.mode === 'sdm'

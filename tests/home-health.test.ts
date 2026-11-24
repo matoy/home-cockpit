@@ -304,4 +304,83 @@ describe('computeHomeHealth', () => {
     expect(report.vendorIssues).toHaveLength(1);
     expect(report.totalIssues).toBe(2);
   });
+
+  it('excludes offline-exempted devices, legacy Kasa room notices, and disabled Google Home from issues', () => {
+    const payload = makePayload({
+      env: {
+        mode: 'live',
+        databaseConfigured: true,
+        tuyaConfigured: true,
+        tuyaRegion: 'eu',
+        tuyaUserUidConfigured: true,
+        googleHomeApiEnabled: false,
+        googleHomeConfigured: false,
+        googleHomeMode: 'mcp',
+        googleHomeConnected: false,
+        googleSdmProjectConfigured: false,
+        kasaConfigured: true,
+        kasaRegion: 'eu',
+        homeConnectConfigured: false,
+        homeConnectEnv: 'prod',
+        homeConnectConnected: false,
+        somfyConfigured: false,
+        somfyRegion: 'eu',
+        daikinConfigured: false,
+        daikinConnected: false,
+        xsenseConfigured: false,
+        xiaomiConfigured: false,
+        xiaomiRegion: 'de',
+        xiaomiConnected: false,
+        appPasswordConfigured: false,
+        oidcConfigured: false,
+        oidcProviderName: null,
+        scheduleSecretConfigured: false,
+      },
+      devices: [
+        makeDevice({
+          id: 'offExempt',
+          name: 'Seasonal Plug',
+          isOnline: false,
+          ignoreOfflineAlert: true,
+        }),
+        makeDevice({
+          id: 'offAlert',
+          name: 'Main Router Plug',
+          isOnline: false,
+          ignoreOfflineAlert: false,
+        }),
+      ],
+      vendors: [
+        {
+          vendor: 'kasa',
+          label: 'Kasa',
+          mode: 'cloud_account',
+          configured: true,
+          connected: true,
+          devicesCount: 2,
+          lastSyncedAt: '2026-11-24T12:00:00.000Z',
+          lastError:
+            "Aucune pièce/groupe Kasa remonté par le cloud TP-Link — assignez vos pièces dans l'onglet Appareils ou Pièces.",
+        },
+        {
+          vendor: 'google_home',
+          label: 'Google Home',
+          mode: 'mcp',
+          configured: true,
+          connected: false,
+          devicesCount: 0,
+          lastSyncedAt: null,
+          lastError: null,
+        },
+      ],
+    });
+
+    const report = computeHomeHealth(payload, 'en');
+    expect(report.offlineDevices.map((d) => d.id)).toEqual(['offAlert']);
+    expect(report.exemptedOfflineDevices.map((d) => d.id)).toEqual(['offExempt']);
+    expect(report.exemptedDevices.map((d) => d.id)).toEqual(['offExempt']);
+    expect(report.vendorIssues).toHaveLength(0);
+    expect(report.totalIssues).toBe(1);
+    expect(report.status).toBe('warning');
+  });
 });

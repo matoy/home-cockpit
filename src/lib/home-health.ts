@@ -23,6 +23,21 @@ export interface HomeHealthOfflineItem {
   roomColor: string;
   lastSeenAt: string | null;
   primaryVendor: VendorId;
+  ignoreOfflineAlert: boolean;
+}
+
+export interface HomeHealthExemptedItem extends HomeHealthOfflineItem {
+  isOnline: boolean;
+}
+
+const BENIGN_VENDOR_NOTICE_PREFIXES = [
+  'Aucune pièce/groupe Kasa remonté',
+];
+
+export function isBenignVendorNotice(message: string | null | undefined): boolean {
+  const trimmed = message?.trim();
+  if (!trimmed) return false;
+  return BENIGN_VENDOR_NOTICE_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
 }
 
 export interface HomeHealthVendorIssue {
@@ -64,6 +79,8 @@ export interface HomeHealthReport {
   totalIssues: number;
   lowBatteryDevices: HomeHealthLowBatteryItem[];
   offlineDevices: HomeHealthOfflineItem[];
+  exemptedOfflineDevices: HomeHealthOfflineItem[];
+  exemptedDevices: HomeHealthExemptedItem[];
   vendorIssues: HomeHealthVendorIssue[];
   openWithHvacRooms: HomeHealthOpenWithHvacRoom[];
   safetyAlerts: HomeHealthSafetyAlert[];
@@ -124,20 +141,8 @@ export function computeHomeHealth(
     })
     .sort((a, b) => a.batteryPct - b.batteryPct || a.name.localeCompare(b.name));
 
-  const offlineDevices: HomeHealthOfflineItem[] = scopedDevices
-    .filter((d) => !d.isOnline)
-    .map((d) => {
-      const { roomName, roomColor } = resolveRoomMeta(d.roomId);
-      return {
-        id: d.id,
-        name: d.customName || d.name,
-        roomName,
-        roomColor,
-        lastSeenAt: d.lastSeenAt,
-        primaryVendor: d.primaryVendor,
-      };
-    })
-    .sort((a, b) => {
+  const sortOfflineItems = <T extends HomeHealthOfflineItem>(items: T[]): T[] =>
+    items.sort((a, b) => {
       if (a.lastSeenAt && b.lastSeenAt) {
         return a.lastSeenAt.localeCompare(b.lastSeenAt);
       }
@@ -146,16 +151,58 @@ export function computeHomeHealth(
       return a.name.localeCompare(b.name);
     });
 
+  const offlineDevices: HomeHealthOfflineItem[] = sortOfflineItems(
+    scopedDevices
+      .filter((d) => !d.isOnline && !d.ignoreOfflineAlert)
+      .map((d) => {
+        const { roomName, roomColor } = resolveRoomMeta(d.roomId);
+        return {
+          id: d.id,
+          name: d.customName || d.name,
+          roomName,
+          roomColor,
+          lastSeenAt: d.lastSeenAt,
+          primaryVendor: d.primaryVendor,
+          ignoreOfflineAlert: false,
+        };
+      })
+  );
+
+  const exemptedDevices: HomeHealthExemptedItem[] = sortOfflineItems(
+    scopedDevices
+      .filter((d) => Boolean(d.ignoreOfflineAlert))
+      .map((d) => {
+        const { roomName, roomColor } = resolveRoomMeta(d.roomId);
+        return {
+          id: d.id,
+          name: d.customName || d.name,
+          roomName,
+          roomColor,
+          lastSeenAt: d.lastSeenAt,
+          primaryVendor: d.primaryVendor,
+          ignoreOfflineAlert: true,
+          isOnline: d.isOnline,
+        };
+      })
+  );
+
+  const exemptedOfflineDevices: HomeHealthOfflineItem[] = exemptedDevices.filter(
+    (d) => !d.isOnline
+  );
+
   const vendorIssues: HomeHealthVendorIssue[] = data.vendors
-    .filter(
-      (v) =>
-        Boolean(v.lastError) ||
-        (v.configured && !v.connected && data.env.mode === 'live')
-    )
+    .filter((v) => {
+      if (v.vendor === 'google_home' && !data.env.googleHomeApiEnabled) {
+        return false;
+      }
+      const hasRealError = Boolean(v.lastError) && !isBenignVendorNotice(v.lastError);
+      const isDisconnectedLive = v.configured && !v.connected && data.env.mode === 'live';
+      return hasRealError || isDisconnectedLive;
+    })
     .map((v) => ({
       vendor: v.vendor,
       label: v.label,
-      lastError: v.lastError,
+      lastError: isBenignVendorNotice(v.lastError) ? null : v.lastError,
       connected: v.connected,
       lastSyncedAt: v.lastSyncedAt,
     }));
@@ -247,6 +294,8 @@ export function computeHomeHealth(
     totalIssues,
     lowBatteryDevices,
     offlineDevices,
+    exemptedOfflineDevices,
+    exemptedDevices,
     vendorIssues,
     openWithHvacRooms,
     safetyAlerts,

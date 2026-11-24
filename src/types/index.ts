@@ -138,6 +138,7 @@ export interface DeviceRecord {
   macAddress: string | null;
   isOnline: boolean;
   isMonitored: boolean;
+  ignoreOfflineAlert?: boolean;
   excludeFromTotals: boolean;
   energyMode: EnergyMode;
   dpConfig: DpConfig;

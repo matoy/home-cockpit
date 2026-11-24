@@ -100,6 +100,8 @@ export async function POST(request: Request) {
       macAddress: macCheck.value,
       isOnline: typeof body.isOnline === 'boolean' ? body.isOnline : true,
       isMonitored: typeof body.isMonitored === 'boolean' ? body.isMonitored : true,
+      ignoreOfflineAlert:
+        typeof body.ignoreOfflineAlert === 'boolean' ? body.ignoreOfflineAlert : false,
       excludeFromTotals:
         typeof body.excludeFromTotals === 'boolean' ? body.excludeFromTotals : false,
     });
@@ -200,6 +202,13 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: 'Champ isMonitored invalide.' }, { status: 400 });
       }
       updates.isMonitored = body.isMonitored;
+    }
+
+    if (body.ignoreOfflineAlert !== undefined) {
+      if (typeof body.ignoreOfflineAlert !== 'boolean') {
+        return NextResponse.json({ error: 'Champ ignoreOfflineAlert invalide.' }, { status: 400 });
+      }
+      updates.ignoreOfflineAlert = body.ignoreOfflineAlert;
     }
 
     if (body.excludeFromTotals !== undefined) {

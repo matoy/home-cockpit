@@ -47,6 +47,7 @@ export const devices = pgTable('devices', {
   macAddress: text('mac_address'),
   isOnline: boolean('is_online').default(true).notNull(),
   isMonitored: boolean('is_monitored').default(true).notNull(),
+  ignoreOfflineAlert: boolean('ignore_offline_alert').default(false).notNull(),
   excludeFromTotals: boolean('exclude_from_totals').default(false).notNull(),
   energyMode: text('energy_mode').default('hybrid').notNull(),
   dpConfig: jsonb('dp_config').$type<DpConfig>().notNull().default({}),

@@ -33,6 +33,7 @@ export interface CreateManualDeviceInput {
   macAddress?: string | null;
   isOnline?: boolean;
   isMonitored?: boolean;
+  ignoreOfflineAlert?: boolean;
   excludeFromTotals?: boolean;
 }
 
@@ -158,6 +159,7 @@ export async function createManualDevice(
   const roomId = input.roomId ?? null;
   const isOnline = input.isOnline ?? true;
   const isMonitored = input.isMonitored ?? true;
+  const ignoreOfflineAlert = input.ignoreOfflineAlert ?? false;
   const excludeFromTotals = input.excludeFromTotals ?? false;
   const id = `manual_${crypto.randomBytes(8).toString('hex')}`;
   const now = new Date();
@@ -180,6 +182,7 @@ export async function createManualDevice(
       macAddress,
       isOnline,
       isMonitored,
+      ignoreOfflineAlert,
       excludeFromTotals,
       energyMode: 'hybrid',
       dpConfig: {},
@@ -221,6 +224,7 @@ export async function createManualDevice(
       macAddress,
       isOnline,
       isMonitored,
+      ignoreOfflineAlert,
       excludeFromTotals,
       energyMode: 'hybrid',
       dpConfig: {},
@@ -252,6 +256,7 @@ export async function updateDevice(
     category: DeviceCategory;
     isOnline: boolean;
     isMonitored: boolean;
+    ignoreOfflineAlert: boolean;
     excludeFromTotals: boolean;
     energyMode: EnergyMode;
     dpConfig: DpConfig;

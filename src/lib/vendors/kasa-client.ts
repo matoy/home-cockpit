@@ -883,15 +883,10 @@ export async function fetchKasaInventory(options?: {
     );
   }
 
-  const warning =
-    roomNames.length === 0 && normalizedDevices.length > 0
-      ? "Aucune pièce/groupe Kasa remonté par le cloud TP-Link — assignez vos pièces dans l'onglet Appareils ou Pièces."
-      : undefined;
-
   return {
     roomNames,
     devices: normalizedDevices,
-    warning,
+    warning: undefined,
     sessionToken,
     cloudUrl,
   };

@@ -898,15 +898,14 @@ export function DashboardApp({
         {/* Navigation par onglets */}
         <nav
           aria-label={t('nav.ariaLabel')}
-          className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-wrap items-center gap-x-1 gap-y-0.5 border-t border-slate-800/60"
+          className="mx-auto max-w-7xl px-4 sm:px-6 py-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-slate-800/60"
         >
-          {tabGroups.map((group, groupIdx) => (
+          {tabGroups.map((group) => (
             <div
               key={group.id}
-              className={`flex flex-wrap items-center gap-x-0.5 gap-y-0.5 ${groupIdx > 0 ? 'md:border-l md:border-slate-800/80 md:pl-2 md:ml-1' : ''
-                }`}
+              className="flex flex-wrap items-center gap-x-0.5 gap-y-0.5"
             >
-              <span className="hidden xl:inline text-[9px] font-semibold uppercase tracking-wider text-slate-500 mr-1 select-none">
+              <span className="hidden xl:inline-flex items-center justify-center min-w-[82px] rounded-md border border-slate-800/80 bg-slate-900/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 mr-1 select-none shrink-0">
                 {group.label}
               </span>
               {group.tabs.map((tab) => {
@@ -917,7 +916,7 @@ export function DashboardApp({
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
                     title={tab.title ?? tab.label}
-                    className={`flex items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-xs font-medium transition ${active
+                    className={`flex items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2 text-xs font-medium transition ${active
                       ? 'border-indigo-500 bg-indigo-500/10 rounded-t-lg text-white'
                       : 'border-transparent text-slate-400 hover:text-slate-200'
                       }`}
@@ -967,7 +966,11 @@ export function DashboardApp({
           />
         )}
         {activeTab === 'health' && (
-          <HealthTab data={data} onNavigateTab={setActiveTab} />
+          <HealthTab
+            data={data}
+            onNavigateTab={setActiveTab}
+            onRefresh={() => fetchDashboard(range, roomId)}
+          />
         )}
         {activeTab === 'energy' && <EnergyTab data={data} />}
         {activeTab === 'climate' && <ClimateTab data={data} />}

@@ -216,7 +216,7 @@ export async function syncKasaDevices(): Promise<VendorSyncResult> {
       mode: 'cloud_account',
       connected: true,
       lastSyncedAt: now.toISOString(),
-      lastError: inventory.warning ?? null,
+      lastError: null,
     };
 
     const baseMsg = `${inventory.devices.length} appareil(s) et ${inventory.roomNames.length} pièce(s)/groupe(s) synchronisés depuis Kasa Cloud (${newCount} nouveau(x)).`;
@@ -389,7 +389,7 @@ export async function syncKasaDevices(): Promise<VendorSyncResult> {
     cloudUrl: inventory.cloudUrl,
     region: kasaCfg.region,
     lastSyncedAt: now,
-    lastError: inventory.warning ?? null,
+    lastError: null,
   });
 
   const baseMsg = `${inventory.devices.length} appareil(s) et ${inventory.roomNames.length} pièce(s)/groupe(s) synchronisés depuis Kasa Cloud (${newCount} nouveau(x)).`;
@@ -566,7 +566,7 @@ export async function syncRoomsFromKasa(): Promise<VendorRoomSyncResult> {
       mode: 'cloud_account',
       connected: true,
       lastSyncedAt: now.toISOString(),
-      lastError: inventory.warning ?? null,
+      lastError: null,
     };
 
     const baseMsg = `Kasa Cloud : ${inventory.roomNames.length} pièce(s)/groupe(s) détecté(s) (${createdCount} créée(s), ${assignedDevicesCount} appareil(s) rattaché(s)).`;
@@ -651,7 +651,7 @@ export async function syncRoomsFromKasa(): Promise<VendorRoomSyncResult> {
     cloudUrl: inventory.cloudUrl,
     region: kasaCfg.region,
     lastSyncedAt: now,
-    lastError: inventory.warning ?? null,
+    lastError: null,
   });
 
   const baseMsg = `Kasa Cloud : ${inventory.roomNames.length} pièce(s)/groupe(s) détecté(s) (${createdCount} créée(s), ${assignedDevicesCount} appareil(s) rattaché(s)).`;

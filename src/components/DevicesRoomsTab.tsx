@@ -700,6 +700,7 @@ export function DevicesRoomsTab({
       ipAddress: string | null;
       macAddress: string | null;
       isMonitored: boolean;
+      ignoreOfflineAlert: boolean;
       excludeFromTotals: boolean;
       energyMode: EnergyMode;
       dpConfig: DpConfig;
@@ -1208,15 +1209,36 @@ export function DevicesRoomsTab({
                       </td>
 
                       <td className="px-2 py-2.5 text-center">
-                        <input
-                          type="checkbox"
-                          checked={dev.isMonitored}
-                          aria-label={t('devices.colMonitored') + ' ' + dev.name}
-                          onChange={(e) =>
-                            void handleDeviceUpdate(dev.id, { isMonitored: e.target.checked })
-                          }
-                          className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-indigo-600 focus:ring-indigo-500"
-                        />
+                        <div className="inline-flex flex-col items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={dev.isMonitored}
+                            aria-label={t('devices.colMonitored') + ' ' + dev.name}
+                            onChange={(e) =>
+                              void handleDeviceUpdate(dev.id, { isMonitored: e.target.checked })
+                            }
+                            className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <label
+                            className="inline-flex items-center gap-1 text-[10px] text-slate-400 cursor-pointer"
+                            title={t('devices.ignoreOfflineTitle')}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={Boolean(dev.ignoreOfflineAlert)}
+                              aria-label={t('devices.ignoreOfflineLabel') + ' ' + dev.name}
+                              onChange={(e) =>
+                                void handleDeviceUpdate(dev.id, {
+                                  ignoreOfflineAlert: e.target.checked,
+                                })
+                              }
+                              className="h-3 w-3 rounded border-slate-600 bg-slate-950 text-slate-400 focus:ring-slate-500"
+                            />
+                            <span className={dev.ignoreOfflineAlert ? 'text-slate-200 font-medium' : 'text-slate-500'}>
+                              {t('devices.ignoreOfflineLabel')}
+                            </span>
+                          </label>
+                        </div>
                       </td>
 
                       <td className="px-2 py-2.5 text-center">

@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { AppDatabase } from '@/db';
 import { alertEvents, devices, vendorConnections } from '@/db/schema';
 import { getDemoState } from '@/lib/demo-store';
+import { isBenignVendorNotice } from '@/lib/home-health';
 import { mapDbDevice } from '@/lib/services/shared';
 import { VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import { extractXiaomiSummary, isXiaomiSecurityOrHomeDevice } from '@/lib/vendors/xiaomi-display';
@@ -143,7 +144,7 @@ export function evaluateAlertCandidates(params: {
       });
     }
 
-    if (!d.isOnline && d.lastSeenAt) {
+    if (!d.isOnline && !d.ignoreOfflineAlert && d.lastSeenAt) {
       const seenMs = new Date(d.lastSeenAt).getTime();
       if (!Number.isNaN(seenMs) && seenMs < offlineCutoffMs) {
         const hoursOffline = Math.round((now.getTime() - seenMs) / 3_600_000);
@@ -171,7 +172,7 @@ export function evaluateAlertCandidates(params: {
   }
 
   for (const v of vendors) {
-    if (v.lastError && v.lastError.trim().length > 0) {
+    if (v.lastError && v.lastError.trim().length > 0 && !isBenignVendorNotice(v.lastError)) {
       candidates.push({
         dedupKey: `vendor_error:${v.vendor}`,
         severity: 'warning',
