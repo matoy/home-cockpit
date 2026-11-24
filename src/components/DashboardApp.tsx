@@ -23,6 +23,7 @@ import {
   Wind,
   ShieldAlert,
   Plug,
+  User,
 } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
 import { extractCoverSummary } from '@/lib/covers-utils';
@@ -32,6 +33,7 @@ import { extractXiaomiSummary, isXiaomiSecurityOrHomeDevice } from '@/lib/vendor
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useI18n } from './I18nProvider';
 import { AlertBanner, Button } from './ui';
+import type { SessionUser } from '@/lib/auth';
 import type { DashboardPayload, SystemFilter, TabId, TimeRange } from '@/types';
 
 function TabLoadingFallback() {
@@ -88,6 +90,7 @@ const SetupGuideTab = dynamic(() => import('./SetupGuideTab').then((m) => m.Setu
 
 interface DashboardAppProps {
   initialData: DashboardPayload;
+  sessionUser?: SessionUser | null;
 }
 
 function toLocalDateTimeInput(date: Date): string {
@@ -95,7 +98,7 @@ function toLocalDateTimeInput(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function DashboardApp({ initialData }: DashboardAppProps) {
+export function DashboardApp({ initialData, sessionUser = null }: DashboardAppProps) {
   const router = useRouter();
   const { t, locale, formatDateTime } = useI18n();
   const [data, setData] = useState<DashboardPayload>(initialData);
@@ -691,7 +694,19 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
 
-            {data.env.appPasswordConfigured && (
+            {(sessionUser?.name || sessionUser?.email) && (
+              <span
+                title={t('header.signedInAs', {
+                  user: sessionUser.email || sessionUser.name || 'SSO',
+                })}
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-[11px] text-slate-300 max-w-[180px] truncate"
+              >
+                <User className="h-3 w-3 text-indigo-400 shrink-0" />
+                <span className="truncate">{sessionUser.name || sessionUser.email}</span>
+              </span>
+            )}
+
+            {(data.env.appPasswordConfigured || data.env.oidcConfigured || Boolean(sessionUser)) && (
               <button
                 onClick={() => void handleLogout()}
                 title={t('header.logoutTitle')}

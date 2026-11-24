@@ -6,5 +6,7 @@ export const SESSION_COOKIE_NAME = 'hc_session';
 export const SESSION_FALLBACK_SALT = 'home-cockpit-salt';
 export const SESSION_TOKEN_PAYLOAD = 'authenticated-v1';
 export const SESSION_TOKEN_VERSION = 'v2';
+export const SESSION_TOKEN_VERSION_V3 = 'v3';
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14; // 14 jours
 export const SESSION_CLOCK_SKEW_SECONDS = 60;
+export const OIDC_TX_COOKIE_NAME = 'hc_oidc_tx';

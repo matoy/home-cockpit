@@ -105,6 +105,7 @@ export const it: Record<TranslationKey, string> = {
   'header.lastCollection': 'Ultimo rilevamento: {date}',
   'header.refreshTitle': 'Aggiorna dashboard',
   'header.logoutTitle': 'Disconnetti',
+  'header.signedInAs': 'Connesso: {user}',
   'header.demoBannerTitle': 'Anteprima Demo interattiva:',
   'header.demoBannerBody':
     'DATABASE_URL non è ancora configurata; vengono simulati dati realistici su 30 giorni in memoria. Consulta la Guida Setup per collegare Tuya Cloud e Neon Postgres.',
@@ -127,7 +128,17 @@ export const it: Record<TranslationKey, string> = {
   'login.submitting': 'Verifica...',
   'login.invalidPassword': 'Password errata',
   'login.networkError': 'Errore di rete. Riprova.',
+  'login.ssoButton': 'Accedi con {provider}',
+  'login.orSeparator': 'oppure',
+  'login.oidcErrorDenied': "Accesso annullato o negato dal provider d'identità.",
+  'login.oidcErrorCsrf': 'Sessione OIDC scaduta o stato di sicurezza non valido. Riprova.',
+  'login.oidcErrorUnauthorized':
+    'Questo account non è autorizzato nella lista consentita (AUTH_ALLOWED_EMAILS / AUTH_ALLOWED_DOMAINS).',
+  'login.oidcErrorConfig': 'Configurazione OIDC incompleta sul server.',
+  'login.oidcErrorFailed': "Autenticazione tramite provider d'identità non riuscita.",
   'login.footerNote': 'Protezione configurata tramite la variabile {envVar}',
+  'login.footerOidcOnly': 'Accesso protetto da {provider} (OIDC)',
+  'login.footerBoth': 'Accesso protetto da {provider} o {envVar}',
 
   // Sintesi
   'overview.range24h': '24 ore',

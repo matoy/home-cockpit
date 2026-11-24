@@ -20,6 +20,7 @@
   - **Systems & Connections** — Unified management hub for all 8 cloud integrations, sync logs, manual device creation, encrypted Gzip JSON backup & restore, and diagnostics.
   - **Setup Guide** — Interactive step-by-step setup wizard with dynamic redirect URIs and copyable configuration snippets.
 - **5-Language Internationalization (i18n)**: Automatic browser locale detection + switcher for **English (`en`)**, **Français (`fr`)**, **Español (`es`)**, **Deutsch (`de`)**, and **Italiano (`it`)**, backed by localized vendor status formatters and `Intl` date/number formatting.
+- **Identity Provider (IdP / OIDC) & Password Auth**: Built-in OpenID Connect SSO client (Discovery, PKCE `S256`, JWKS `id_token` verification, email/domain allow-listing) compatible with Google, Authentik, Keycloak, Entra ID, and more — usable alone or alongside `APP_PASSWORD` ([`docs/AUTH_IDP.md`](docs/AUTH_IDP.md)).
 - **Cross-Vendor Device Linking & Deduplication**: Merge identical physical devices exposed by multiple clouds (e.g., Tuya + Google Home) into a single canonical device while choosing a primary telemetry source and preserving multi-vendor links.
 - **Zero-Config Demo Mode**: Works immediately without a database or vendor credentials using an interactive in-memory demo store populated with realistic multi-vendor devices, rooms, and historical telemetry.
 - **Encrypted Token Storage & Full Backup**: OAuth/QR tokens stored in PostgreSQL using **AES-256-GCM**, plus Gzip-compressed JSON export/import (`Merge` or `Replace all` modes).
@@ -105,7 +106,10 @@ See [`.env.example`](.env.example) for the complete annotated template.
 | Group | Variable | Required | Description |
 | :--- | :--- | :--- | :--- |
 | **Core** | `DATABASE_URL` | For live persistence | PostgreSQL / Neon connection string (omit for Demo Mode) |
-| **Core** | `APP_PASSWORD` | Recommended | Password protecting the cockpit login (`hc_session` cookie) |
+| **Core** | `APP_PASSWORD` | Optional if OIDC is used | Password protecting the cockpit login (`hc_session` cookie) |
+| **Core** | `AUTH_SESSION_SECRET` | Recommended with OIDC | Secret used to sign `hc_session` & OIDC transactions (falls back to `APP_PASSWORD` if set) |
+| **IdP / OIDC** | `AUTH_OIDC_ISSUER`, `AUTH_OIDC_CLIENT_ID`, `AUTH_OIDC_CLIENT_SECRET` | For SSO login | OpenID Connect issuer (e.g. `https://accounts.google.com`) and OAuth client credentials (see [`docs/AUTH_IDP.md`](docs/AUTH_IDP.md)) |
+| **IdP / OIDC** | `AUTH_OIDC_PROVIDER_NAME`, `AUTH_ALLOWED_EMAILS`, `AUTH_ALLOWED_DOMAINS`, `AUTH_ALLOW_ANY_AUTHENTICATED` | Strongly recommended | SSO button label (`Google` auto-detected) and fail-closed user authorization policy |
 | **Core** | `SCHEDULE_SECRET` | For cron collection | Bearer secret checked by `GET/POST /api/schedule/collect` |
 | **Core** | `NEXT_PUBLIC_APP_URL` | Recommended | Public base URL used for OAuth redirect URI generation |
 | **Core** | `TOKEN_ENCRYPTION_KEY` | Optional (Recommended) | 64-char hex AES-256-GCM key for encrypting tokens in `vendor_connections` |

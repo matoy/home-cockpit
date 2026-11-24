@@ -105,6 +105,7 @@ export const en: Record<TranslationKey, string> = {
   'header.lastCollection': 'Last collection: {date}',
   'header.refreshTitle': 'Refresh dashboard',
   'header.logoutTitle': 'Sign out',
+  'header.signedInAs': 'Signed in: {user}',
   'header.demoBannerTitle': 'Interactive Demo Preview:',
   'header.demoBannerBody':
     'DATABASE_URL is not configured yet; realistic 30-day data is simulated in memory. Check the Setup Guide to connect Tuya Cloud and Neon Postgres.',
@@ -127,7 +128,17 @@ export const en: Record<TranslationKey, string> = {
   'login.submitting': 'Checking...',
   'login.invalidPassword': 'Incorrect password',
   'login.networkError': 'Network error. Please try again.',
+  'login.ssoButton': 'Sign in with {provider}',
+  'login.orSeparator': 'or',
+  'login.oidcErrorDenied': 'Sign-in cancelled or denied by the identity provider.',
+  'login.oidcErrorCsrf': 'OIDC session expired or invalid security state. Please try again.',
+  'login.oidcErrorUnauthorized':
+    'This account is not in the allow-list (AUTH_ALLOWED_EMAILS / AUTH_ALLOWED_DOMAINS).',
+  'login.oidcErrorConfig': 'Server OIDC identity provider configuration is incomplete.',
+  'login.oidcErrorFailed': 'Identity provider authentication failed.',
   'login.footerNote': 'Protection configured via {envVar} environment variable',
+  'login.footerOidcOnly': 'Access protected by {provider} (OIDC)',
+  'login.footerBoth': 'Access protected by {provider} or {envVar}',
 
   // Overview
   'overview.range24h': '24 hours',

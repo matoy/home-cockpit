@@ -103,6 +103,7 @@ export const fr = {
   'header.lastCollection': 'Dernière collecte : {date}',
   'header.refreshTitle': "Rafraîchir l'affichage",
   'header.logoutTitle': 'Déconnexion',
+  'header.signedInAs': 'Connecté : {user}',
   'header.demoBannerTitle': 'Aperçu Démo interactif :',
   'header.demoBannerBody':
     "DATABASE_URL n'est pas encore configurée, des données réalistes sur 30 jours sont simulées en mémoire. Consultez le Guide Setup pour connecter Tuya Cloud et Neon Postgres.",
@@ -125,7 +126,17 @@ export const fr = {
   'login.submitting': 'Vérification...',
   'login.invalidPassword': 'Mot de passe incorrect',
   'login.networkError': 'Erreur réseau. Réessayez.',
+  'login.ssoButton': 'Se connecter avec {provider}',
+  'login.orSeparator': 'ou',
+  'login.oidcErrorDenied': "Connexion annulée ou refusée par le fournisseur d'identité.",
+  'login.oidcErrorCsrf': 'Session OIDC expirée ou jeton de sécurité invalide. Réessayez.',
+  'login.oidcErrorUnauthorized':
+    "Ce compte n'est pas autorisé dans la liste blanche (AUTH_ALLOWED_EMAILS / AUTH_ALLOWED_DOMAINS).",
+  'login.oidcErrorConfig': "Authentification IdP (OIDC) incomplète côté serveur.",
+  'login.oidcErrorFailed': "Échec de l'authentification auprès du fournisseur d'identité.",
   'login.footerNote': 'Protection configurée via la variable {envVar}',
+  'login.footerOidcOnly': 'Accès protégé par {provider} (OIDC)',
+  'login.footerBoth': 'Accès protégé par {provider} ou {envVar}',
 
   // Synthèse (OverviewTab)
   'overview.range24h': '24 heures',

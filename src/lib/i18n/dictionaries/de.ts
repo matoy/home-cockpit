@@ -105,6 +105,7 @@ export const de: Record<TranslationKey, string> = {
   'header.lastCollection': 'Letzte Erfassung: {date}',
   'header.refreshTitle': 'Ansicht aktualisieren',
   'header.logoutTitle': 'Abmelden',
+  'header.signedInAs': 'Angemeldet: {user}',
   'header.demoBannerTitle': 'Interaktive Demo-Vorschau:',
   'header.demoBannerBody':
     'DATABASE_URL ist noch nicht konfiguriert; realistische 30-Tage-Daten werden im Arbeitsspeicher simuliert. Siehe Setup-Anleitung für Tuya Cloud & Neon Postgres.',
@@ -127,7 +128,17 @@ export const de: Record<TranslationKey, string> = {
   'login.submitting': 'Überprüfung...',
   'login.invalidPassword': 'Falsches Passwort',
   'login.networkError': 'Netzwerkfehler. Bitte erneut versuchen.',
+  'login.ssoButton': 'Mit {provider} anmelden',
+  'login.orSeparator': 'oder',
+  'login.oidcErrorDenied': 'Anmeldung vom Identity Provider abgebrochen oder abgelehnt.',
+  'login.oidcErrorCsrf': 'OIDC-Sitzung abgelaufen oder ungültiges Sicherheitstoken. Bitte erneut versuchen.',
+  'login.oidcErrorUnauthorized':
+    'Dieses Konto ist nicht in der Zulassungsliste (AUTH_ALLOWED_EMAILS / AUTH_ALLOWED_DOMAINS).',
+  'login.oidcErrorConfig': 'OIDC-Konfiguration auf dem Server unvollständig.',
+  'login.oidcErrorFailed': 'Authentifizierung beim Identity Provider fehlgeschlagen.',
   'login.footerNote': 'Schutz konfiguriert über die Variable {envVar}',
+  'login.footerOidcOnly': 'Zugang geschützt durch {provider} (OIDC)',
+  'login.footerBoth': 'Zugang geschützt durch {provider} oder {envVar}',
 
   // Übersicht
   'overview.range24h': '24 Stunden',

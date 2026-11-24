@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import {
   createSessionToken,
+  isAnyAuthConfigured,
   isAppPasswordConfigured,
+  isOidcConfigured,
   SESSION_COOKIE_NAME,
   verifyAppPassword,
 } from '@/lib/auth';
@@ -53,8 +55,18 @@ function jsonNoStore(
 }
 
 export async function POST(request: Request) {
-  if (process.env.NODE_ENV === 'production' && !isAppPasswordConfigured()) {
-    return jsonNoStore({ error: 'APP_PASSWORD doit être configuré en production.' }, 503);
+  if (process.env.NODE_ENV === 'production' && !isAnyAuthConfigured()) {
+    return jsonNoStore(
+      { error: 'APP_PASSWORD ou AUTH_OIDC_* doit être configuré en production.' },
+      503
+    );
+  }
+
+  if (!isAppPasswordConfigured() && isOidcConfigured()) {
+    return jsonNoStore(
+      { error: "La connexion par mot de passe est désactivée ; utilisez votre fournisseur d'identité." },
+      403
+    );
   }
 
   const now = Date.now();

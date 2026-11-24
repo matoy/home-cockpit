@@ -212,6 +212,8 @@ describe('tariff-engine & dashboard aggregator', () => {
       xiaomiConnected: false,
       xiaomiRegion: 'de',
       appPasswordConfigured: false,
+      oidcConfigured: false,
+      oidcProviderName: null,
       scheduleSecretConfigured: false,
       googleHomeApiEnabled: true,
       googleHomeConfigured: false,

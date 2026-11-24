@@ -10,6 +10,7 @@ import {
   tariffPeriods,
 } from '@/db/schema';
 import { isAppPasswordConfigured } from '@/lib/auth';
+import { getOidcConfig } from '@/lib/auth-oidc';
 import { getDemoState } from '@/lib/demo-store';
 import { sql } from 'drizzle-orm';
 import { extractMetricsFromStatus, getTuyaConfig, normalizeTuyaRule } from '@/lib/tuya-client';
@@ -69,6 +70,7 @@ export function getEnvStatus(
   const xsense = getXSenseConfig();
   const xiaomi = getXiaomiConfig();
   const google = getGoogleHomeConfig();
+  const oidc = getOidcConfig();
   const databaseConfigured = isDatabaseConfigured();
   return {
     mode: databaseConfigured ? 'live' : 'demo',
@@ -90,6 +92,8 @@ export function getEnvStatus(
     xiaomiConnected: Boolean(xiaomiConnected),
     xiaomiRegion: xiaomi.region,
     appPasswordConfigured: isAppPasswordConfigured(),
+    oidcConfigured: oidc.configured,
+    oidcProviderName: oidc.configured ? oidc.providerName : null,
     scheduleSecretConfigured: Boolean(process.env.SCHEDULE_SECRET?.trim()),
     googleHomeApiEnabled: google.apiEnabled,
     googleHomeConfigured: google.configured,

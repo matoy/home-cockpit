@@ -252,6 +252,8 @@ export interface EnvStatus {
   xiaomiConnected: boolean;
   xiaomiRegion: string;
   appPasswordConfigured: boolean;
+  oidcConfigured: boolean;
+  oidcProviderName: string | null;
   scheduleSecretConfigured: boolean;
   googleHomeApiEnabled: boolean;
   googleHomeConfigured: boolean;
