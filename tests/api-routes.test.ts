@@ -18,6 +18,7 @@ vi.mock('next/headers', () => ({
 }));
 
 import { SESSION_COOKIE_NAME, createSessionToken } from '@/lib/auth';
+import { getDemoState } from '@/lib/demo-store';
 import { signDaikinOAuthState } from '@/lib/vendors/crypto-store';
 import { POST as loginPost } from '@/app/api/auth/login/route';
 import { POST as backupImportPost } from '@/app/api/backup/import/route';
@@ -169,6 +170,68 @@ describe('API route security & input validation', () => {
       })
     );
     expect(deletedRes.status).toBe(200);
+  });
+
+  it('supports single and bulk deletion of any device (cloud or manual) via DELETE /api/devices', async () => {
+    mockCookiesMap.set(SESSION_COOKIE_NAME, createSessionToken());
+    const state = getDemoState();
+    const cloudDevices = state.devices.filter((d) => !d.id.startsWith('manual_'));
+    expect(cloudDevices.length).toBeGreaterThanOrEqual(3);
+
+    const [first, second, third] = cloudDevices;
+
+    const singleDelete = await devicesDelete(
+      new Request(`https://cockpit.local/api/devices?id=${encodeURIComponent(first.id)}`, {
+        method: 'DELETE',
+      })
+    );
+    expect(singleDelete.status).toBe(200);
+    expect((await singleDelete.json()) as { deletedCount: number }).toMatchObject({
+      ok: true,
+      deletedCount: 1,
+    });
+    expect(getDemoState().devices.some((d) => d.id === first.id)).toBe(false);
+
+    const deleteMissing = await devicesDelete(
+      new Request(`https://cockpit.local/api/devices?id=${encodeURIComponent(first.id)}`, {
+        method: 'DELETE',
+      })
+    );
+    expect(deleteMissing.status).toBe(404);
+
+    const bulkEmpty = await devicesDelete(
+      new Request('https://cockpit.local/api/devices', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [] }),
+      })
+    );
+    expect(bulkEmpty.status).toBe(400);
+
+    const bulkDelete = await devicesDelete(
+      new Request('https://cockpit.local/api/devices', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [second.id, third.id, 'nonexistent_device_id'] }),
+      })
+    );
+    expect(bulkDelete.status).toBe(200);
+    expect((await bulkDelete.json()) as { ok: boolean; deletedCount: number }).toMatchObject({
+      ok: true,
+      deletedCount: 2,
+    });
+    const remainingIds = new Set(getDemoState().devices.map((d) => d.id));
+    expect(remainingIds.has(second.id)).toBe(false);
+    expect(remainingIds.has(third.id)).toBe(false);
+
+    const bulkNoneFound = await devicesDelete(
+      new Request('https://cockpit.local/api/devices', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: ['nonexistent_device_id'] }),
+      })
+    );
+    expect(bulkNoneFound.status).toBe(404);
   });
 
   it('validates tariff payloads and rejects invalid dates, modes, or negative rates', async () => {

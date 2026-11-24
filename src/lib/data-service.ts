@@ -15,6 +15,8 @@ export {
 export {
   createManualDevice,
   updateDevice,
+  deleteDevice,
+  deleteDevices,
   deleteManualDevice,
   type CreateManualDeviceInput,
 } from '@/lib/services/devices-service';

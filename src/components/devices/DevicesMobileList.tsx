@@ -21,7 +21,7 @@ interface DevicesMobileListProps {
   lastShiftKeyRef: MutableRefObject<boolean>;
   onToggleSelectDevice: (deviceId: string, shiftKey: boolean) => void;
   onOpenEditManual: (device: DeviceRecord) => void;
-  onDeleteManual: (device: DeviceRecord) => void;
+  onDeleteDevice: (device: DeviceRecord) => void;
   onOpenInspector: (device: DeviceRecord) => void;
   onOpenManageSystems: (device: DeviceRecord) => void;
   onUpdateDevice: (
@@ -47,7 +47,7 @@ export function DevicesMobileList({
   lastShiftKeyRef,
   onToggleSelectDevice,
   onOpenEditManual,
-  onDeleteManual,
+  onDeleteDevice,
   onOpenInspector,
   onOpenManageSystems,
   onUpdateDevice,
@@ -131,7 +131,7 @@ export function DevicesMobileList({
                     </button>
                     <button
                       type="button"
-                      onClick={() => onDeleteManual(dev)}
+                      onClick={() => onDeleteDevice(dev)}
                       title={t('devices.deleteManualTitle')}
                       className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 hover:border-rose-500/40 hover:bg-rose-500/15 hover:text-rose-300 p-1.5 text-slate-300"
                     >
@@ -139,14 +139,25 @@ export function DevicesMobileList({
                     </button>
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => onOpenInspector(dev)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2.5 py-1 text-[11px] text-slate-200 shrink-0"
-                  >
-                    <Sliders className="h-3 w-3" />
-                    {t('devices.dpInspectorBtn')}
-                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => onOpenInspector(dev)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2.5 py-1 text-[11px] text-slate-200"
+                    >
+                      <Sliders className="h-3 w-3" />
+                      {t('devices.dpInspectorBtn')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteDevice(dev)}
+                      title={t('devices.deleteTitle')}
+                      aria-label={t('devices.deleteTitle')}
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 hover:border-rose-500/40 hover:bg-rose-500/15 hover:text-rose-300 p-1.5 text-slate-300"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
                 )}
               </div>
 

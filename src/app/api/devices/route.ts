@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createManualDevice, deleteManualDevice, updateDevice } from '@/lib/data-service';
+import { createManualDevice, deleteDevice, deleteDevices, updateDevice } from '@/lib/data-service';
 import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 import { asRecord } from '@/lib/utils';
 import { isValidVendorId } from '@/lib/vendors/registry';
@@ -269,19 +269,42 @@ export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id')?.trim() ?? '';
-    if (!id || !id.startsWith('manual_')) {
+    if (id) {
+      if (id.length > 160) {
+        return NextResponse.json({ error: 'Identifiant appareil invalide.' }, { status: 400 });
+      }
+      const deleted = await deleteDevice(id);
+      if (!deleted) {
+        return NextResponse.json({ error: 'Appareil introuvable.' }, { status: 404 });
+      }
+      return NextResponse.json({ ok: true, deletedCount: 1 });
+    }
+
+    const rawBody = await request.json().catch(() => null);
+    const body = asRecord(rawBody);
+    const rawIds = body && Array.isArray(body.ids) ? body.ids : [];
+    const uniqueIds = Array.from(
+      new Set(
+        rawIds
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0 && item.length <= 160)
+      )
+    );
+
+    if (uniqueIds.length === 0 || uniqueIds.length > 200) {
       return NextResponse.json(
-        { error: 'Seuls les appareils déclarés manuellement (manual_...) peuvent être supprimés.' },
+        { error: 'Liste d’identifiants d’appareils invalide (1 à 200 appareils).' },
         { status: 400 }
       );
     }
 
-    const deleted = await deleteManualDevice(id);
-    if (!deleted) {
-      return NextResponse.json({ error: 'Appareil introuvable.' }, { status: 404 });
+    const deletedCount = await deleteDevices(uniqueIds);
+    if (deletedCount === 0) {
+      return NextResponse.json({ error: 'Aucun appareil correspondant trouvé.' }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, deletedCount });
   } catch (err) {
     return apiErrorResponse('api/devices DELETE', err, 'Erreur suppression appareil');
   }

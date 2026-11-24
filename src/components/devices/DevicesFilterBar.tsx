@@ -12,6 +12,7 @@ import {
   Plug,
   Plus,
   Search,
+  Trash2,
   Unlink,
   X,
 } from 'lucide-react';
@@ -55,6 +56,7 @@ interface DevicesFilterBarProps {
   filteredNotLinkedCount: number;
   onSelectNotLinked: () => void;
   onBulkSystemAction: (link: boolean) => void;
+  onBulkDeleteSelected: () => void;
   onCloseBulkBar: () => void;
   bulkFeedback: { ok: boolean; text: string } | null;
   onClearBulkFeedback: () => void;
@@ -99,6 +101,7 @@ export function DevicesFilterBar({
   filteredNotLinkedCount,
   onSelectNotLinked,
   onBulkSystemAction,
+  onBulkDeleteSelected,
   onCloseBulkBar,
   bulkFeedback,
   onClearBulkFeedback,
@@ -443,6 +446,16 @@ export function DevicesFilterBar({
             >
               <Unlink className="h-3.5 w-3.5" />
               {t('devices.bulkUnlinkAction')}
+            </button>
+
+            <button
+              type="button"
+              disabled={bulkSaving || selectedDeviceIds.length === 0}
+              onClick={onBulkDeleteSelected}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 hover:bg-rose-500/25 hover:text-rose-100 disabled:opacity-40 px-3 py-1.5 text-xs font-medium text-rose-200 transition"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {t('devices.bulkDeleteAction', { count: selectedDeviceIds.length })}
             </button>
 
             <button

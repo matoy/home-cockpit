@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { getDb, type AppDatabase } from '@/db';
 import { devices, deviceVendorLinks } from '@/db/schema';
 import { getDemoState } from '@/lib/demo-store';
@@ -383,26 +383,35 @@ export async function updateDevice(
   return mapDbDevice(updated, links);
 }
 
-export async function deleteManualDevice(id: string): Promise<boolean> {
-  if (!id.startsWith('manual_')) {
-    throw new Error('Seuls les appareils déclarés manuellement peuvent être supprimés.');
-  }
+export async function deleteDevices(ids: string[]): Promise<number> {
+  const uniqueIds = Array.from(new Set(ids.map((s) => s.trim()).filter(Boolean)));
+  if (uniqueIds.length === 0) return 0;
 
   const db = getDb();
   if (!db) {
     const state = getDemoState();
+    const idSet = new Set(uniqueIds);
     const beforeLen = state.devices.length;
-    state.devices = state.devices.filter((d) => d.id !== id);
-    if (state.devices.length === beforeLen) return false;
-    state.vendorLinks = state.vendorLinks.filter((l) => l.deviceId !== id);
-    state.readings = state.readings.filter((r) => r.deviceId !== id);
-    return true;
+    state.devices = state.devices.filter((d) => !idSet.has(d.id));
+    const deletedCount = beforeLen - state.devices.length;
+    if (deletedCount === 0) return 0;
+    state.vendorLinks = state.vendorLinks.filter((l) => !idSet.has(l.deviceId));
+    state.readings = state.readings.filter((r) => !idSet.has(r.deviceId));
+    return deletedCount;
   }
 
   await ensureSchemaInitialized(db);
   const deleted = await db
     .delete(devices)
-    .where(eq(devices.id, id))
+    .where(inArray(devices.id, uniqueIds))
     .returning({ id: devices.id });
-  return deleted.length > 0;
+  return deleted.length;
+}
+
+export async function deleteDevice(id: string): Promise<boolean> {
+  return (await deleteDevices([id])) > 0;
+}
+
+export async function deleteManualDevice(id: string): Promise<boolean> {
+  return deleteDevice(id);
 }

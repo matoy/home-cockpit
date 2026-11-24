@@ -302,11 +302,14 @@ export function DevicesRoomsTab({
     }
   }
 
-  async function handleDeleteManualDevice(dev: DeviceRecord) {
+  async function handleDeleteDevice(dev: DeviceRecord) {
     const label = dev.customName || dev.name;
+    const isManual = dev.id.startsWith('manual_');
     if (
       typeof window !== 'undefined' &&
-      !window.confirm(t('devices.manualDeleteConfirm', { name: label }))
+      !window.confirm(
+        t(isManual ? 'devices.manualDeleteConfirm' : 'devices.deleteConfirm', { name: label })
+      )
     ) {
       return;
     }
@@ -320,9 +323,12 @@ export function DevicesRoomsTab({
       if (!res.ok) {
         throw new Error(json.error || t('devices.manualDeleteError'));
       }
+      setSelectedDeviceIds((prev) => prev.filter((id) => id !== dev.id));
+      if (inspectDevice?.id === dev.id) setInspectDevice(null);
+      if (manageSystemsDeviceId === dev.id) setManageSystemsDeviceId(null);
       setSyncMessage({
         ok: true,
-        text: t('devices.manualDeleted', { name: label }),
+        text: t(isManual ? 'devices.manualDeleted' : 'devices.deleted', { name: label }),
       });
       await onRefresh();
     } catch (err) {
@@ -565,6 +571,52 @@ export function DevicesRoomsTab({
       }
     } catch (err) {
       const text = err instanceof Error ? err.message : t('devices.bulkError');
+      setBulkFeedback({ ok: false, text });
+      setSyncMessage({ ok: false, text });
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
+  async function handleBulkDeleteDevices() {
+    if (selectedDeviceIds.length === 0) return;
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(t('devices.bulkDeleteConfirm', { count: selectedDeviceIds.length }))
+    ) {
+      return;
+    }
+
+    const idsToDelete = [...selectedDeviceIds];
+    setBulkSaving(true);
+    setBulkFeedback(null);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/devices', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: idsToDelete }),
+      });
+      const json = (await res.json()) as { deletedCount?: number; error?: string };
+      if (!res.ok) {
+        throw new Error(json.error || t('devices.bulkDeleteError'));
+      }
+
+      const deletedSet = new Set(idsToDelete);
+      if (inspectDevice && deletedSet.has(inspectDevice.id)) setInspectDevice(null);
+      if (manageSystemsDeviceId && deletedSet.has(manageSystemsDeviceId)) {
+        setManageSystemsDeviceId(null);
+      }
+
+      const text = t('devices.bulkDeleteDone', {
+        count: json.deletedCount ?? idsToDelete.length,
+      });
+      setBulkFeedback({ ok: true, text });
+      setSyncMessage({ ok: true, text });
+      setSelectedDeviceIds([]);
+      await onRefresh();
+    } catch (err) {
+      const text = err instanceof Error ? err.message : t('devices.bulkDeleteError');
       setBulkFeedback({ ok: false, text });
       setSyncMessage({ ok: false, text });
     } finally {
@@ -824,6 +876,7 @@ export function DevicesRoomsTab({
           filteredNotLinkedCount={filteredNotLinkedToBulkVendorIds.length}
           onSelectNotLinked={handleSelectNotLinkedToBulkVendor}
           onBulkSystemAction={(link) => void handleBulkSystemAction(link)}
+          onBulkDeleteSelected={() => void handleBulkDeleteDevices()}
           onCloseBulkBar={() => {
             setBulkPanelOpen(false);
             setSelectedDeviceIds([]);
@@ -1279,7 +1332,7 @@ export function DevicesRoomsTab({
                             </button>
                             <button
                               type="button"
-                              onClick={() => void handleDeleteManualDevice(dev)}
+                              onClick={() => void handleDeleteDevice(dev)}
                               title={t('devices.deleteManualTitle')}
                               className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 hover:border-rose-500/40 hover:bg-rose-500/15 hover:text-rose-300 p-1.5 text-slate-300 transition"
                             >
@@ -1287,15 +1340,26 @@ export function DevicesRoomsTab({
                             </button>
                           </div>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => openInspector(dev)}
-                            title={t('devices.dpInspectorBtn')}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1 text-[11px] text-slate-200 transition"
-                          >
-                            <Sliders className="h-3 w-3" />
-                            {t('devices.dpBtnShort')}
-                          </button>
+                          <div className="inline-flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openInspector(dev)}
+                              title={t('devices.dpInspectorBtn')}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1 text-[11px] text-slate-200 transition"
+                            >
+                              <Sliders className="h-3 w-3" />
+                              {t('devices.dpBtnShort')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteDevice(dev)}
+                              title={t('devices.deleteTitle')}
+                              aria-label={t('devices.deleteTitle')}
+                              className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 hover:border-rose-500/40 hover:bg-rose-500/15 hover:text-rose-300 p-1.5 text-slate-300 transition"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -1323,7 +1387,7 @@ export function DevicesRoomsTab({
           lastShiftKeyRef={lastShiftKeyRef}
           onToggleSelectDevice={toggleSelectDevice}
           onOpenEditManual={openEditManualDeviceModal}
-          onDeleteManual={(dev) => void handleDeleteManualDevice(dev)}
+          onDeleteDevice={(dev) => void handleDeleteDevice(dev)}
           onOpenInspector={openInspector}
           onOpenManageSystems={openManageSystems}
           onUpdateDevice={(id, updates) => void handleDeviceUpdate(id, updates)}

@@ -77,10 +77,54 @@ export function resolveTimeWindow(
   };
 }
 
+function resolveBucketMode(
+  range: TimeRange,
+  effectiveHours: number
+): Exclude<TimeRange, 'custom'> {
+  if (range !== 'custom') return range;
+  if (effectiveHours <= 48) return '24h';
+  if (effectiveHours <= 24 * 10) return '7d';
+  if (effectiveHours <= 24 * 90) return '30d';
+  return '365d';
+}
+
+/**
+ * Passe automatiquement au pas de 15 min sur la fenêtre 24h dès qu'au moins un appareil
+ * présente un intervalle consécutif entre 5 et 20 minutes, sinon reste à 30 min.
+ */
+export function detect24hBucketMinutes(
+  readings: ReadonlyArray<Pick<MetricReadingRecord, 'deviceId' | 'recordedAt'>>
+): 15 | 30 {
+  const byDevice = new Map<string, number[]>();
+  for (const r of readings) {
+    const ts = Date.parse(r.recordedAt);
+    if (Number.isNaN(ts)) continue;
+    let list = byDevice.get(r.deviceId);
+    if (!list) {
+      list = [];
+      byDevice.set(r.deviceId, list);
+    }
+    list.push(ts);
+  }
+
+  for (const timestamps of byDevice.values()) {
+    if (timestamps.length < 2) continue;
+    timestamps.sort((a, b) => a - b);
+    for (let i = 1; i < timestamps.length; i++) {
+      const dtMin = (timestamps[i] - timestamps[i - 1]) / 60_000;
+      if (dtMin >= 5 && dtMin <= 20) {
+        return 15;
+      }
+    }
+  }
+  return 30;
+}
+
 function getBucketInfo(
   date: Date,
   range: TimeRange,
-  effectiveHours: number
+  effectiveHours: number,
+  slotMinutes24h: 15 | 30 = 30
 ): { key: string; label: string } {
   const { dateStr, timeStr } = getParisDateAndTime(date);
   const [year, month, day] = dateStr.split('-');
@@ -88,19 +132,11 @@ function getBucketInfo(
   const hour = Number(hourStr);
   const minute = Number(minStr);
 
-  const mode =
-    range !== 'custom'
-      ? range
-      : effectiveHours <= 48
-        ? '24h'
-        : effectiveHours <= 24 * 10
-          ? '7d'
-          : effectiveHours <= 24 * 90
-            ? '30d'
-            : '365d';
+  const mode = resolveBucketMode(range, effectiveHours);
 
   if (mode === '24h') {
-    const slotMin = minute >= 30 ? '30' : '00';
+    const slot = Math.floor(minute / slotMinutes24h) * slotMinutes24h;
+    const slotMin = String(slot).padStart(2, '0');
     return {
       key: `${dateStr}T${hourStr}:${slotMin}`,
       label: effectiveHours > 24 ? `${day}/${month} ${hourStr}:${slotMin}` : `${hourStr}:${slotMin}`,
@@ -730,6 +766,9 @@ export function buildDashboardPayload(params: {
   }
 
   const buckets = new Map<string, BucketState>();
+  const bucketMode = resolveBucketMode(range, effectiveHours);
+  const slotMinutes24h: 15 | 30 =
+    bucketMode === '24h' ? detect24hBucketMinutes(filteredReadings) : 30;
 
   for (const r of filteredReadings) {
     const dev = deviceMap.get(r.deviceId);
@@ -743,7 +782,12 @@ export function buildDashboardPayload(params: {
     const devName = dev.customName || dev.name;
 
     const dt = new Date(r.recordedAt);
-    const { key: bucketKey, label: bucketLabel } = getBucketInfo(dt, range, effectiveHours);
+    const { key: bucketKey, label: bucketLabel } = getBucketInfo(
+      dt,
+      range,
+      effectiveHours,
+      slotMinutes24h
+    );
 
     let bucket = buckets.get(bucketKey);
     if (!bucket) {
@@ -911,7 +955,7 @@ export function buildDashboardPayload(params: {
       if (e <= 0) continue;
       const dt = new Date(r.recordedAt);
       const { dateStr } = getParisDateAndTime(dt);
-      const { key: bk } = getBucketInfo(dt, range, effectiveHours);
+      const { key: bk } = getBucketInfo(dt, range, effectiveHours, slotMinutes24h);
       const c = computeReadingCost(dt, e, tariffs);
 
       const mb = measuredByBucket.get(bk) ?? {
@@ -983,82 +1027,97 @@ export function buildDashboardPayload(params: {
 
       const e = m.energyKwh ?? 0;
       if (e <= 0) continue;
-      const dt = new Date(ts);
-      const { key: bk, label: bLabel } = getBucketInfo(dt, range, effectiveHours);
 
-      const acc = meterByBucket.get(bk) ?? {
-        label: bLabel,
-        energyKwh: 0,
-        costEur: 0,
-        hpKwh: 0,
-        hcKwh: 0,
-        baseKwh: 0,
-        hpCost: 0,
-        hcCost: 0,
-        baseCost: 0,
-      };
+      const slices: Array<{ sliceDate: Date; sliceEnergy: number }> =
+        bucketMode === '24h' && slotMinutes24h === 15 && m.granularity === 'load_curve_30m'
+          ? [
+              { sliceDate: new Date(ts), sliceEnergy: e / 2 },
+              { sliceDate: new Date(ts + 15 * 60_000), sliceEnergy: e / 2 },
+            ]
+          : [{ sliceDate: new Date(ts), sliceEnergy: e }];
 
-      if (m.granularity === 'load_curve_30m') {
-        const c = computeReadingCost(dt, e, tariffs);
-        acc.energyKwh += e;
-        acc.costEur += c.costEur;
-        if (c.periodType === 'HP') {
-          acc.hpKwh += e;
-          acc.hpCost += c.costEur;
-        } else if (c.periodType === 'HC') {
-          acc.hcKwh += e;
-          acc.hcCost += c.costEur;
-        } else {
-          acc.baseKwh += e;
-          acc.baseCost += c.costEur;
-        }
-      } else {
-        // Repli daily_kwh (> 7j) : si des données HP/HC existent sur ce jour, pondérer HP vs HC
-        const dm = dayPeriodMixByDate.get(m.dateKey);
-        if (dm && dm.totalKwh > 0 && (dm.hpKwh > 0 || dm.hcKwh > 0)) {
-          const hpRatio = dm.hpKwh / dm.totalKwh;
-          const hcRatio = dm.hcKwh / dm.totalKwh;
-          const hpPart = e * hpRatio;
-          const hcPart = e * hcRatio;
-          const basePart = Math.max(0, e - hpPart - hcPart);
-          const middayCost = computeReadingCost(dt, e, tariffs);
-          acc.energyKwh += e;
-          if (middayCost.periodType === 'BASE') {
-            acc.costEur += middayCost.costEur;
-            acc.baseKwh += e;
-            acc.baseCost += middayCost.costEur;
-          } else {
-            const hpDt = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate(), 12, 0, 0));
-            const hcDt = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate(), 2, 0, 0));
-            const hpC = computeReadingCost(hpDt, hpPart, tariffs);
-            const hcC = computeReadingCost(hcDt, hcPart, tariffs);
-            const bC = computeReadingCost(dt, basePart, tariffs);
-            acc.costEur += hpC.costEur + hcC.costEur + bC.costEur;
-            acc.hpKwh += hpPart;
-            acc.hcKwh += hcPart;
-            acc.baseKwh += basePart;
-            acc.hpCost += hpC.costEur;
-            acc.hcCost += hcC.costEur;
-            acc.baseCost += bC.costEur;
-          }
-        } else {
-          const c = computeReadingCost(dt, e, tariffs);
-          acc.energyKwh += e;
+      for (const { sliceDate: dt, sliceEnergy } of slices) {
+        const { key: bk, label: bLabel } = getBucketInfo(
+          dt,
+          range,
+          effectiveHours,
+          slotMinutes24h
+        );
+
+        const acc = meterByBucket.get(bk) ?? {
+          label: bLabel,
+          energyKwh: 0,
+          costEur: 0,
+          hpKwh: 0,
+          hcKwh: 0,
+          baseKwh: 0,
+          hpCost: 0,
+          hcCost: 0,
+          baseCost: 0,
+        };
+
+        if (m.granularity === 'load_curve_30m') {
+          const c = computeReadingCost(dt, sliceEnergy, tariffs);
+          acc.energyKwh += sliceEnergy;
           acc.costEur += c.costEur;
           if (c.periodType === 'HP') {
-            acc.hpKwh += e;
+            acc.hpKwh += sliceEnergy;
             acc.hpCost += c.costEur;
           } else if (c.periodType === 'HC') {
-            acc.hcKwh += e;
+            acc.hcKwh += sliceEnergy;
             acc.hcCost += c.costEur;
           } else {
-            acc.baseKwh += e;
+            acc.baseKwh += sliceEnergy;
             acc.baseCost += c.costEur;
           }
+        } else {
+          // Repli daily_kwh (> 7j) : si des données HP/HC existent sur ce jour, pondérer HP vs HC
+          const dm = dayPeriodMixByDate.get(m.dateKey);
+          if (dm && dm.totalKwh > 0 && (dm.hpKwh > 0 || dm.hcKwh > 0)) {
+            const hpRatio = dm.hpKwh / dm.totalKwh;
+            const hcRatio = dm.hcKwh / dm.totalKwh;
+            const hpPart = sliceEnergy * hpRatio;
+            const hcPart = sliceEnergy * hcRatio;
+            const basePart = Math.max(0, sliceEnergy - hpPart - hcPart);
+            const middayCost = computeReadingCost(dt, sliceEnergy, tariffs);
+            acc.energyKwh += sliceEnergy;
+            if (middayCost.periodType === 'BASE') {
+              acc.costEur += middayCost.costEur;
+              acc.baseKwh += sliceEnergy;
+              acc.baseCost += middayCost.costEur;
+            } else {
+              const hpDt = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate(), 12, 0, 0));
+              const hcDt = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate(), 2, 0, 0));
+              const hpC = computeReadingCost(hpDt, hpPart, tariffs);
+              const hcC = computeReadingCost(hcDt, hcPart, tariffs);
+              const bC = computeReadingCost(dt, basePart, tariffs);
+              acc.costEur += hpC.costEur + hcC.costEur + bC.costEur;
+              acc.hpKwh += hpPart;
+              acc.hcKwh += hcPart;
+              acc.baseKwh += basePart;
+              acc.hpCost += hpC.costEur;
+              acc.hcCost += hcC.costEur;
+              acc.baseCost += bC.costEur;
+            }
+          } else {
+            const c = computeReadingCost(dt, sliceEnergy, tariffs);
+            acc.energyKwh += sliceEnergy;
+            acc.costEur += c.costEur;
+            if (c.periodType === 'HP') {
+              acc.hpKwh += sliceEnergy;
+              acc.hpCost += c.costEur;
+            } else if (c.periodType === 'HC') {
+              acc.hcKwh += sliceEnergy;
+              acc.hcCost += c.costEur;
+            } else {
+              acc.baseKwh += sliceEnergy;
+              acc.baseCost += c.costEur;
+            }
+          }
         }
-      }
 
-      meterByBucket.set(bk, acc);
+        meterByBucket.set(bk, acc);
+      }
       periodMeterEnergyKwh += e;
     }
 
@@ -1461,7 +1520,12 @@ export function buildDashboardPayload(params: {
       }
 
       const dt = new Date(r.recordedAt);
-      const { key: bucketKey, label: bucketLabel } = getBucketInfo(dt, range, effectiveHours);
+      const { key: bucketKey, label: bucketLabel } = getBucketInfo(
+        dt,
+        range,
+        effectiveHours,
+        slotMinutes24h
+      );
       const act = contactActivityBuckets.get(bucketKey) ?? {
         bucket: bucketKey,
         label: bucketLabel,
@@ -1597,7 +1661,12 @@ export function buildDashboardPayload(params: {
       }
 
       const dt = new Date(r.recordedAt);
-      const { key: bucketKey, label: bucketLabel } = getBucketInfo(dt, range, effectiveHours);
+      const { key: bucketKey, label: bucketLabel } = getBucketInfo(
+        dt,
+        range,
+        effectiveHours,
+        slotMinutes24h
+      );
       const act = coverActivityBuckets.get(bucketKey) ?? {
         bucket: bucketKey,
         label: bucketLabel,

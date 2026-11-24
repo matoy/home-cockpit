@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDashboardPayload, resolveTimeWindow } from '@/lib/aggregator';
+import { buildDashboardPayload, detect24hBucketMinutes, resolveTimeWindow } from '@/lib/aggregator';
 import {
   computeHybridEnergyKwh,
   computeReadingCost,
@@ -609,5 +609,181 @@ describe('tariff-engine & dashboard aggregator', () => {
     expect(roomPayload.meter?.activeInCurrentView).toBe(false);
     expect(roomPayload.kpis.periodEnergyKwh).toBeCloseTo(4.2, 3);
     expect(roomPayload.energyByRoom.some((r) => r.id === 'unmeasured')).toBe(false);
+  });
+
+  it('auto-adapts 24h buckets to 15 min when intervals <= 20 min exist and falls back to 30 min otherwise', () => {
+    expect(
+      detect24hBucketMinutes([
+        { deviceId: 'dev1', recordedAt: '2026-01-15T10:00:00.000Z' },
+        { deviceId: 'dev1', recordedAt: '2026-01-15T10:30:00.000Z' },
+        { deviceId: 'dev2', recordedAt: '2026-01-15T10:15:00.000Z' },
+        // < 5 min burst on same device should not switch resolution
+        { deviceId: 'dev2', recordedAt: '2026-01-15T10:17:00.000Z' },
+      ])
+    ).toBe(30);
+
+    expect(
+      detect24hBucketMinutes([
+        { deviceId: 'dev1', recordedAt: '2026-01-15T10:00:00.000Z' },
+        { deviceId: 'dev1', recordedAt: '2026-01-15T10:15:00.000Z' },
+      ])
+    ).toBe(15);
+
+    const now = new Date('2026-01-15T12:00:00.000Z');
+    const rooms: RoomRecord[] = [
+      {
+        id: 1,
+        name: 'Salon',
+        icon: 'Sofa',
+        color: '#3b82f6',
+        targetTempMin: 19,
+        targetTempMax: 22,
+        targetHumidityMin: 40,
+        targetHumidityMax: 60,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ];
+    const devices: DeviceRecord[] = [
+      {
+        id: 'dev1',
+        name: 'Plug 1',
+        customName: null,
+        primaryVendor: 'tuya',
+        systems: ['tuya'],
+        roomId: 1,
+        category: 'power',
+        tuyaCategory: 'cz',
+        productName: null,
+        ipAddress: null,
+        macAddress: null,
+        isOnline: true,
+        isMonitored: true,
+        excludeFromTotals: false,
+        energyMode: 'hybrid',
+        dpConfig: {},
+        lastRawStatus: null,
+        lastSeenAt: now.toISOString(),
+        lastPowerW: 200,
+        lastVoltageV: 230,
+        lastAddEleKwh: 1,
+        lastTempC: null,
+        lastHumidityPct: null,
+        lastBatteryPct: null,
+        lastContactOpen: null,
+      },
+    ];
+    const env: EnvStatus = {
+      mode: 'live',
+      databaseConfigured: true,
+      tuyaConfigured: true,
+      tuyaRegion: 'eu',
+      tuyaUserUidConfigured: true,
+      kasaConfigured: false,
+      kasaRegion: 'eu',
+      homeConnectConfigured: false,
+      homeConnectConnected: false,
+      homeConnectEnv: 'prod',
+      somfyConfigured: false,
+      somfyRegion: 'eu',
+      daikinConfigured: false,
+      daikinConnected: false,
+      xsenseConfigured: false,
+      xiaomiConfigured: false,
+      xiaomiConnected: false,
+      xiaomiRegion: 'de',
+      appPasswordConfigured: false,
+      oidcConfigured: false,
+      oidcProviderName: null,
+      scheduleSecretConfigured: false,
+      googleHomeApiEnabled: false,
+      googleHomeConfigured: false,
+      googleHomeMode: 'mcp',
+      googleHomeConnected: false,
+      googleSdmProjectConfigured: false,
+      consoApiConfigured: true,
+      consoApiConnected: true,
+      consoApiPrmMasked: '••••••••••1234',
+      consoApiSubscribedKva: 9,
+    };
+
+    const makeReading = (id: number, iso: string, energyKwh: number): MetricReadingRecord => ({
+      id,
+      deviceId: 'dev1',
+      roomId: 1,
+      recordedAt: iso,
+      powerW: 200,
+      voltageV: 230,
+      energyKwh,
+      energySource: 'integration',
+      tempC: null,
+      humidityPct: null,
+      contactOpen: null,
+    });
+
+    // 15-min readings + 30-min Linky load curve -> 4 distinct 15-min buckets and exact total energy
+    const payload15m = buildDashboardPayload({
+      env,
+      range: '24h',
+      selectedRoomId: 'all',
+      selectedSystem: 'all',
+      rooms,
+      devices,
+      readings: [
+        makeReading(1, '2026-01-15T10:00:00.000Z', 0.1),
+        makeReading(2, '2026-01-15T10:15:00.000Z', 0.2),
+        makeReading(3, '2026-01-15T10:30:00.000Z', 0.15),
+        makeReading(4, '2026-01-15T10:45:00.000Z', 0.15),
+      ],
+      meterReadings: [
+        {
+          id: 1,
+          pointId: '12345678901234',
+          granularity: 'load_curve_30m',
+          recordedAt: '2026-01-15T10:00:00.000Z',
+          dateKey: '2026-01-15',
+          energyKwh: 0.5,
+          powerW: 1000,
+        },
+        {
+          id: 2,
+          pointId: '12345678901234',
+          granularity: 'load_curve_30m',
+          recordedAt: '2026-01-15T10:30:00.000Z',
+          dateKey: '2026-01-15',
+          energyKwh: 0.5,
+          powerW: 1000,
+        },
+      ],
+      tariffs: [],
+      logs: [],
+      now,
+    });
+
+    expect(payload15m.timeSeries.map((pt) => pt.label)).toEqual([
+      '11:00',
+      '11:15',
+      '11:30',
+      '11:45',
+    ]);
+    expect(payload15m.kpis.periodEnergyKwh).toBeCloseTo(1.0, 5);
+    expect(payload15m.meter?.periodUnmeasuredEnergyKwh).toBeCloseTo(0.4, 5);
+
+    // 30-min readings -> stays on 2 buckets (:00 and :30)
+    const payload30m = buildDashboardPayload({
+      env,
+      range: '24h',
+      selectedRoomId: 'all',
+      selectedSystem: 'all',
+      rooms,
+      devices,
+      readings: [
+        makeReading(10, '2026-01-15T10:00:00.000Z', 0.2),
+        makeReading(11, '2026-01-15T10:30:00.000Z', 0.3),
+      ],
+      tariffs: [],
+      logs: [],
+      now,
+    });
+    expect(payload30m.timeSeries.map((pt) => pt.label)).toEqual(['11:00', '11:30']);
   });
 });
