@@ -220,6 +220,11 @@ export const it: Record<TranslationKey, string> = {
   'health.sectionOffline': 'Dispositivi offline ({count})',
   'health.lastSeenLabel': 'Visto: {date}',
   'health.neverSeen': 'Mai visto',
+  'health.exemptOfflineBtn': 'Esenta',
+  'health.exemptOfflineTitle': 'Non avvisare più quando questo dispositivo è offline',
+  'health.exemptedSectionTitle': 'Avvisi offline esentati ({count})',
+  'health.exemptedCountNote': '{count} esentato/i',
+  'health.reenableOfflineBtn': 'Riattiva',
   'health.sectionComfort': 'Stanze fuori zona comfort ({count})',
   'health.btnOpenClimate': 'Apri Clima',
   'health.sectionAutomations': 'Avvisi automazioni ({count})',
@@ -663,6 +668,8 @@ export const it: Record<TranslationKey, string> = {
   'devices.colMonitoredTitle':
     'Deseleziona per ignorare questo dispositivo durante le raccolte e nella dashboard',
   'devices.colExclude': 'Escludi',
+  'devices.ignoreOfflineLabel': 'Ignora offline',
+  'devices.ignoreOfflineTitle': 'Esenta questo dispositivo dagli avvisi offline',
   'devices.colExcludeTitle':
     'Escludi (Cascata / Clima): esclude dai totali elettrici e dalle medie Clima',
   'devices.colActions': 'Azioni',

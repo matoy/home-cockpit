@@ -149,6 +149,7 @@ export function mapDbDevice(
     macAddress: row.macAddress,
     isOnline: row.isOnline,
     isMonitored: row.isMonitored,
+    ignoreOfflineAlert: row.ignoreOfflineAlert ?? false,
     excludeFromTotals: row.excludeFromTotals,
     energyMode: (row.energyMode as EnergyMode) || 'hybrid',
     dpConfig: row.dpConfig ?? {},
@@ -286,6 +287,7 @@ export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
             AND to_regclass('public.vendor_connections') IS NOT NULL
             AND to_regclass('public.alert_events') IS NOT NULL
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'devices' AND column_name = 'systems')
+            AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'devices' AND column_name = 'ignore_offline_alert')
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'devices' AND column_name = 'exclude_from_totals')
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'metric_readings' AND column_name = 'cover_open_pct')
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'automations' AND column_name = 'vendor')
@@ -325,6 +327,7 @@ export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
           "mac_address" text,
           "is_online" boolean DEFAULT true NOT NULL,
           "is_monitored" boolean DEFAULT true NOT NULL,
+          "ignore_offline_alert" boolean DEFAULT false NOT NULL,
           "exclude_from_totals" boolean DEFAULT false NOT NULL,
           "energy_mode" text DEFAULT 'hybrid' NOT NULL,
           "dp_config" jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -350,6 +353,9 @@ export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
       `);
       await db.execute(sql`
         ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "exclude_from_totals" boolean DEFAULT false NOT NULL
+      `);
+      await db.execute(sql`
+        ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "ignore_offline_alert" boolean DEFAULT false NOT NULL
       `);
       await db.execute(sql`
         CREATE TABLE IF NOT EXISTS "metric_readings" (

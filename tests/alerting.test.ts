@@ -86,6 +86,13 @@ describe('outbound alerting engine', () => {
           lastSeenAt: '2026-11-23T08:00:00.000Z',
         }),
         makeDevice({
+          id: 'offExempt',
+          name: 'Seasonal Plug',
+          isOnline: false,
+          ignoreOfflineAlert: true,
+          lastSeenAt: '2026-11-20T08:00:00.000Z',
+        }),
+        makeDevice({
           id: 'offRecent',
           name: 'Recent Plug',
           isOnline: false,
@@ -96,6 +103,12 @@ describe('outbound alerting engine', () => {
       ],
       vendors: [
         { vendor: 'daikin', label: 'Daikin Onecta', lastError: 'Token expired' },
+        {
+          vendor: 'kasa',
+          label: 'Kasa',
+          lastError:
+            "Aucune pièce/groupe Kasa remonté par le cloud TP-Link — assignez vos pièces dans l'onglet Appareils ou Pièces.",
+        },
         { vendor: 'tuya', label: 'Tuya Cloud', lastError: null },
       ],
     });
@@ -104,9 +117,11 @@ describe('outbound alerting engine', () => {
     expect(keys).toContain('safety:xs1');
     expect(keys).toContain('battery:bat1');
     expect(keys).toContain('offline:offOld');
+    expect(keys).not.toContain('offline:offExempt');
     expect(keys).not.toContain('offline:offRecent');
     expect(keys).toContain('power_peak');
     expect(keys).toContain('vendor_error:daikin');
+    expect(keys).not.toContain('vendor_error:kasa');
     expect(keys).not.toContain('vendor_error:tuya');
     expect(candidates.find((c) => c.dedupKey === 'safety:xs1')?.severity).toBe('critical');
   });

@@ -218,6 +218,11 @@ export const fr = {
   'health.sectionOffline': 'Appareils hors ligne ({count})',
   'health.lastSeenLabel': 'Vu : {date}',
   'health.neverSeen': 'Jamais vu',
+  'health.exemptOfflineBtn': 'Exempter',
+  'health.exemptOfflineTitle': 'Ne plus alerter si cet appareil est hors ligne',
+  'health.exemptedSectionTitle': 'Alertes hors ligne exemptées ({count})',
+  'health.exemptedCountNote': '{count} exempté(s)',
+  'health.reenableOfflineBtn': 'Réactiver',
   'health.sectionComfort': 'Pièces hors zone de confort ({count})',
   'health.btnOpenClimate': 'Ouvrir Climat',
   'health.sectionAutomations': "Avertissements d'automatisations ({count})",
@@ -665,6 +670,8 @@ export const fr = {
   'devices.colMonitoredTitle':
     'Décocher pour ignorer complètement cet appareil lors des collectes et dans le dashboard',
   'devices.colExclude': 'Exclure',
+  'devices.ignoreOfflineLabel': 'Ignorer hors ligne',
+  'devices.ignoreOfflineTitle': 'Exempter cet appareil des alertes hors ligne',
   'devices.colExcludeTitle':
     "Exclure (Cascade / Climat) : cocher pour exclure l'appareil des totaux électriques (prises en cascade) et des mesures/compteurs de la page Climat (ex. pilotes de radiateurs)",
   'devices.colActions': 'Actions',

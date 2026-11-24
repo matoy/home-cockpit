@@ -1,9 +1,11 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BatteryWarning,
+  Bell,
+  BellOff,
   CheckCircle2,
   HeartPulse,
   PlugZap,
@@ -20,11 +22,29 @@ import type { DashboardPayload, TabId } from '@/types';
 interface HealthTabProps {
   data: DashboardPayload;
   onNavigateTab: (tab: TabId) => void;
+  onRefresh?: () => Promise<void>;
 }
 
-export function HealthTab({ data, onNavigateTab }: HealthTabProps) {
+export function HealthTab({ data, onNavigateTab, onRefresh }: HealthTabProps) {
   const { t, locale, formatDateTime } = useI18n();
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const report = useMemo(() => computeHomeHealth(data, locale), [data, locale]);
+
+  async function handleToggleOfflineExempt(deviceId: string, ignoreOfflineAlert: boolean) {
+    setTogglingId(deviceId);
+    try {
+      const res = await fetch('/api/devices', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: deviceId, ignoreOfflineAlert }),
+      });
+      if (res.ok && onRefresh) {
+        await onRefresh();
+      }
+    } finally {
+      setTogglingId(null);
+    }
+  }
 
   const crossAndSystemCount =
     report.safetyAlerts.length +
@@ -147,6 +167,12 @@ export function HealthTab({ data, onNavigateTab }: HealthTabProps) {
             {report.offlineDevices.length > 0
               ? t('health.offlineSub', { count: report.offlineDevices.length })
               : t('health.allOnlineSub')}
+            {report.exemptedOfflineDevices.length > 0 && (
+              <span className="text-slate-500">
+                {' '}
+                · {t('health.exemptedCountNote', { count: report.exemptedOfflineDevices.length })}
+              </span>
+            )}
           </p>
         </div>
 
@@ -363,50 +389,7 @@ export function HealthTab({ data, onNavigateTab }: HealthTabProps) {
             </section>
           )}
 
-          {/* Appareils hors ligne */}
-          {report.offlineDevices.length > 0 && (
-            <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                  <WifiOff className="h-4 w-4 text-amber-400" />
-                  {t('health.sectionOffline', { count: report.offlineDevices.length })}
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => onNavigateTab('devices')}
-                  className="rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs font-medium text-slate-200 transition"
-                >
-                  {t('health.btnOpenDevices')}
-                </button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
-                {report.offlineDevices.map((d) => (
-                  <div
-                    key={d.id}
-                    className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3.5 py-2.5 text-xs"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className="h-2.5 w-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: d.roomColor }}
-                      />
-                      <div className="min-w-0">
-                        <div className="font-medium text-slate-100 truncate">{d.name}</div>
-                        <div className="text-[11px] text-slate-500 truncate">{d.roomName}</div>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-mono text-slate-400 shrink-0">
-                      {d.lastSeenAt
-                        ? t('health.lastSeenLabel', { date: formatDateTime(d.lastSeenAt) })
-                        : t('health.neverSeen')}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Pièces hors zone de confort */}
+          {/* Pièces hors zone de confort (placées au-dessus des appareils hors ligne) */}
           {report.comfortAlerts.length > 0 && (
             <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -452,6 +435,59 @@ export function HealthTab({ data, onNavigateTab }: HealthTabProps) {
             </section>
           )}
 
+          {/* Appareils hors ligne */}
+          {report.offlineDevices.length > 0 && (
+            <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <WifiOff className="h-4 w-4 text-amber-400" />
+                  {t('health.sectionOffline', { count: report.offlineDevices.length })}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('devices')}
+                  className="rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs font-medium text-slate-200 transition"
+                >
+                  {t('health.btnOpenDevices')}
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
+                {report.offlineDevices.map((d) => (
+                  <div
+                    key={d.id}
+                    className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3.5 py-2.5 text-xs"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: d.roomColor }}
+                      />
+                      <div className="min-w-0">
+                        <div className="font-medium text-slate-100 truncate">{d.name}</div>
+                        <div className="text-[11px] text-slate-500 truncate">
+                          {d.roomName} ·{' '}
+                          {d.lastSeenAt
+                            ? t('health.lastSeenLabel', { date: formatDateTime(d.lastSeenAt) })
+                            : t('health.neverSeen')}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleOfflineExempt(d.id, true)}
+                      disabled={togglingId === d.id}
+                      title={t('health.exemptOfflineTitle')}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 disabled:opacity-50 px-2 py-1 text-[11px] font-medium text-slate-300 transition shrink-0"
+                    >
+                      <BellOff className="h-3 w-3 text-slate-400" />
+                      {t('health.exemptOfflineBtn')}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* Avertissements automatisations */}
           {report.automationWarningsCount > 0 && (
             <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-wrap items-center justify-between gap-3">
@@ -474,6 +510,55 @@ export function HealthTab({ data, onNavigateTab }: HealthTabProps) {
             </section>
           )}
         </div>
+      )}
+
+      {/* Appareils exemptés d'alerte hors ligne */}
+      {report.exemptedDevices.length > 0 && (
+        <section className="rounded-2xl border border-slate-800/80 bg-slate-900/50 p-5 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+              <BellOff className="h-3.5 w-3.5 text-slate-400" />
+              {t('health.exemptedSectionTitle', { count: report.exemptedDevices.length })}
+            </h3>
+            <button
+              type="button"
+              onClick={() => onNavigateTab('devices')}
+              className="rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs font-medium text-slate-200 transition"
+            >
+              {t('health.btnOpenDevices')}
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
+            {report.exemptedDevices.map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3.5 py-2.5 text-xs"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: d.roomColor }}
+                  />
+                  <div className="min-w-0">
+                    <div className="font-medium text-slate-200 truncate">{d.name}</div>
+                    <div className="text-[11px] text-slate-500 truncate">
+                      {d.roomName} · {d.isOnline ? t('common.online') : t('common.offline')}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleToggleOfflineExempt(d.id, false)}
+                  disabled={togglingId === d.id}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 px-2 py-1 text-[11px] font-medium text-slate-200 transition shrink-0"
+                >
+                  <Bell className="h-3 w-3 text-indigo-400" />
+                  {t('health.reenableOfflineBtn')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );
