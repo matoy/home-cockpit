@@ -7,23 +7,21 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
     ignore:
-      # eslint-config-next@15 declares peer eslint "^7.23.0 || ^8.0.0 || ^9.0.0"
+      # eslint-config-next@16 deps (eslint-plugin-react/import/jsx-a11y) cap peer eslint at ^9
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
-      # eslint-config-next@16 switches to native flat config (breaks FlatCompat) and targets Next 16
-      - dependency-name: "eslint-config-next"
-        update-types: ["version-update:semver-major"]
-      # Next.js 16 requires a deliberate migration alongside eslint-config-next@16
-      - dependency-name: "next"
-        update-types: ["version-update:semver-major"]
-      # Tailwind CSS v4 requires migrating PostCSS to @tailwindcss/postcss and CSS directives
-      - dependency-name: "tailwindcss"
+      # typescript-eslint@8 declares peer typescript <6.1.0
+      - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
     groups:
       nextjs:
         patterns:
           - "next"
           - "eslint-config-next"
+      tailwindcss:
+        patterns:
+          - "tailwindcss"
+          - "@tailwindcss/postcss"
       vitest:
         patterns:
           - "vitest"

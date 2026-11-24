@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { createSessionToken, SESSION_COOKIE_NAME } from '@/lib/auth';
-import { middleware } from '@/middleware';
+import { proxy } from '@/proxy';
 
-describe('Edge middleware authentication & route protection', () => {
+describe('Next.js proxy authentication & route protection', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
@@ -21,7 +21,7 @@ describe('Edge middleware authentication & route protection', () => {
       '/api/auth/oidc/callback',
       '/api/schedule/collect',
     ]) {
-      const res = await middleware(new NextRequest(`https://cockpit.local${path}`));
+      const res = await proxy(new NextRequest(`https://cockpit.local${path}`));
       expect(res.status).toBe(200);
       expect(res.headers.get('x-middleware-next')).toBe('1');
     }
@@ -34,10 +34,10 @@ describe('Edge middleware authentication & route protection', () => {
     vi.stubEnv('AUTH_OIDC_CLIENT_ID', '');
     vi.stubEnv('AUTH_SESSION_SECRET', '');
 
-    const apiRes = await middleware(new NextRequest('https://cockpit.local/api/dashboard'));
+    const apiRes = await proxy(new NextRequest('https://cockpit.local/api/dashboard'));
     expect(apiRes.status).toBe(503);
 
-    const pageRes = await middleware(new NextRequest('https://cockpit.local/'));
+    const pageRes = await proxy(new NextRequest('https://cockpit.local/'));
     expect(pageRes.status).toBe(503);
   });
 
@@ -48,16 +48,16 @@ describe('Edge middleware authentication & route protection', () => {
     vi.stubEnv('AUTH_OIDC_CLIENT_ID', 'oidc-client-id');
     vi.stubEnv('AUTH_SESSION_SECRET', 'super-secret-signing-key-0123456789');
 
-    const unauthApi = await middleware(new NextRequest('https://cockpit.local/api/dashboard'));
+    const unauthApi = await proxy(new NextRequest('https://cockpit.local/api/dashboard'));
     expect(unauthApi.status).toBe(401);
 
-    const unauthPage = await middleware(new NextRequest('https://cockpit.local/'));
+    const unauthPage = await proxy(new NextRequest('https://cockpit.local/'));
     expect(unauthPage.status).toBe(307);
     expect(unauthPage.headers.get('location')).toBe('https://cockpit.local/login');
 
     const nowSec = Math.floor(Date.now() / 1000);
     const v2Token = createSessionToken(nowSec);
-    const validV2Res = await middleware(
+    const validV2Res = await proxy(
       new NextRequest('https://cockpit.local/api/dashboard', {
         headers: { cookie: `${SESSION_COOKIE_NAME}=${v2Token}` },
       })
@@ -71,7 +71,7 @@ describe('Edge middleware authentication & route protection', () => {
       provider: 'Google',
       sub: 'sub-1',
     });
-    const validV3Res = await middleware(
+    const validV3Res = await proxy(
       new NextRequest('https://cockpit.local/', {
         headers: { cookie: `${SESSION_COOKIE_NAME}=${v3Token}` },
       })
@@ -82,7 +82,7 @@ describe('Edge middleware authentication & route protection', () => {
     const expiredV3Token = createSessionToken(nowSec - 60 * 60 * 24 * 30, {
       email: 'alice@gmail.com',
     });
-    const expiredRes = await middleware(
+    const expiredRes = await proxy(
       new NextRequest('https://cockpit.local/api/dashboard', {
         headers: { cookie: `${SESSION_COOKIE_NAME}=${expiredV3Token}` },
       })

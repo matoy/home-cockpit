@@ -1,5 +1,5 @@
 /**
- * Constantes d'authentification partagées entre le runtime Node et le middleware Edge.
+ * Constantes d'authentification partagées entre le runtime Node et le proxy Edge.
  * Ne doit importer aucun module `node:*`.
  */
 export const SESSION_COOKIE_NAME = 'hc_session';

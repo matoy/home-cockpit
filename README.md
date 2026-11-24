@@ -7,16 +7,16 @@
 [![i18n: EN | FR | ES | DE | IT](https://img.shields.io/badge/i18n-EN_%7C_FR_%7C_ES_%7C_DE_%7C_IT-10B981)](#key-features)
 [![Auth: OIDC SSO / Password](https://img.shields.io/badge/Auth-OIDC_SSO_%2F_Password-F59E0B)](docs/AUTH_IDP.md)
 
-[![Next.js 15](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=000000)](https://react.dev/)
-[![TypeScript 5](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![TypeScript 6](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Drizzle ORM](https://img.shields.io/badge/Drizzle-ORM-C5F74F?logo=drizzle&logoColor=000000)](https://orm.drizzle.team/)
 [![PostgreSQL / Neon](https://img.shields.io/badge/PostgreSQL-Neon-4169E1?logo=postgresql&logoColor=white)](https://neon.tech/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Tailwind CSS 4](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Vitest](https://img.shields.io/badge/Tested_with-Vitest-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![Deploy on Vercel](https://img.shields.io/badge/Deploy-Vercel-000000?logo=vercel&logoColor=white)](#production-deployment-vercel--neon--cron)
 
-**Home Cockpit** is a full-stack multi-vendor smart home monitoring and analytics dashboard built with Next.js 15, Drizzle ORM, and PostgreSQL (Neon). It unifies power metering, indoor climate telemetry, covers, HVAC units, connected appliances, safety detectors, cross-vendor device deduplication, and electricity tariff cost analytics inside a single cockpit.
+**Home Cockpit** is a full-stack multi-vendor smart home monitoring and analytics dashboard built with Next.js 16, Drizzle ORM, and PostgreSQL (Neon). It unifies power metering, indoor climate telemetry, covers, HVAC units, connected appliances, safety detectors, cross-vendor device deduplication, and electricity tariff cost analytics inside a single cockpit.
 
 ---
 

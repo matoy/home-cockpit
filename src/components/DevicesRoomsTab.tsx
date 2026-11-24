@@ -129,7 +129,7 @@ export function DevicesRoomsTab({
   const [bulkMergingAll, setBulkMergingAll] = useState(false);
 
   // Sélection et liaison multi-systèmes en masse
-  const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
+  const [rawSelectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
   const [bulkPanelOpen, setBulkPanelOpen] = useState(false);
   const [bulkVendor, setBulkVendor] = useState<VendorId>('google_home');
   const [bulkSaving, setBulkSaving] = useState(false);
@@ -176,15 +176,19 @@ export function DevicesRoomsTab({
   const [roomFilter, setRoomFilter] = useState<string>(initialRoomFilter ?? 'all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
+  const [prevSelectedSystem, setPrevSelectedSystem] = useState(data.selectedSystem);
+  if (data.selectedSystem !== prevSelectedSystem) {
+    setPrevSelectedSystem(data.selectedSystem);
     setSystemFilter(data.selectedSystem ?? 'all');
-  }, [data.selectedSystem]);
+  }
 
-  useEffect(() => {
+  const [prevInitialRoomFilter, setPrevInitialRoomFilter] = useState(initialRoomFilter);
+  if (initialRoomFilter !== prevInitialRoomFilter) {
+    setPrevInitialRoomFilter(initialRoomFilter);
     if (initialRoomFilter) {
       setRoomFilter(initialRoomFilter);
     }
-  }, [initialRoomFilter]);
+  }
 
   function openCreateManualDeviceModal() {
     setEditingManualDeviceId(null);
@@ -434,18 +438,15 @@ export function DevicesRoomsTab({
     };
   }, [data.devices, data.rooms, roomFilter, systemFilter, searchQuery, locale]);
 
+  const selectedDeviceIds = useMemo(() => {
+    const validIds = new Set(data.devices.map((d) => d.id));
+    return rawSelectedDeviceIds.filter((id) => validIds.has(id));
+  }, [rawSelectedDeviceIds, data.devices]);
+
   const selectedDeviceIdSet = useMemo(
     () => new Set(selectedDeviceIds),
     [selectedDeviceIds]
   );
-
-  useEffect(() => {
-    const validIds = new Set(data.devices.map((d) => d.id));
-    setSelectedDeviceIds((prev) => {
-      const next = prev.filter((id) => validIds.has(id));
-      return next.length === prev.length ? prev : next;
-    });
-  }, [data.devices]);
 
   const filteredDeviceIds = useMemo(
     () => filteredDevices.map((d) => d.id),

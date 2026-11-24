@@ -69,14 +69,19 @@ export function I18nProvider({
   const [locale, setLocaleState] = useState<AppLocale>(initialLocale);
 
   useEffect(() => {
+    let active = true;
     const cookieVal = readCookieLocale();
     if (cookieVal) {
       const normalized = normalizeLocale(cookieVal);
-      if (normalized !== locale) {
-        setLocaleState(normalized);
+      if (normalized !== initialLocale) {
+        queueMicrotask(() => {
+          if (active) setLocaleState(normalized);
+        });
       }
       persistLocaleClient(normalized);
-      return;
+      return () => {
+        active = false;
+      };
     }
 
     let candidate: AppLocale | null = null;
@@ -97,13 +102,16 @@ export function I18nProvider({
     }
 
     const resolved = candidate ?? initialLocale;
-    if (resolved !== locale) {
-      setLocaleState(resolved);
+    if (resolved !== initialLocale) {
+      queueMicrotask(() => {
+        if (active) setLocaleState(resolved);
+      });
     }
     persistLocaleClient(resolved);
-    // Intentionally run once on mount to reconcile client preferences without SSR hydration mismatch
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [initialLocale]);
 
   const setLocale = useCallback((next: AppLocale) => {
     const normalized = normalizeLocale(next);

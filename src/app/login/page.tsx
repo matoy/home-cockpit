@@ -30,11 +30,14 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search);
     const errCode = params.get('error');
     if (errCode) {
-      if (errCode === 'oidc_denied') setError(t('login.oidcErrorDenied'));
-      else if (errCode === 'oidc_csrf') setError(t('login.oidcErrorCsrf'));
-      else if (errCode === 'oidc_unauthorized') setError(t('login.oidcErrorUnauthorized'));
-      else if (errCode === 'oidc_config') setError(t('login.oidcErrorConfig'));
-      else setError(t('login.oidcErrorFailed'));
+      queueMicrotask(() => {
+        if (!active) return;
+        if (errCode === 'oidc_denied') setError(t('login.oidcErrorDenied'));
+        else if (errCode === 'oidc_csrf') setError(t('login.oidcErrorCsrf'));
+        else if (errCode === 'oidc_unauthorized') setError(t('login.oidcErrorUnauthorized'));
+        else if (errCode === 'oidc_config') setError(t('login.oidcErrorConfig'));
+        else setError(t('login.oidcErrorFailed'));
+      });
     }
 
     fetch('/api/auth/providers', { cache: 'no-store' })

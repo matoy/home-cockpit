@@ -147,49 +147,66 @@ export function DashboardApp({ initialData, sessionUser = null }: DashboardAppPr
     const dkStatus = params.get('dk');
     const dkError = params.get('dk_error');
 
-    if (tabParam === 'systems') {
-      setActiveTab('systems');
-    } else if (tabParam === 'devices') {
-      setActiveTab('devices');
-    } else if (tabParam === 'rooms') {
-      setActiveTab('rooms');
-    } else if (ghStatus || ghError || hcStatus || hcError || dkStatus || dkError) {
-      setActiveTab('systems');
-    }
-    if (ghStatus === 'connected') {
-      const targetLabel =
-        tabParam === 'rooms'
-          ? t('nav.rooms')
-          : tabParam === 'devices'
-            ? t('nav.devices')
-            : t('nav.systems');
-      setToast(
-        t('header.oauthGhConnected', {
-          mode: (ghMode || 'mcp').toUpperCase(),
-          target: targetLabel,
-        })
-      );
-      setTimeout(() => setToast(null), 6000);
-    } else if (ghError) {
-      setToast(t('header.oauthGhError', { error: ghError }));
-      setTimeout(() => setToast(null), 7000);
-    } else if (hcStatus === 'connected') {
-      setToast(t('header.oauthHcConnected', { env: (hcEnv || 'prod').toUpperCase() }));
-      setTimeout(() => setToast(null), 6000);
-    } else if (hcError) {
-      setToast(t('header.oauthHcError', { error: hcError }));
-      setTimeout(() => setToast(null), 7000);
-    } else if (dkStatus === 'connected') {
-      setToast(t('header.oauthDkConnected'));
-      setTimeout(() => setToast(null), 6000);
-    } else if (dkError) {
-      setToast(t('header.oauthDkError', { error: dkError }));
-      setTimeout(() => setToast(null), 7000);
-    }
+    const hasRelevantParams = Boolean(
+      tabParam || ghStatus || ghError || hcStatus || hcError || dkStatus || dkError
+    );
+    if (!hasRelevantParams) return;
 
-    if (tabParam || ghStatus || ghError || hcStatus || hcError || dkStatus || dkError) {
+    let cancelled = false;
+    let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const initTimer = window.setTimeout(() => {
+      if (cancelled) return;
+
+      if (tabParam === 'systems') {
+        setActiveTab('systems');
+      } else if (tabParam === 'devices') {
+        setActiveTab('devices');
+      } else if (tabParam === 'rooms') {
+        setActiveTab('rooms');
+      } else if (ghStatus || ghError || hcStatus || hcError || dkStatus || dkError) {
+        setActiveTab('systems');
+      }
+
+      if (ghStatus === 'connected') {
+        const targetLabel =
+          tabParam === 'rooms'
+            ? t('nav.rooms')
+            : tabParam === 'devices'
+              ? t('nav.devices')
+              : t('nav.systems');
+        setToast(
+          t('header.oauthGhConnected', {
+            mode: (ghMode || 'mcp').toUpperCase(),
+            target: targetLabel,
+          })
+        );
+        toastTimer = setTimeout(() => setToast(null), 6000);
+      } else if (ghError) {
+        setToast(t('header.oauthGhError', { error: ghError }));
+        toastTimer = setTimeout(() => setToast(null), 7000);
+      } else if (hcStatus === 'connected') {
+        setToast(t('header.oauthHcConnected', { env: (hcEnv || 'prod').toUpperCase() }));
+        toastTimer = setTimeout(() => setToast(null), 6000);
+      } else if (hcError) {
+        setToast(t('header.oauthHcError', { error: hcError }));
+        toastTimer = setTimeout(() => setToast(null), 7000);
+      } else if (dkStatus === 'connected') {
+        setToast(t('header.oauthDkConnected'));
+        toastTimer = setTimeout(() => setToast(null), 6000);
+      } else if (dkError) {
+        setToast(t('header.oauthDkError', { error: dkError }));
+        toastTimer = setTimeout(() => setToast(null), 7000);
+      }
+
       window.history.replaceState({}, '', window.location.pathname);
-    }
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initTimer);
+      if (toastTimer) clearTimeout(toastTimer);
+    };
   }, [t]);
 
   const fetchDashboard = useCallback(
