@@ -27,7 +27,8 @@ describe('security/crypto-store & OAuth state', () => {
     expect(decryptSecret(cipher)).toBe('oauth-refresh-token-xyz');
 
     const segments = cipher.split(':');
-    segments[3] = `${segments[3].slice(0, -2)}ff`;
+    const lastHex = segments[3].slice(-1).toLowerCase();
+    segments[3] = `${segments[3].slice(0, -1)}${lastHex === '0' ? '1' : '0'}`;
     expect(decryptSecret(segments.join(':'))).toBeNull();
     expect(decryptSecret('plain-unencrypted-token')).toBeNull();
   });

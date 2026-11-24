@@ -1019,6 +1019,7 @@ export const en: Record<TranslationKey, string> = {
   'systems.okXiaomiQrConnected': 'Xiaomi Home connected via QR Code and synced.',
   'systems.errSync': 'Failed to sync {vendor}',
   'systems.okSync': '{vendor} sync completed.',
+  'systems.syncVendorBtn': 'Sync {vendor}',
   'systems.errVendor': '{vendor} error',
   'systems.errDisconnect': 'Failed to disconnect {vendor}',
   'systems.okDisconnect': '{vendor} disconnected.',

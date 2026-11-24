@@ -21,6 +21,7 @@ export interface DemoVendorConnectionState {
   | 'oauth_cn'
   | GoogleHomeMode;
   connected: boolean;
+  config?: Record<string, unknown>;
   lastSyncedAt: string | null;
   lastError: string | null;
 }

@@ -10,9 +10,20 @@ import {
   QrCode,
   RefreshCw,
 } from 'lucide-react';
-import { VENDOR_REGISTRY } from '@/lib/vendors/registry';
+import { VENDOR_IDS, VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import { AlertBanner } from './ui';
 import { useI18n } from './I18nProvider';
+
+const CUSTOM_RENDERED_VENDORS = new Set<VendorId>([
+  'tuya',
+  'kasa',
+  'home_connect',
+  'somfy',
+  'daikin',
+  'xsense',
+  'xiaomi',
+  'google_home',
+]);
 import type { DashboardPayload, GoogleHomeMode, HomeConnectEnv, VendorId } from '@/types';
 
 interface SystemsTabProps {
@@ -84,28 +95,16 @@ export function SystemsTab({
   const [selectedGoogleMode, setSelectedGoogleMode] = useState<GoogleHomeMode>(
     data.env.googleHomeMode ?? 'mcp'
   );
+  const [syncingGenericVendor, setSyncingGenericVendor] = useState<VendorId | null>(null);
+  const [disconnectingGenericVendor, setDisconnectingGenericVendor] = useState<VendorId | null>(null);
   const [syncMessage, setSyncMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   const systemCounts = useMemo(() => {
-    const counts: Record<VendorId, number> = {
-      tuya: 0,
-      kasa: 0,
-      home_connect: 0,
-      somfy: 0,
-      daikin: 0,
-      xsense: 0,
-      xiaomi: 0,
-      google_home: 0,
-    };
+    const counts = Object.fromEntries(VENDOR_IDS.map((id) => [id, 0])) as Record<VendorId, number>;
     for (const dev of data.devices) {
-      if (dev.systems.includes('tuya')) counts.tuya += 1;
-      if (dev.systems.includes('kasa')) counts.kasa += 1;
-      if (dev.systems.includes('home_connect')) counts.home_connect += 1;
-      if (dev.systems.includes('somfy')) counts.somfy += 1;
-      if (dev.systems.includes('daikin')) counts.daikin += 1;
-      if (dev.systems.includes('xsense')) counts.xsense += 1;
-      if (dev.systems.includes('xiaomi')) counts.xiaomi += 1;
-      if (dev.systems.includes('google_home')) counts.google_home += 1;
+      for (const vendor of dev.systems) {
+        counts[vendor] = (counts[vendor] ?? 0) + 1;
+      }
     }
     return counts;
   }, [data.devices]);
@@ -614,6 +613,85 @@ export function SystemsTab({
   const ghVendor = data.vendors.find((v) => v.vendor === 'google_home');
   const isGhConnected = Boolean(ghVendor?.connected);
 
+  const extraGenericVendorIds = VENDOR_IDS.filter((id) => !CUSTOM_RENDERED_VENDORS.has(id));
+  const visibleGenericVendors = extraGenericVendorIds.filter((id) => {
+    const summary = data.vendors.find((v) => v.vendor === id);
+    return (
+      Boolean(summary?.configured) ||
+      Boolean(summary?.connected) ||
+      data.env.mode === 'demo' ||
+      (systemCounts[id] ?? 0) > 0
+    );
+  });
+  const unconfiguredGenericVendors = extraGenericVendorIds.filter(
+    (id) => !visibleGenericVendors.includes(id)
+  );
+
+  async function handleSyncGenericVendor(vendorId: VendorId) {
+    const meta = VENDOR_REGISTRY[vendorId];
+    setSyncingGenericVendor(vendorId);
+    setSyncMessage(null);
+    try {
+      const res = await fetch(meta.syncEndpoint, { method: 'POST' });
+      const json = (await res.json()) as { message?: string; error?: string };
+      if (!res.ok) {
+        setSyncMessage({
+          ok: false,
+          text: json.error || t('systems.errSync', { vendor: meta.label }),
+        });
+      } else {
+        setSyncMessage({
+          ok: true,
+          text: json.message || t('systems.okSync', { vendor: meta.label }),
+        });
+        await onRefresh();
+      }
+    } catch (err) {
+      setSyncMessage({
+        ok: false,
+        text:
+          err instanceof Error
+            ? err.message
+            : t('systems.errSync', { vendor: meta.label }),
+      });
+    } finally {
+      setSyncingGenericVendor(null);
+    }
+  }
+
+  async function handleDisconnectGenericVendor(vendorId: VendorId) {
+    const meta = VENDOR_REGISTRY[vendorId];
+    if (!meta.disconnectEndpoint) return;
+    setDisconnectingGenericVendor(vendorId);
+    setSyncMessage(null);
+    try {
+      const res = await fetch(meta.disconnectEndpoint, { method: 'POST' });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setSyncMessage({
+          ok: false,
+          text: json.error || t('systems.errDisconnectGeneric', { vendor: meta.label }),
+        });
+      } else {
+        setSyncMessage({
+          ok: true,
+          text: t('systems.okDisconnect', { vendor: meta.label }),
+        });
+        await onRefresh();
+      }
+    } catch (err) {
+      setSyncMessage({
+        ok: false,
+        text:
+          err instanceof Error
+            ? err.message
+            : t('systems.errDisconnectGeneric', { vendor: meta.label }),
+      });
+    } finally {
+      setDisconnectingGenericVendor(null);
+    }
+  }
+
   const visibleSyncCardsCount =
     1 +
     (showKasa ? 1 : 0) +
@@ -622,7 +700,8 @@ export function SystemsTab({
     (showDaikin ? 1 : 0) +
     (showXSense ? 1 : 0) +
     (showXiaomi ? 1 : 0) +
-    (showGoogleHomeApi ? 1 : 0);
+    (showGoogleHomeApi ? 1 : 0) +
+    visibleGenericVendors.length;
 
   const syncGridClass =
     visibleSyncCardsCount === 1
@@ -706,6 +785,14 @@ export function SystemsTab({
           },
         ]
         : []),
+      ...unconfiguredGenericVendors.map((id) => {
+        const meta = VENDOR_REGISTRY[id];
+        const envHint = meta.envVars.length > 0 ? ` (${meta.envVars.join(', ')})` : '';
+        return {
+          vendor: id,
+          scope: `${meta.description}${envHint}`,
+        };
+      }),
     ];
 
   return (
@@ -1339,7 +1426,6 @@ export function SystemsTab({
 
                   {xiaomiQrData && (
                     <div className="rounded-xl border border-orange-500/30 bg-slate-950/80 p-3 flex flex-wrap items-center gap-3">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={xiaomiQrData.qrImageUrl}
                         alt="QR Code Xiaomi Home"
@@ -1577,6 +1663,82 @@ export function SystemsTab({
             </div>
           </div>
         )}
+
+        {visibleGenericVendors.map((vendorId) => {
+          const meta = VENDOR_REGISTRY[vendorId];
+          const vendorSummary = data.vendors.find((v) => v.vendor === vendorId);
+          const isConnected = Boolean(vendorSummary?.connected);
+          const isSyncing = syncingGenericVendor === vendorId;
+          const isDisconnecting = disconnectingGenericVendor === vendorId;
+          return (
+            <div
+              key={vendorId}
+              className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4"
+            >
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${meta.badgeClass}`}
+                  >
+                    {meta.label}
+                  </span>
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                      isConnected
+                        ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
+                        : 'border-slate-700 bg-slate-950/60 text-slate-400'
+                    }`}
+                  >
+                    {isConnected ? t('common.connected') : t('common.configured')}
+                  </span>
+                  <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300">
+                    {t('common.devicesCount', { count: systemCounts[vendorId] ?? 0 })}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">{meta.description}</p>
+                {vendorSummary?.lastError && (
+                  <p className="text-[11px] text-rose-300">{vendorSummary.lastError}</p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <span className="text-[11px] text-slate-500">
+                  {vendorSummary?.lastSyncedAt
+                    ? t('common.syncedAt', {
+                      date: new Date(vendorSummary.lastSyncedAt).toLocaleString(intlLocale),
+                    })
+                    : t('common.readOnlyZeroCmd')}
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleSyncGenericVendor(vendorId)}
+                    disabled={isSyncing || isDisconnecting}
+                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                    {isSyncing
+                      ? t('common.syncing')
+                      : t('systems.syncVendorBtn', { vendor: meta.shortLabel })}
+                  </button>
+                  {data.env.mode === 'live' &&
+                    isConnected &&
+                    meta.capabilities.supportsDisconnect &&
+                    meta.disconnectEndpoint && (
+                      <button
+                        type="button"
+                        onClick={() => void handleDisconnectGenericVendor(vendorId)}
+                        disabled={isDisconnecting || isSyncing}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3 py-2 text-xs text-slate-300 transition"
+                      >
+                        {t('common.disconnect')}
+                      </button>
+                    )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {syncMessage && (

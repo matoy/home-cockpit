@@ -1035,6 +1035,7 @@ export const fr = {
   'systems.okXiaomiQrConnected': 'Xiaomi Home connecté via QR Code et synchronisé.',
   'systems.errSync': 'Échec de synchronisation {vendor}',
   'systems.okSync': 'Synchronisation {vendor} terminée.',
+  'systems.syncVendorBtn': 'Synchroniser {vendor}',
   'systems.errVendor': 'Erreur {vendor}',
   'systems.errDisconnect': 'Échec de déconnexion {vendor}',
   'systems.okDisconnect': '{vendor} déconnecté.',

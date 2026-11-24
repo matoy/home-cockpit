@@ -172,9 +172,10 @@ See [`.env.example`](.env.example) for the complete annotated template.
 | `npm run dev` | Start Next.js development server |
 | `npm run build` | Build production bundle (`next build`) |
 | `npm run start` | Run production server |
-| `npm run lint` | Run ESLint (`next lint`) |
+| `npm run lint` | Run ESLint 9 (`eslint .`) |
 | `npm run typecheck` | Run TypeScript compiler check (`tsc --noEmit`) |
 | `npm test` | Run automated Vitest test suite (`vitest run`) |
+| `npm run test:coverage` | Run Vitest with V8 code coverage report |
 | `npm run test:watch` | Run Vitest in interactive watch mode |
 | `npm run db:push` | Push Drizzle schema directly to PostgreSQL |
 | `npm run db:generate` | Generate Drizzle SQL migrations |

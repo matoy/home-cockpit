@@ -610,47 +610,17 @@ export function DashboardApp({ initialData, sessionUser = null }: DashboardAppPr
               {data.vendors
                 .filter((v) => {
                   if (v.vendor === 'tuya' || systemFilter === v.vendor) return true;
-                  if (v.vendor === 'kasa') {
-                    return data.env.kasaConfigured || (data.env.mode === 'live' && v.devicesCount > 0);
-                  }
-                  if (v.vendor === 'home_connect') {
-                    return (
-                      data.env.homeConnectConfigured ||
-                      (data.env.mode === 'live' && v.devicesCount > 0)
-                    );
-                  }
-                  if (v.vendor === 'somfy') {
-                    return (
-                      data.env.somfyConfigured ||
-                      (data.env.mode === 'live' && v.devicesCount > 0)
-                    );
-                  }
-                  if (v.vendor === 'daikin') {
-                    return (
-                      data.env.daikinConfigured ||
-                      (data.env.mode === 'live' && v.devicesCount > 0)
-                    );
-                  }
-                  if (v.vendor === 'xsense') {
-                    return (
-                      data.env.xsenseConfigured ||
-                      (data.env.mode === 'live' && v.devicesCount > 0)
-                    );
-                  }
-                  if (v.vendor === 'xiaomi') {
-                    return (
-                      data.env.xiaomiConfigured ||
-                      data.env.xiaomiConnected ||
-                      (data.env.mode === 'live' && v.devicesCount > 0)
-                    );
-                  }
                   if (v.vendor === 'google_home') {
                     return (
                       data.env.googleHomeApiEnabled ||
                       (data.env.mode === 'live' && v.devicesCount > 0)
                     );
                   }
-                  return true;
+                  return (
+                    v.configured ||
+                    v.connected ||
+                    (data.env.mode === 'live' && v.devicesCount > 0)
+                  );
                 })
                 .map((v) => (
                   <option key={v.vendor} value={v.vendor}>

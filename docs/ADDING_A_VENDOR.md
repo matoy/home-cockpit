@@ -12,7 +12,7 @@ Once you register a vendor in the central registries, the following platform fea
 - **30-Minute Telemetry Collection:** Automatic inclusion in `collectAllMonitoredDevices` (`src/lib/services/collection-service.ts`) whenever `collectReadings` is implemented on your `VendorServerPlugin`.
 - **Cross-Vendor Room Sync:** Automatic inclusion in `syncAllVendorRooms` (`POST /api/rooms/sync` via `src/lib/services/rooms-service.ts`) when `syncRooms` and `isReadyForRoomSync` are provided.
 - **Cross-Vendor Device Linking & Deduplication:** Physical device merging and primary telemetry selection via `device_vendor_links`.
-- **Dashboard Vendor Summaries:** Status badges, last-sync timestamps, error reporting, and device counts generated automatically by `buildVendorConnectionSummariesFromState` (`src/lib/services/vendors/index.ts`).
+- **Dashboard Vendor Summaries & UI Card:** Status badges, last-sync timestamps, error reporting, device counts, a generic card inside **Systems & Connections** (`SystemsTab.tsx` calling `meta.syncEndpoint` / `meta.disconnectEndpoint`), and the header system filter (`DashboardApp.tsx`) are automatically generated from `VENDOR_REGISTRY` and `buildVendorConnectionSummariesFromState` (`src/lib/services/vendors/index.ts`).
 - **Gzip Backup & Restore:** Device metadata, vendor links, vendor connection states, and metric readings are automatically included in JSON/Gzip exports and imports.
 - **Unified Overview & Device Inventory Display:** Rich inline status badges and searchable metadata driven by `extractVendorDisplaySummary` (`src/lib/vendors/display-registry.ts`).
 

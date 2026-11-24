@@ -1,4 +1,4 @@
-import { and, asc, desc, gte, lte } from 'drizzle-orm';
+import { and, asc, desc, gte, lte, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
 import {
   automations,
@@ -45,6 +45,92 @@ import type {
   VendorId,
 } from '@/types';
 import type { XiaomiRegion } from '@/lib/vendors/xiaomi-client';
+
+const HOURLY_DOWNSAMPLE_THRESHOLD_HOURS = 45 * 24;
+
+async function loadMetricReadingsForWindow(
+  db: NonNullable<ReturnType<typeof getDb>>,
+  range: TimeRange,
+  startDate: Date,
+  endDate: Date,
+  effectiveHours: number
+) {
+  if (effectiveHours <= HOURLY_DOWNSAMPLE_THRESHOLD_HOURS) {
+    const rows = await db
+      .select()
+      .from(metricReadings)
+      .where(
+        range === 'custom'
+          ? and(
+              gte(metricReadings.recordedAt, startDate),
+              lte(metricReadings.recordedAt, endDate)
+            )
+          : gte(metricReadings.recordedAt, startDate)
+      )
+      .orderBy(asc(metricReadings.recordedAt));
+    return rows.map(mapDbReading);
+  }
+
+  const dateFilter =
+    range === 'custom'
+      ? sql`recorded_at >= ${startDate} AND recorded_at <= ${endDate}`
+      : sql`recorded_at >= ${startDate}`;
+
+  const rawResult = await db.execute(sql`
+    SELECT
+      MIN(id)::int AS id,
+      device_id AS "deviceId",
+      room_id AS "roomId",
+      date_trunc('hour', recorded_at) AS "bucketTs",
+      AVG(power_w)::real AS "powerW",
+      AVG(voltage_v)::real AS "voltageV",
+      SUM(energy_kwh)::real AS "energyKwh",
+      MAX(energy_source) AS "energySource",
+      AVG(temp_c)::real AS "tempC",
+      AVG(humidity_pct)::real AS "humidityPct",
+      BOOL_OR(contact_open) AS "contactOpen",
+      MAX(cover_state) AS "coverState",
+      AVG(cover_open_pct)::real AS "coverOpenPct"
+    FROM metric_readings
+    WHERE ${dateFilter}
+    GROUP BY device_id, room_id, date_trunc('hour', recorded_at)
+    ORDER BY "bucketTs" ASC
+  `);
+
+  const rows = Array.isArray(rawResult)
+    ? rawResult
+    : ((rawResult as { rows?: Array<Record<string, unknown>> }).rows ?? []);
+
+  return (rows as Array<Record<string, unknown>>).map((r, idx) => ({
+    id: typeof r.id === 'number' ? r.id : idx + 1,
+    deviceId: String(r.deviceId),
+    roomId: r.roomId === null || r.roomId === undefined ? null : Number(r.roomId),
+    recordedAt:
+      r.bucketTs instanceof Date
+        ? r.bucketTs.toISOString()
+        : new Date(String(r.bucketTs)).toISOString(),
+    powerW: r.powerW === null || r.powerW === undefined ? null : Number(r.powerW),
+    voltageV: r.voltageV === null || r.voltageV === undefined ? null : Number(r.voltageV),
+    energyKwh: r.energyKwh === null || r.energyKwh === undefined ? null : Number(r.energyKwh),
+    energySource:
+      r.energySource === 'add_ele' || r.energySource === 'integration'
+        ? (r.energySource as 'add_ele' | 'integration')
+        : null,
+    tempC: r.tempC === null || r.tempC === undefined ? null : Number(r.tempC),
+    humidityPct:
+      r.humidityPct === null || r.humidityPct === undefined ? null : Number(r.humidityPct),
+    contactOpen: typeof r.contactOpen === 'boolean' ? r.contactOpen : null,
+    coverState:
+      r.coverState === 'open' ||
+      r.coverState === 'closed' ||
+      r.coverState === 'partial' ||
+      r.coverState === 'unknown'
+        ? (r.coverState as 'open' | 'closed' | 'partial' | 'unknown')
+        : null,
+    coverOpenPct:
+      r.coverOpenPct === null || r.coverOpenPct === undefined ? null : Number(r.coverOpenPct),
+  }));
+}
 
 export async function getDashboardData(
   range: TimeRange = '24h',
@@ -111,28 +197,17 @@ export async function getDashboardData(
   await seedDefaultDataIfEmpty(db);
 
   const now = new Date();
-  const { startMs, endMs } = resolveTimeWindow(range, customFrom, customTo, now);
+  const { startMs, endMs, effectiveHours } = resolveTimeWindow(range, customFrom, customTo, now);
   const startDate = new Date(startMs);
   const endDate = new Date(endMs);
 
-  const [roomRows, deviceRows, linkRows, connRows, readingRows, tariffRows, automationRows, logRows] =
+  const [roomRows, deviceRows, linkRows, connRows, mappedReadings, tariffRows, automationRows, logRows] =
     await Promise.all([
       db.select().from(rooms).orderBy(asc(rooms.id)),
       db.select().from(devices).orderBy(asc(devices.name)),
       db.select().from(deviceVendorLinks).orderBy(asc(deviceVendorLinks.id)),
       db.select().from(vendorConnections),
-      db
-        .select()
-        .from(metricReadings)
-        .where(
-          range === 'custom'
-            ? and(
-                gte(metricReadings.recordedAt, startDate),
-                lte(metricReadings.recordedAt, endDate)
-              )
-            : gte(metricReadings.recordedAt, startDate)
-        )
-        .orderBy(asc(metricReadings.recordedAt)),
+      loadMetricReadingsForWindow(db, range, startDate, endDate, effectiveHours),
       db.select().from(tariffPeriods).orderBy(asc(tariffPeriods.startDate)),
       db.select().from(automations).orderBy(asc(automations.name)),
       db.select().from(collectionLogs).orderBy(desc(collectionLogs.executedAt)).limit(20),
@@ -214,7 +289,7 @@ export async function getDashboardData(
     rooms: roomRows.map(mapDbRoom),
     devices: mappedDevices,
     vendors,
-    readings: readingRows.map(mapDbReading),
+    readings: mappedReadings,
     tariffs: normalizeTariffTimeline(tariffRows.map(mapDbTariff)),
     automations: automationRows.map(mapDbAutomation),
     logs: logRows.map(mapDbLog),

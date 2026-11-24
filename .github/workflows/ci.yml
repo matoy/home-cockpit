@@ -36,11 +36,15 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
-      - name: Run Vitest suite
-        run: npm test
+      - name: Run Vitest suite with coverage
+        run: npm run test:coverage
 
       - name: Build Next.js production bundle
         run: npm run build
+
+      - name: Security dependency audit (advisory)
+        continue-on-error: true
+        run: npm audit --audit-level=high
 
   promote-to-main:
     needs: quality-and-build

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { asc, gte, and, lte, eq, notInArray, sql } from 'drizzle-orm';
 import { getDb, type AppDatabase } from '@/db';
@@ -11,6 +12,7 @@ import {
   tariffPeriods,
   vendorConnections,
 } from '@/db/schema';
+import { safeEqualString } from './http-utils';
 import { ensureSchemaInitialized, resetSeedCheckCache } from './services/shared';
 import { getDemoState, type DemoVendorConnectionState } from './demo-store';
 import { isValidVendorId, normalizeSystems } from './vendors/registry';
@@ -63,6 +65,11 @@ interface BackupVendorLinkItem extends DeviceVendorLinkRecord {
   vendorMetadata?: Record<string, unknown> | null;
 }
 
+export interface BackupArchiveIntegrity {
+  algorithm: 'sha256';
+  dataSha256: string;
+}
+
 export interface BackupArchiveV1 {
   format: typeof BACKUP_FORMAT;
   version: number;
@@ -73,6 +80,7 @@ export interface BackupArchiveV1 {
     metricsRange: BackupMetricsRange;
     includeEncryptedSessions: boolean;
   };
+  integrity?: BackupArchiveIntegrity;
   stats: BackupStats;
   data: {
     rooms: RoomRecord[];
@@ -167,6 +175,10 @@ function computeStatsFromData(
   };
 }
 
+export function computeBackupDataSha256(data: unknown): string {
+  return crypto.createHash('sha256').update(JSON.stringify(data), 'utf8').digest('hex');
+}
+
 function sanitizeCategory(raw: unknown): DeviceCategory {
   if (raw === 'power' || raw === 'climate' || raw === 'contact' || raw === 'hybrid') {
     return raw;
@@ -252,7 +264,7 @@ export async function exportBackupArchive(options?: {
         accessToken: null,
         refreshToken: null,
         tokenExpiresAt: null,
-        config: {},
+        config: vc.config ? { ...vc.config } : {},
         lastSyncedAt: vc.lastSyncedAt,
         lastError: vc.lastError,
       };
@@ -448,6 +460,10 @@ export async function exportBackupArchive(options?: {
   }
 
   const stats = computeStatsFromData(data);
+  const integrity: BackupArchiveIntegrity = {
+    algorithm: 'sha256',
+    dataSha256: computeBackupDataSha256(data),
+  };
   const archive: BackupArchiveV1 = {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
@@ -458,6 +474,7 @@ export async function exportBackupArchive(options?: {
       metricsRange,
       includeEncryptedSessions,
     },
+    integrity,
     stats,
     data,
   };
@@ -526,6 +543,34 @@ export function parseAndValidateBackupBuffer(rawBuffer: Buffer): {
     throw new Error('Archive invalide : section "data" manquante.');
   }
 
+  let parsedIntegrity: BackupArchiveIntegrity | undefined;
+  let missingChecksumWarning = false;
+  const rawIntegrity = asRecord(root.integrity);
+  if (rawIntegrity) {
+    const alg = toStringOrNull(rawIntegrity.algorithm);
+    const expectedHash = toStringOrNull(rawIntegrity.dataSha256);
+    if (alg !== 'sha256' || !expectedHash || !/^[0-9a-f]{64}$/i.test(expectedHash)) {
+      throw new Error('Empreinte d’intégrité de l’archive invalide (algorithme SHA-256 attendu).');
+    }
+    const actualHash = computeBackupDataSha256(root.data);
+    if (!safeEqualString(actualHash.toLowerCase(), expectedHash.toLowerCase())) {
+      throw new Error('Intégrité de l’archive compromise : empreinte SHA-256 invalide.');
+    }
+    parsedIntegrity = { algorithm: 'sha256', dataSha256: actualHash };
+  } else {
+    missingChecksumWarning = true;
+  }
+
+  const unknownVendors = new Set<string>();
+  const trackVendor = (rawVendor: unknown) => {
+    if (typeof rawVendor === 'string') {
+      const trimmed = rawVendor.trim();
+      if (trimmed && !isValidVendorId(trimmed)) {
+        unknownVendors.add(trimmed);
+      }
+    }
+  };
+
   const rawRooms = Array.isArray(dataRec.rooms) ? dataRec.rooms : [];
   const rawDevices = Array.isArray(dataRec.devices) ? dataRec.devices : [];
   const rawLinks = Array.isArray(dataRec.deviceVendorLinks) ? dataRec.deviceVendorLinks : [];
@@ -560,6 +605,10 @@ export function parseAndValidateBackupBuffer(rawBuffer: Buffer): {
     const id = toStringOrNull(rec?.id);
     const name = toStringOrNull(rec?.name);
     if (!rec || !id || !name) continue;
+    trackVendor(rec.primaryVendor);
+    if (Array.isArray(rec.systems)) {
+      rec.systems.forEach(trackVendor);
+    }
     const primaryVendor: VendorId = isValidVendorId(rec.primaryVendor)
       ? rec.primaryVendor
       : 'tuya';
@@ -599,6 +648,7 @@ export function parseAndValidateBackupBuffer(rawBuffer: Buffer): {
     const rec = asRecord(item);
     const deviceId = toStringOrNull(rec?.deviceId);
     const externalId = toStringOrNull(rec?.externalId);
+    trackVendor(rec?.vendor);
     if (!rec || !deviceId || !externalId || !isValidVendorId(rec.vendor)) continue;
     parsedLinks.push({
       id: Math.trunc(toFiniteNumber(rec.id, parsedLinks.length + 1)),
@@ -649,6 +699,7 @@ export function parseAndValidateBackupBuffer(rawBuffer: Buffer): {
     const id = toStringOrNull(rec?.id);
     const name = toStringOrNull(rec?.name);
     if (!rec || !id || !name) continue;
+    trackVendor(rec.vendor);
     const ruleType: AutomationRuleType = rec.ruleType === 'scene' ? 'scene' : 'automation';
     const matchType: AutomationMatchType =
       rec.matchType === 'all' || rec.matchType === 'any' || rec.matchType === 'manual'
@@ -675,6 +726,7 @@ export function parseAndValidateBackupBuffer(rawBuffer: Buffer): {
   const parsedConns: BackupVendorConnectionItem[] = [];
   for (const item of rawConns) {
     const rec = asRecord(item);
+    trackVendor(rec?.vendor);
     if (!rec || !isValidVendorId(rec.vendor)) continue;
     parsedConns.push({
       vendor: rec.vendor,
@@ -764,11 +816,22 @@ export function parseAndValidateBackupBuffer(rawBuffer: Buffer): {
       metricsRange,
       includeEncryptedSessions: stats.encryptedSessionsCount > 0,
     },
+    ...(parsedIntegrity ? { integrity: parsedIntegrity } : {}),
     stats,
     data,
   };
 
   const warnings: string[] = [];
+  if (missingChecksumWarning) {
+    warnings.push(
+      'Archive sans empreinte SHA-256 (format hérité) : intégrité des données non vérifiée cryptographiquement.'
+    );
+  }
+  if (unknownVendors.size > 0) {
+    warnings.push(
+      `${unknownVendors.size} fournisseur(s) non reconnu(s) sur cette instance (${Array.from(unknownVendors).join(', ')}) : certaines liaisons ou connexions seront ignorées.`
+    );
+  }
   if (stats.encryptedSessionsCount > 0) {
     warnings.push(
       `Cette archive contient ${stats.encryptedSessionsCount} session(s) chiffrée(s) (AES-256-GCM). La restauration de ces jetons nécessite la même TOKEN_ENCRYPTION_KEY / APP_PASSWORD.`
@@ -953,6 +1016,7 @@ export async function importBackupArchive(
         state.vendorConnections[vc.vendor] = {
           mode: mapConnectionModeToDemo(vc.mode),
           connected: vc.status === 'connected',
+          config: vc.config ? { ...vc.config } : {},
           lastSyncedAt: vc.lastSyncedAt,
           lastError: vc.lastError,
         };
@@ -1091,6 +1155,7 @@ export async function importBackupArchive(
         state.vendorConnections[vc.vendor] = {
           mode: mapConnectionModeToDemo(vc.mode),
           connected: prev ? prev.connected || vc.status === 'connected' : vc.status === 'connected',
+          config: vc.config && Object.keys(vc.config).length > 0 ? { ...vc.config } : prev?.config ?? {},
           lastSyncedAt: vc.lastSyncedAt ?? prev?.lastSyncedAt ?? null,
           lastError: vc.lastError,
         };
