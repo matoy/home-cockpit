@@ -820,8 +820,8 @@ export function SystemsTab({
         <div className="flex flex-wrap items-center gap-2">
           <span
             className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${data.env.mode === 'live'
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+              : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
               }`}
           >
             {data.env.mode === 'live' ? t('common.liveModeReadOnly') : t('common.demoMode')}
@@ -857,8 +857,8 @@ export function SystemsTab({
                 </span>
                 <span
                   className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.tuyaConfigured || data.env.mode === 'demo'
-                      ? 'bg-emerald-500/15 text-emerald-300'
-                      : 'bg-slate-800 text-slate-400'
+                    ? 'bg-emerald-500/15 text-emerald-300'
+                    : 'bg-slate-800 text-slate-400'
                     }`}
                 >
                   {data.env.mode === 'demo'
@@ -910,8 +910,8 @@ export function SystemsTab({
                   </span>
                   <span
                     className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.kasaConfigured || data.env.mode === 'demo'
-                        ? 'bg-emerald-500/15 text-emerald-300'
-                        : 'bg-slate-800 text-slate-400'
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-slate-800 text-slate-400'
                       }`}
                   >
                     {data.env.mode === 'demo'
@@ -985,8 +985,8 @@ export function SystemsTab({
                     </span>
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isHcConnected || data.env.mode === 'demo'
-                          ? 'bg-emerald-500/15 text-emerald-300'
-                          : 'bg-slate-800 text-slate-400'
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : 'bg-slate-800 text-slate-400'
                         }`}
                     >
                       {data.env.mode === 'demo'
@@ -1099,8 +1099,8 @@ export function SystemsTab({
                   </span>
                   <span
                     className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.somfyConfigured || data.env.mode === 'demo'
-                        ? 'bg-emerald-500/15 text-emerald-300'
-                        : 'bg-slate-800 text-slate-400'
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-slate-800 text-slate-400'
                       }`}
                   >
                     {data.env.mode === 'demo'
@@ -1170,8 +1170,8 @@ export function SystemsTab({
                 </span>
                 <span
                   className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isDkConnected || data.env.mode === 'demo'
-                      ? 'bg-emerald-500/15 text-emerald-300'
-                      : 'bg-slate-800 text-slate-400'
+                    ? 'bg-emerald-500/15 text-emerald-300'
+                    : 'bg-slate-800 text-slate-400'
                     }`}
                 >
                   {data.env.mode === 'demo'
@@ -1298,8 +1298,8 @@ export function SystemsTab({
                 </span>
                 <span
                   className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.mode === 'demo' || xsenseVendor?.connected || data.env.xsenseConfigured
-                      ? 'bg-emerald-500/15 text-emerald-300'
-                      : 'bg-slate-800 text-slate-400'
+                    ? 'bg-emerald-500/15 text-emerald-300'
+                    : 'bg-slate-800 text-slate-400'
                     }`}
                 >
                   {data.env.mode === 'demo'
@@ -1368,10 +1368,10 @@ export function SystemsTab({
                 </span>
                 <span
                   className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${data.env.mode === 'demo' || isXiaomiConnected
-                      ? 'bg-emerald-500/15 text-emerald-300'
-                      : data.env.xiaomiConfigured
-                        ? 'bg-amber-500/15 text-amber-300'
-                        : 'bg-slate-800 text-slate-400'
+                    ? 'bg-emerald-500/15 text-emerald-300'
+                    : data.env.xiaomiConfigured
+                      ? 'bg-amber-500/15 text-amber-300'
+                      : 'bg-slate-800 text-slate-400'
                     }`}
                 >
                   {data.env.mode === 'demo'
@@ -1568,8 +1568,8 @@ export function SystemsTab({
                     </span>
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isGhConnected
-                          ? 'bg-emerald-500/15 text-emerald-300'
-                          : 'bg-slate-800 text-slate-400'
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : 'bg-slate-800 text-slate-400'
                         }`}
                     >
                       {data.env.mode === 'demo'
@@ -1683,11 +1683,10 @@ export function SystemsTab({
                     {meta.label}
                   </span>
                   <span
-                    className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${
-                      isConnected
-                        ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
-                        : 'border-slate-700 bg-slate-950/60 text-slate-400'
-                    }`}
+                    className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${isConnected
+                      ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
+                      : 'border-slate-700 bg-slate-950/60 text-slate-400'
+                      }`}
                   >
                     {isConnected ? t('common.connected') : t('common.configured')}
                   </span>
