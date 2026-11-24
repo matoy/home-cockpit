@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { formatMacAddress } from '@/lib/tuya-client';
+import { asRecord, toFiniteNumber as toNum, toStr } from '@/lib/utils';
 import type { DeviceCategory, RawDpStatus } from '@/types';
 import { signXiaomiAuthState, verifyXiaomiAuthState } from './crypto-store';
 import type { NormalizedVendorDevice, VendorInventoryResult } from './registry';
@@ -174,30 +175,6 @@ export function decryptXiaomiResponseBody(cipherBase64: string, signedNonceBase6
 }
 
 // ---------- Helpers de parsing ----------
-
-function asRecord(val: unknown): Record<string, unknown> | null {
-  return val && typeof val === 'object' && !Array.isArray(val)
-    ? (val as Record<string, unknown>)
-    : null;
-}
-
-function toStr(val: unknown): string | null {
-  if (typeof val === 'string') {
-    const t = val.trim();
-    return t || null;
-  }
-  if (typeof val === 'number' && Number.isFinite(val)) return String(val);
-  return null;
-}
-
-function toNum(val: unknown): number | null {
-  if (typeof val === 'number' && Number.isFinite(val)) return val;
-  if (typeof val === 'string' && val.trim() !== '') {
-    const n = Number(val);
-    if (Number.isFinite(n)) return n;
-  }
-  return null;
-}
 
 function toBool(val: unknown): boolean | null {
   if (typeof val === 'boolean') return val;

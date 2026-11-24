@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { formatMacAddress } from '@/lib/tuya-client';
+import { asRecord, toBool, toFiniteNumber as toNum } from '@/lib/utils';
 import type { DeviceCategory, RawDpStatus } from '@/types';
 import type { NormalizedVendorDevice, VendorInventoryResult } from './registry';
 
@@ -73,36 +74,10 @@ export function makeXSenseDeviceId(externalId: string): string {
   return `xsense_${safe}`;
 }
 
-function asRecord(val: unknown): Record<string, unknown> | null {
-  return val && typeof val === 'object' && !Array.isArray(val)
-    ? (val as Record<string, unknown>)
-    : null;
-}
-
-function toNum(val: unknown): number | null {
-  if (typeof val === 'number' && Number.isFinite(val)) return val;
-  if (typeof val === 'string' && val.trim() !== '') {
-    const n = Number(val);
-    if (Number.isFinite(n)) return n;
-  }
-  return null;
-}
-
 function toStr(val: unknown): string | null {
   if (typeof val === 'string') {
     const trimmed = val.trim();
     return trimmed || null;
-  }
-  return null;
-}
-
-function toBool(val: unknown): boolean | null {
-  if (typeof val === 'boolean') return val;
-  if (typeof val === 'number') return val !== 0;
-  if (typeof val === 'string') {
-    const lower = val.trim().toLowerCase();
-    if (lower === 'true' || lower === '1' || lower === 'on' || lower === 'yes') return true;
-    if (lower === 'false' || lower === '0' || lower === 'off' || lower === 'no') return false;
   }
   return null;
 }

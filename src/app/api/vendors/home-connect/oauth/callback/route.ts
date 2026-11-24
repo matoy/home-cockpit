@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { saveHomeConnectConnection } from '@/lib/data-service';
+import { buildOAuthRedirectUrl, getPublicOrigin } from '@/lib/http-utils';
 import {
   normalizeOAuthReturnTab,
   verifyHomeConnectOAuthState,
@@ -8,22 +9,14 @@ import {
 } from '@/lib/vendors/crypto-store';
 import { exchangeHomeConnectCodeForTokens } from '@/lib/vendors/home-connect-client';
 
-function getPublicOrigin(request: Request): string {
-  const fwdHost = request.headers.get('x-forwarded-host');
-  const fwdProto = request.headers.get('x-forwarded-proto') || 'https';
-  if (fwdHost) return `${fwdProto}://${fwdHost}`;
-  return new URL(request.url).origin;
-}
-
 function redirectWithError(
   origin: string,
   message: string,
   returnTab: OAuthReturnTab = 'systems'
 ): NextResponse {
-  const url = new URL('/', origin);
-  url.searchParams.set('tab', returnTab);
-  url.searchParams.set('hc_error', message);
-  const response = NextResponse.redirect(url);
+  const response = NextResponse.redirect(
+    buildOAuthRedirectUrl(origin, returnTab, { hc_error: message })
+  );
   response.cookies.delete('hc_oauth_nonce');
   return response;
 }

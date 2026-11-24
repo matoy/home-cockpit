@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { syncRoomsFromVendor } from '@/lib/data-service';
+import { isValidVendorId, VENDOR_REGISTRY } from '@/lib/vendors/registry';
 
 export async function POST(request: Request) {
   try {
@@ -7,17 +8,12 @@ export async function POST(request: Request) {
     const rawVendor = body.vendor ?? 'all';
 
     if (
-      rawVendor !== 'tuya' &&
-      rawVendor !== 'kasa' &&
-      rawVendor !== 'somfy' &&
-      rawVendor !== 'xiaomi' &&
-      rawVendor !== 'google_home' &&
-      rawVendor !== 'all'
+      rawVendor !== 'all' &&
+      (!isValidVendorId(rawVendor) || !VENDOR_REGISTRY[rawVendor].capabilities.syncRooms)
     ) {
       return NextResponse.json(
         {
-          error:
-            'Paramètre vendor invalide (attendu : tuya, kasa, somfy, xiaomi, google_home ou all).',
+          error: 'Paramètre vendor invalide ou synchronisation des pièces non supportée.',
         },
         { status: 400 }
       );

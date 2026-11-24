@@ -1,18 +1,12 @@
 import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
+import { buildOAuthRedirectUrl, getPublicOrigin } from '@/lib/http-utils';
 import {
   normalizeOAuthReturnTab,
   signDaikinOAuthState,
   type OAuthReturnTab,
 } from '@/lib/vendors/crypto-store';
 import { buildDaikinAuthorizeUrl, getDaikinConfig } from '@/lib/vendors/daikin-client';
-
-function getPublicOrigin(request: Request): string {
-  const fwdHost = request.headers.get('x-forwarded-host');
-  const fwdProto = request.headers.get('x-forwarded-proto') || 'https';
-  if (fwdHost) return `${fwdProto}://${fwdHost}`;
-  return new URL(request.url).origin;
-}
 
 export async function GET(request: Request) {
   const origin = getPublicOrigin(request);
@@ -39,9 +33,8 @@ export async function GET(request: Request) {
   } catch (err) {
     const message =
       err instanceof Error ? err.message : 'Erreur configuration OAuth Daikin Onecta';
-    const failUrl = new URL('/', origin);
-    failUrl.searchParams.set('tab', returnTab);
-    failUrl.searchParams.set('dk_error', message);
-    return NextResponse.redirect(failUrl);
+    return NextResponse.redirect(
+      buildOAuthRedirectUrl(origin, returnTab, { dk_error: message })
+    );
   }
 }

@@ -1,4 +1,5 @@
 import { formatMacAddress } from '@/lib/tuya-client';
+import { asRecord, toFiniteNumber } from '@/lib/utils';
 import type { RawDpStatus } from '@/types';
 import type { NormalizedVendorDevice, VendorInventoryResult } from './registry';
 
@@ -205,24 +206,9 @@ export async function refreshDaikinAccessToken(params: {
   };
 }
 
-function asRecord(val: unknown): Record<string, unknown> | null {
-  return val && typeof val === 'object' && !Array.isArray(val)
-    ? (val as Record<string, unknown>)
-    : null;
-}
-
 function readNodeValue(node: unknown): unknown {
   const rec = asRecord(node);
   return rec && 'value' in rec ? rec.value : node;
-}
-
-function toFiniteNumber(val: unknown): number | null {
-  if (typeof val === 'number' && Number.isFinite(val)) return val;
-  if (typeof val === 'string' && val.trim() !== '') {
-    const num = Number(val);
-    if (Number.isFinite(num)) return num;
-  }
-  return null;
 }
 
 function toStringValue(val: unknown): string | null {

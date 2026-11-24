@@ -1,18 +1,12 @@
 import { NextResponse } from 'next/server';
 import { saveDaikinConnection, syncDaikinDevices } from '@/lib/data-service';
+import { getPublicOrigin } from '@/lib/http-utils';
 import { verifyDaikinOAuthState } from '@/lib/vendors/crypto-store';
 import {
   exchangeDaikinCodeForTokens,
   extractCodeFromRedirectInput,
   getDaikinConfig,
 } from '@/lib/vendors/daikin-client';
-
-function getPublicOrigin(request: Request): string {
-  const fwdHost = request.headers.get('x-forwarded-host');
-  const fwdProto = request.headers.get('x-forwarded-proto') || 'https';
-  if (fwdHost) return `${fwdProto}://${fwdHost}`;
-  return new URL(request.url).origin;
-}
 
 export async function POST(request: Request) {
   try {

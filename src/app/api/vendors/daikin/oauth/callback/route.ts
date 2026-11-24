@@ -1,15 +1,9 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { saveDaikinConnection } from '@/lib/data-service';
+import { buildOAuthRedirectUrl, getPublicOrigin } from '@/lib/http-utils';
 import { normalizeOAuthReturnTab, verifyDaikinOAuthState } from '@/lib/vendors/crypto-store';
 import { exchangeDaikinCodeForTokens, getDaikinConfig } from '@/lib/vendors/daikin-client';
-
-function getPublicOrigin(request: Request): string {
-  const fwdHost = request.headers.get('x-forwarded-host');
-  const fwdProto = request.headers.get('x-forwarded-proto') || 'https';
-  if (fwdHost) return `${fwdProto}://${fwdHost}`;
-  return new URL(request.url).origin;
-}
 
 export async function GET(request: Request) {
   const origin = getPublicOrigin(request);
@@ -21,12 +15,8 @@ export async function GET(request: Request) {
   const signedState = verifyDaikinOAuthState(stateParam);
   const returnTab = normalizeOAuthReturnTab(signedState?.returnTab);
 
-  const failRedirect = (message: string) => {
-    const url = new URL('/', origin);
-    url.searchParams.set('tab', returnTab);
-    url.searchParams.set('dk_error', message);
-    return NextResponse.redirect(url);
-  };
+  const failRedirect = (message: string) =>
+    NextResponse.redirect(buildOAuthRedirectUrl(origin, returnTab, { dk_error: message }));
 
   if (oauthError) {
     return failRedirect(`Autorisation refusée (${oauthError})`);
