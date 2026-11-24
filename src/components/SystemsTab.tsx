@@ -3,16 +3,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   BookOpen,
-  Clock,
-  Cpu,
   ExternalLink,
-  Plug,
   QrCode,
   RefreshCw,
 } from 'lucide-react';
 import { VENDOR_IDS, VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import { AlertBanner } from './ui';
 import { useI18n } from './I18nProvider';
+import { CollectionLogsCard } from './systems/CollectionLogsCard';
+import { GenericVendorCard } from './systems/GenericVendorCard';
+import { SystemsHeader } from './systems/SystemsHeader';
+import { UnconfiguredSystemsSection } from './systems/UnconfiguredSystemsSection';
 
 const CUSTOM_RENDERED_VENDORS = new Set<VendorId>([
   'tuya',
@@ -798,47 +799,13 @@ export function SystemsTab({
   return (
     <div className="space-y-6">
       {/* En-tête synthétique Systèmes */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 px-5 py-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 shrink-0">
-            <Plug className="h-5 w-5" />
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold text-white">
-              {t('systems.headerTitle')}
-            </h2>
-            <p className="text-xs text-slate-400">
-              {t('systems.headerSub', {
-                connected: connectedSystemsCount,
-                active: visibleSyncCardsCount,
-                devices: data.devices.length,
-              })}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${data.env.mode === 'live'
-              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-              : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-              }`}
-          >
-            {data.env.mode === 'live' ? t('common.liveModeReadOnly') : t('common.demoMode')}
-          </span>
-
-          {onOpenDevicesTab && (
-            <button
-              type="button"
-              onClick={onOpenDevicesTab}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700/80 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
-            >
-              <Cpu className="h-3.5 w-3.5 text-indigo-400" />
-              {t('systems.viewDevicesBtn')}
-            </button>
-          )}
-        </div>
-      </div>
+      <SystemsHeader
+        mode={data.env.mode}
+        connectedSystemsCount={connectedSystemsCount}
+        visibleSyncCardsCount={visibleSyncCardsCount}
+        totalDevicesCount={data.devices.length}
+        onOpenDevicesTab={onOpenDevicesTab}
+      />
 
       {/* Synchronisation Multi-Vendors */}
       <div className={syncGridClass}>
@@ -1664,80 +1631,19 @@ export function SystemsTab({
           </div>
         )}
 
-        {visibleGenericVendors.map((vendorId) => {
-          const meta = VENDOR_REGISTRY[vendorId];
-          const vendorSummary = data.vendors.find((v) => v.vendor === vendorId);
-          const isConnected = Boolean(vendorSummary?.connected);
-          const isSyncing = syncingGenericVendor === vendorId;
-          const isDisconnecting = disconnectingGenericVendor === vendorId;
-          return (
-            <div
-              key={vendorId}
-              className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex flex-col justify-between gap-4"
-            >
-              <div className="space-y-1.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${meta.badgeClass}`}
-                  >
-                    {meta.label}
-                  </span>
-                  <span
-                    className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${isConnected
-                      ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
-                      : 'border-slate-700 bg-slate-950/60 text-slate-400'
-                      }`}
-                  >
-                    {isConnected ? t('common.connected') : t('common.configured')}
-                  </span>
-                  <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300">
-                    {t('common.devicesCount', { count: systemCounts[vendorId] ?? 0 })}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 mt-1">{meta.description}</p>
-                {vendorSummary?.lastError && (
-                  <p className="text-[11px] text-rose-300">{vendorSummary.lastError}</p>
-                )}
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                <span className="text-[11px] text-slate-500">
-                  {vendorSummary?.lastSyncedAt
-                    ? t('common.syncedAt', {
-                      date: new Date(vendorSummary.lastSyncedAt).toLocaleString(intlLocale),
-                    })
-                    : t('common.readOnlyZeroCmd')}
-                </span>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleSyncGenericVendor(vendorId)}
-                    disabled={isSyncing || isDisconnecting}
-                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3.5 py-2 text-xs font-medium text-white transition"
-                  >
-                    <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                    {isSyncing
-                      ? t('common.syncing')
-                      : t('systems.syncVendorBtn', { vendor: meta.shortLabel })}
-                  </button>
-                  {data.env.mode === 'live' &&
-                    isConnected &&
-                    meta.capabilities.supportsDisconnect &&
-                    meta.disconnectEndpoint && (
-                      <button
-                        type="button"
-                        onClick={() => void handleDisconnectGenericVendor(vendorId)}
-                        disabled={isDisconnecting || isSyncing}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 disabled:opacity-50 px-3 py-2 text-xs text-slate-300 transition"
-                      >
-                        {t('common.disconnect')}
-                      </button>
-                    )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        {visibleGenericVendors.map((vendorId) => (
+          <GenericVendorCard
+            key={vendorId}
+            vendorId={vendorId}
+            summary={data.vendors.find((v) => v.vendor === vendorId)}
+            devicesCount={systemCounts[vendorId] ?? 0}
+            mode={data.env.mode}
+            isSyncing={syncingGenericVendor === vendorId}
+            isDisconnecting={disconnectingGenericVendor === vendorId}
+            onSync={(id) => void handleSyncGenericVendor(id)}
+            onDisconnect={(id) => void handleDisconnectGenericVendor(id)}
+          />
+        ))}
       </div>
 
       {syncMessage && (
@@ -1747,100 +1653,10 @@ export function SystemsTab({
       )}
 
       {/* Autres systèmes disponibles (non encore configurés dans .env) */}
-      {availableUnconfiguredSystems.length > 0 && (
-        <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 className="text-sm font-semibold text-white">{t('systems.otherTitle')}</h3>
-              <p className="text-xs text-slate-400">
-                {t('systems.otherSub')}
-              </p>
-            </div>
-            <span className="rounded-full border border-slate-700 bg-slate-950/60 px-2.5 py-0.5 text-[11px] text-slate-300">
-              {t('systems.otherCount', { count: availableUnconfiguredSystems.length })}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {availableUnconfiguredSystems.map((item) => {
-              const meta = VENDOR_REGISTRY[item.vendor];
-              return (
-                <div
-                  key={item.vendor}
-                  className="rounded-xl border border-slate-800/90 bg-slate-950/60 p-4 flex flex-col justify-between gap-3"
-                >
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${meta.badgeClass}`}
-                      >
-                        {meta.label}
-                      </span>
-                      <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-400">
-                        {t('common.notConfigured')}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400">{item.scope}</p>
-                  </div>
-
-                  {item.onOpenGuide && (
-                    <button
-                      type="button"
-                      onClick={item.onOpenGuide}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:text-white transition"
-                    >
-                      <BookOpen className="h-3.5 w-3.5 text-indigo-400" />
-                      {t('systems.configureGuideBtn')}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
+      <UnconfiguredSystemsSection items={availableUnconfiguredSystems} />
 
       {/* Journal des collectes */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-        <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-          <Clock className="h-4 w-4 text-slate-400" />
-          {t('systems.logsTitle')}
-        </h3>
-        <div className="space-y-2 max-h-56 overflow-y-auto">
-          {data.logs.map((log) => (
-            <div
-              key={log.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800/80 bg-slate-950/60 px-3.5 py-2 text-xs"
-            >
-              <div className="flex items-center gap-2.5">
-                <span
-                  className={`h-2 w-2 rounded-full ${log.status === 'success' ? 'bg-emerald-400' : 'bg-rose-400'
-                    }`}
-                />
-                <span className="font-mono text-slate-300">
-                  {new Date(log.executedAt).toLocaleString(intlLocale)}
-                </span>
-                <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] uppercase text-slate-300">
-                  {log.trigger}
-                </span>
-              </div>
-              <div className="text-slate-400">
-                {log.status === 'success' ? (
-                  <span>
-                    {t('systems.logReadingsRow', {
-                      readings: log.readingsInserted,
-                      devices: log.devicesCount,
-                      ms: log.durationMs ?? 0,
-                    })}
-                  </span>
-                ) : (
-                  <span className="text-rose-300">{log.errorMessage}</span>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <CollectionLogsCard logs={data.logs} />
     </div>
   );
 }

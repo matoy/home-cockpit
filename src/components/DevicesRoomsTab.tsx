@@ -14,7 +14,6 @@ import {
   WifiOff,
   Layers,
   Link2,
-  GitMerge,
   Unlink,
   Search,
   ArrowRight,
@@ -30,6 +29,10 @@ import { extractXiaomiSummary } from '@/lib/vendors/xiaomi-display';
 import type { AppLocale } from '@/lib/i18n/types';
 import { normalizeSearchText } from '@/lib/utils';
 import { useI18n } from './I18nProvider';
+import { DeviceSystemsModal } from './devices/DeviceSystemsModal';
+import { DpInspectorModal } from './devices/DpInspectorModal';
+import { DuplicatesBanner } from './devices/DuplicatesBanner';
+import { ManualDeviceModal } from './devices/ManualDeviceModal';
 import type {
   DashboardPayload,
   DeviceCategory,
@@ -110,12 +113,6 @@ export function DevicesRoomsTab({
   onOpenBackupSection,
 }: DevicesRoomsTabProps) {
   const { t, locale } = useI18n();
-  const scaleOptions = [
-    { label: t('devices.scale1'), value: 1 },
-    { label: t('devices.scale10'), value: 0.1 },
-    { label: t('devices.scale100'), value: 0.01 },
-    { label: t('devices.scale1000'), value: 0.001 },
-  ];
   const showKasa = data.env.kasaConfigured;
   const showHomeConnect = data.env.homeConnectConfigured;
   const showSomfy = data.env.somfyConfigured;
@@ -767,84 +764,16 @@ export function DevicesRoomsTab({
       )}
 
       {/* Bannière de déduplication multi-systèmes */}
-      {visibleDuplicateCandidates.length > 0 && (
-        <div className="rounded-2xl border border-amber-500/35 bg-amber-500/10 p-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-xs font-semibold text-amber-200">
-              <GitMerge className="h-4 w-4 text-amber-400 shrink-0" />
-              {t('devices.duplicatesTitle', { count: visibleDuplicateCandidates.length })}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] text-amber-300/80">
-                {t('devices.duplicatesHint')}
-              </span>
-              {visibleDuplicateCandidates.length > 1 && (
-                <button
-                  type="button"
-                  disabled={bulkMergingAll || mergingId !== null}
-                  onClick={() => void handleBulkMergeDuplicates()}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 px-3 py-1.5 text-[11px] font-semibold text-slate-950 transition shrink-0"
-                >
-                  <GitMerge className="h-3.5 w-3.5" />
-                  {bulkMergingAll
-                    ? t('devices.merging')
-                    : t('devices.mergeAll', { count: visibleDuplicateCandidates.length })}
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            {visibleDuplicateCandidates.map((cand) => (
-              <div
-                key={cand.sourceDeviceId}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-slate-950/60 px-3.5 py-2.5 text-xs"
-              >
-                <div className="flex flex-wrap items-center gap-2 min-w-0">
-                  <span
-                    className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${VENDOR_REGISTRY[cand.sourceVendor].badgeClass}`}
-                  >
-                    {VENDOR_REGISTRY[cand.sourceVendor].label}
-                  </span>
-                  <span className="font-medium text-white">{cand.sourceName}</span>
-                  <span className="text-slate-500">→</span>
-                  <span
-                    className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${VENDOR_REGISTRY[cand.targetVendor].badgeClass}`}
-                  >
-                    {VENDOR_REGISTRY[cand.targetVendor].label}
-                  </span>
-                  <span className="font-medium text-white">{cand.targetName}</span>
-                  <span className="text-[11px] text-slate-400">
-                    ({cand.reason}
-                    {cand.roomName ? ` · ${cand.roomName}` : ''})
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    disabled={mergingId === cand.sourceDeviceId || bulkMergingAll}
-                    onClick={() => void handleMergeDevices(cand.targetDeviceId, cand.sourceDeviceId)}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 px-3 py-1.5 text-[11px] font-semibold text-slate-950 transition"
-                  >
-                    <GitMerge className="h-3.5 w-3.5" />
-                    {mergingId === cand.sourceDeviceId ? t('devices.mergingOne') : t('devices.mergeOneClick')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDismissedDuplicates((prev) => [...prev, cand.sourceDeviceId])
-                    }
-                    className="rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 px-2.5 py-1.5 text-[11px] text-slate-300 transition"
-                  >
-                    {t('devices.ignore')}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <DuplicatesBanner
+        candidates={visibleDuplicateCandidates}
+        mergingId={mergingId}
+        bulkMergingAll={bulkMergingAll}
+        onMergeOne={(targetId, sourceId) => void handleMergeDevices(targetId, sourceId)}
+        onBulkMergeAll={() => void handleBulkMergeDuplicates()}
+        onDismiss={(sourceDeviceId) =>
+          setDismissedDuplicates((prev) => [...prev, sourceDeviceId])
+        }
+      />
 
       {/* Liste des appareils */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
@@ -2026,598 +1955,77 @@ export function DevicesRoomsTab({
 
       {/* Modale Inspecteur DP */}
       {inspectDevice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-white">
-                  {t('devices.dpModalTitle', { name: inspectDevice.customName || inspectDevice.name })}
-                </h3>
-                <p className="text-xs text-slate-400 font-mono">{inspectDevice.id}</p>
-              </div>
-              <button
-                onClick={() => setInspectDevice(null)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 space-y-3 text-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="font-medium text-slate-200">{t('devices.dpNetworkTitle')}</div>
-                <span className="text-[11px] text-slate-400">
-                  {t('devices.dpNetworkSub')}
-                </span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">
-                    {t('devices.dpIpLabel')}
-                  </label>
-                  <input
-                    type="text"
-                    value={inspectorIp}
-                    onChange={(e) => setInspectorIp(e.target.value)}
-                    placeholder="ex: 192.168.1.54"
-                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 font-mono text-xs text-white focus:border-indigo-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">{t('devices.dpMacLabel')}</label>
-                  <input
-                    type="text"
-                    value={inspectorMac}
-                    onChange={(e) => setInspectorMac(e.target.value)}
-                    placeholder="ex: 68:A4:0E:12:34:56"
-                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 font-mono text-xs text-white focus:border-indigo-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-              {inspectDevice.primaryVendor === 'home_connect' && (
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  {t('devices.dpHcNote')}
-                </p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              {(
-                [
-                  { key: 'power', label: t('devices.dpFieldPower') },
-                  { key: 'addEle', label: t('devices.dpFieldAddEle') },
-                  { key: 'voltage', label: t('devices.dpFieldVoltage') },
-                  { key: 'temp', label: t('devices.dpFieldTemp') },
-                  { key: 'humidity', label: t('devices.dpFieldHumidity') },
-                  { key: 'battery', label: t('devices.dpFieldBattery') },
-                  { key: 'contact', label: t('devices.dpFieldContact') },
-                ] as const
-              ).map(({ key, label }) => {
-                const current = dpDraft[key] ?? { code: '', scale: 1 };
-                const isContact = key === 'contact';
-                return (
-                  <div
-                    key={key}
-                    className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-2"
-                  >
-                    <div className="font-medium text-slate-200">{label}</div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder={isContact ? 'ex: doorcontact_state' : t('devices.dpCodePlaceholder')}
-                        value={current.code}
-                        onChange={(e) => {
-                          const code = e.target.value.trim();
-                          setDpDraft({
-                            ...dpDraft,
-                            [key]: code ? { code, scale: current.scale || 1 } : undefined,
-                          });
-                        }}
-                        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs font-mono text-white"
-                      />
-                      <select
-                        value={current.scale}
-                        onChange={(e) =>
-                          setDpDraft({
-                            ...dpDraft,
-                            [key]: { code: current.code, scale: Number(e.target.value) },
-                          })
-                        }
-                        className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200"
-                      >
-                        {isContact ? (
-                          <>
-                            <option value={1}>{t('devices.dpContactNormal')}</option>
-                            <option value={-1}>{t('devices.dpContactInverted')}</option>
-                          </>
-                        ) : (
-                          scaleOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))
-                        )}
-                      </select>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div>
-              <div className="text-xs font-medium text-slate-300 mb-1.5">
-                {t('devices.dpRawStatusTitle')}
-              </div>
-              <pre className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-[11px] font-mono text-emerald-300 overflow-x-auto max-h-48">
-                {JSON.stringify(inspectDevice.lastRawStatus ?? [], null, 2)}
-              </pre>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setInspectDevice(null)}
-                className="rounded-xl border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800"
-              >
-                {t('common.close')}
-              </button>
-              <button
-                onClick={saveInspector}
-                disabled={savingDp}
-                className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-medium text-white"
-              >
-                {savingDp ? t('common.saving') : t('common.save')}
-              </button>
-            </div>
-          </div>
-        </div>
+        <DpInspectorModal
+          device={inspectDevice}
+          inspectorIp={inspectorIp}
+          inspectorMac={inspectorMac}
+          dpDraft={dpDraft}
+          savingDp={savingDp}
+          onChangeIp={setInspectorIp}
+          onChangeMac={setInspectorMac}
+          onChangeDpDraft={setDpDraft}
+          onClose={() => setInspectDevice(null)}
+          onSave={saveInspector}
+        />
       )}
 
       {/* Modale Systèmes & Fusion (Multi-Vendors sans doublon) */}
       {manageSystemsDevice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                  <Link2 className="h-4 w-4 text-sky-400" />
-                  {t('devices.systemsModalTitle', {
-                    name: manageSystemsDevice.customName || manageSystemsDevice.name,
-                  })}
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {t('devices.systemsModalPrimary')}{' '}
-                  <strong className="text-slate-200">
-                    {VENDOR_REGISTRY[manageSystemsDevice.primaryVendor].label}
-                  </strong>
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setManageSystemsDeviceId(null)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {linkFeedback && (
-              <div
-                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${linkFeedback.ok
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                  : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-                  }`}
-              >
-                {linkFeedback.ok ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                ) : (
-                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                )}
-                <span>{linkFeedback.text}</span>
-              </div>
-            )}
-
-            {/* Cases à cocher présence multi-systèmes */}
-            <div className="space-y-2.5">
-              <div className="text-xs font-semibold text-slate-200">
-                {t('devices.systemsPresenceTitle')}
-              </div>
-              <div className="space-y-2">
-                {VENDOR_IDS.map((vId) => {
-                  const meta = VENDOR_REGISTRY[vId];
-                  const isPrimary = manageSystemsDevice.primaryVendor === vId;
-                  const checked = manageSystemsDevice.systems.includes(vId);
-                  return (
-                    <label
-                      key={vId}
-                      className={`flex items-start justify-between gap-3 rounded-xl border p-3 text-xs transition ${checked
-                        ? 'border-slate-700 bg-slate-950/80'
-                        : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'
-                        } ${isPrimary ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-                    >
-                      <div className="flex items-start gap-2.5">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={isPrimary || savingLink}
-                          onChange={(e) =>
-                            void handleToggleSystemTag(
-                              manageSystemsDevice.id,
-                              vId,
-                              e.target.checked
-                            )
-                          }
-                          className="mt-0.5 h-4 w-4 rounded border-slate-600 bg-slate-900 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <div>
-                          <div className="flex items-center gap-2 font-medium text-white">
-                            <span>{meta.label}</span>
-                            {isPrimary && (
-                              <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] text-indigo-300">
-                                {t('devices.primaryBadge')}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-slate-400 mt-0.5">
-                            {isPrimary
-                              ? t('devices.primaryDesc')
-                              : t('devices.secondaryDesc', { vendor: meta.label })}
-                          </p>
-                        </div>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Fusion d'un doublon existant */}
-            <div className="space-y-2.5 pt-2 border-t border-slate-800">
-              <div className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                <GitMerge className="h-3.5 w-3.5 text-amber-400" />
-                {t('devices.mergeSectionTitle')}
-              </div>
-              <p className="text-[11px] text-slate-400">
-                {t('devices.mergeSectionDesc')}
-              </p>
-
-              {mergeableCandidatesForModal.length === 0 ? (
-                <div className="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5 text-[11px] text-slate-500">
-                  {t('devices.mergeEmpty')}
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  <select
-                    value={mergeSourceId}
-                    onChange={(e) => setMergeSourceId(e.target.value)}
-                    className="flex-1 min-w-[200px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
-                  >
-                    <option value="">{t('devices.mergeChoose')}</option>
-                    {mergeableCandidatesForModal.map((cand) => {
-                      const candRoom = data.rooms.find((r) => r.id === cand.roomId);
-                      return (
-                        <option key={cand.id} value={cand.id}>
-                          [{VENDOR_REGISTRY[cand.primaryVendor].label}] {cand.customName || cand.name}
-                          {candRoom ? ` (${candRoom.name})` : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <button
-                    type="button"
-                    disabled={!mergeSourceId || savingLink}
-                    onClick={() =>
-                      void handleMergeDevices(manageSystemsDevice.id, mergeSourceId)
-                    }
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 px-3.5 py-2 text-xs font-semibold text-slate-950 transition"
-                  >
-                    <GitMerge className="h-3.5 w-3.5" />
-                    {t('devices.mergeBtn')}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Liens mémorisés */}
-            {(manageSystemsDevice.vendorLinks?.length ?? 0) > 0 && (
-              <div className="space-y-2 pt-2 border-t border-slate-800">
-                <div className="text-xs font-semibold text-slate-200">
-                  {t('devices.savedLinksTitle')}
-                </div>
-                <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                  {manageSystemsDevice.vendorLinks?.map((link) => {
-                    const meta = VENDOR_REGISTRY[link.vendor];
-                    const canUnlink =
-                      link.vendor !== manageSystemsDevice.primaryVendor &&
-                      manageSystemsDevice.systems.length > 1;
-                    return (
-                      <div
-                        key={link.id}
-                        className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-[11px]"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className={`rounded border px-1.5 py-0.2 text-[10px] ${meta.badgeClass}`}>
-                              {meta.label}
-                            </span>
-                            <span className="text-slate-200 truncate">
-                              {link.externalName || link.externalId}
-                            </span>
-                          </div>
-                          <div className="font-mono text-[10px] text-slate-500 truncate mt-0.5">
-                            {link.externalId}
-                          </div>
-                        </div>
-                        {canUnlink && (
-                          <button
-                            type="button"
-                            disabled={savingLink}
-                            onClick={() =>
-                              void handleUnlinkVendor(manageSystemsDevice.id, link.vendor)
-                            }
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 hover:border-rose-500/40 hover:text-rose-300 px-2 py-1 text-[10px] text-slate-300 shrink-0"
-                            title={t('devices.unlinkTitle')}
-                          >
-                            <Unlink className="h-3 w-3" />
-                            {t('devices.unlinkBtn')}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => setManageSystemsDeviceId(null)}
-                className="rounded-xl border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800"
-              >
-                {t('common.close')}
-              </button>
-            </div>
-          </div>
-        </div>
+        <DeviceSystemsModal
+          device={manageSystemsDevice}
+          rooms={data.rooms}
+          mergeableCandidates={mergeableCandidatesForModal}
+          mergeSourceId={mergeSourceId}
+          savingLink={savingLink}
+          linkFeedback={linkFeedback}
+          onChangeMergeSourceId={setMergeSourceId}
+          onToggleSystemTag={(deviceId, vendor, enabled) =>
+            void handleToggleSystemTag(deviceId, vendor, enabled)
+          }
+          onMergeDevices={(targetId, sourceId) =>
+            void handleMergeDevices(targetId, sourceId)
+          }
+          onUnlinkVendor={(deviceId, vendor) =>
+            void handleUnlinkVendor(deviceId, vendor)
+          }
+          onClose={() => setManageSystemsDeviceId(null)}
+        />
       )}
 
       {/* Modale Déclaration / Édition appareil manuel */}
       {showManualModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <form
-            onSubmit={handleSaveManualDevice}
-            className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                  <Plus className="h-4 w-4 text-emerald-400" />
-                  {editingManualDeviceId
-                    ? t('devices.manualModalEditTitle')
-                    : t('devices.manualModalCreateTitle')}
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {t('devices.manualModalSubtitle')}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={closeManualModal}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {manualFeedback && (
-              <div
-                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${manualFeedback.ok
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                  : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-                  }`}
-              >
-                {manualFeedback.ok ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                ) : (
-                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                )}
-                <span>{manualFeedback.text}</span>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div>
-                <label className="block text-slate-400 mb-1">
-                  {t('devices.manualNameLabel')} <span className="text-rose-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={manualName}
-                  onChange={(e) => setManualName(e.target.value)}
-                  placeholder={t('devices.manualNamePlaceholder')}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-400 mb-1">{t('devices.manualCustomNameLabel')}</label>
-                <input
-                  type="text"
-                  value={manualCustomName}
-                  onChange={(e) => setManualCustomName(e.target.value)}
-                  placeholder={t('devices.manualCustomNamePlaceholder')}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-400 mb-1">{t('devices.manualModelLabel')}</label>
-                <input
-                  type="text"
-                  value={manualProductName}
-                  onChange={(e) => setManualProductName(e.target.value)}
-                  placeholder={t('devices.manualModelPlaceholder')}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-400 mb-1">{t('devices.colRoom')}</label>
-                <select
-                  value={manualRoomId}
-                  onChange={(e) => setManualRoomId(e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
-                >
-                  <option value="">{t('common.unassigned')}</option>
-                  {data.rooms.map((r) => (
-                    <option key={r.id} value={String(r.id)}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-400 mb-1">{t('devices.manualCategoryLabel')}</label>
-                <select
-                  value={manualCategory}
-                  onChange={(e) => setManualCategory(e.target.value as DeviceCategory)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
-                >
-                  <option value="other">{t('devices.catOther')}</option>
-                  <option value="power">{t('devices.catPower')}</option>
-                  <option value="climate">{t('devices.catClimate')}</option>
-                  <option value="contact">{t('devices.catContact')}</option>
-                  <option value="hybrid">{t('devices.catHybrid')}</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-400 mb-1">{t('devices.manualIpLabel')}</label>
-                <input
-                  type="text"
-                  value={manualIpAddress}
-                  onChange={(e) => setManualIpAddress(e.target.value)}
-                  placeholder="ex: 192.168.1.45"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-white focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="block text-slate-400 mb-1">{t('devices.manualMacLabel')}</label>
-                <input
-                  type="text"
-                  value={manualMacAddress}
-                  onChange={(e) => setManualMacAddress(e.target.value)}
-                  placeholder="ex: AA:BB:CC:DD:EE:FF"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-white focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Systèmes associés */}
-            <div className="space-y-2 text-xs">
-              <div className="text-slate-300 font-medium">{t('devices.manualSystemsTitle')}</div>
-              <div className="flex flex-wrap items-center gap-3">
-                {VENDOR_IDS.map((vId) => {
-                  const meta = VENDOR_REGISTRY[vId];
-                  const checked = manualSystems.includes(vId);
-                  return (
-                    <label
-                      key={vId}
-                      className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 cursor-pointer transition ${checked
-                        ? 'border-slate-600 bg-slate-950/90 text-white'
-                        : 'border-slate-800 bg-slate-950/40 text-slate-400 hover:border-slate-700'
-                        }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => handleToggleManualSystem(vId)}
-                        className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-emerald-600"
-                      />
-                      <span className={`h-2 w-2 rounded-full ${meta.dotClass}`} />
-                      <span>{meta.label}</span>
-                    </label>
-                  );
-                })}
-              </div>
-
-              {manualSystems.length > 1 && (
-                <div className="pt-1">
-                  <label className="block text-slate-400 mb-1">{t('devices.manualPrimarySystemLabel')}</label>
-                  <select
-                    value={manualPrimaryVendor}
-                    onChange={(e) => setManualPrimaryVendor(e.target.value as VendorId)}
-                    className="w-full sm:w-64 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
-                  >
-                    {manualSystems.map((vId) => (
-                      <option key={vId} value={vId}>
-                        {VENDOR_REGISTRY[vId].label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-
-            {/* Options d'état et de suivi */}
-            <div className="flex flex-wrap items-center gap-5 pt-1 text-xs text-slate-300">
-              <label className="inline-flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={manualIsOnline}
-                  onChange={(e) => setManualIsOnline(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-emerald-600"
-                />
-                {t('common.online')}
-              </label>
-
-              <label className="inline-flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={manualIsMonitored}
-                  onChange={(e) => setManualIsMonitored(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-indigo-600"
-                />
-                {t('devices.manualMonitoredLabel')}
-              </label>
-
-              <label className="inline-flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={manualExcludeFromTotals}
-                  onChange={(e) => setManualExcludeFromTotals(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-amber-500"
-                />
-                {t('devices.manualExcludeLabel')}
-              </label>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={closeManualModal}
-                disabled={savingManualDevice}
-                className="rounded-xl border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-50"
-              >
-                {t('common.cancel')}
-              </button>
-              <button
-                type="submit"
-                disabled={savingManualDevice}
-                className="rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-4 py-2 text-xs font-medium text-white transition"
-              >
-                {savingManualDevice
-                  ? t('common.saving')
-                  : editingManualDeviceId
-                    ? t('common.save')
-                    : t('devices.manualSubmitCreate')}
-              </button>
-            </div>
-          </form>
-        </div>
+        <ManualDeviceModal
+          editingDeviceId={editingManualDeviceId}
+          rooms={data.rooms}
+          name={manualName}
+          customName={manualCustomName}
+          productName={manualProductName}
+          roomId={manualRoomId}
+          category={manualCategory}
+          ipAddress={manualIpAddress}
+          macAddress={manualMacAddress}
+          systems={manualSystems}
+          primaryVendor={manualPrimaryVendor}
+          isOnline={manualIsOnline}
+          isMonitored={manualIsMonitored}
+          excludeFromTotals={manualExcludeFromTotals}
+          saving={savingManualDevice}
+          feedback={manualFeedback}
+          onChangeName={setManualName}
+          onChangeCustomName={setManualCustomName}
+          onChangeProductName={setManualProductName}
+          onChangeRoomId={setManualRoomId}
+          onChangeCategory={setManualCategory}
+          onChangeIpAddress={setManualIpAddress}
+          onChangeMacAddress={setManualMacAddress}
+          onToggleSystem={handleToggleManualSystem}
+          onChangePrimaryVendor={setManualPrimaryVendor}
+          onChangeIsOnline={setManualIsOnline}
+          onChangeIsMonitored={setManualIsMonitored}
+          onChangeExcludeFromTotals={setManualExcludeFromTotals}
+          onClose={closeManualModal}
+          onSubmit={handleSaveManualDevice}
+        />
       )}
     </div>
   );
