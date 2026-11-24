@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { fetchWithTimeout } from '@/lib/http-utils';
 import { formatMacAddress } from '@/lib/tuya-client';
 import { asRecord, toBool, toFiniteNumber as toNum } from '@/lib/utils';
 import type { DeviceCategory, RawDpStatus } from '@/types';
@@ -197,7 +198,7 @@ async function callCognitoAction(
   body: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   const endpoint = `https://cognito-idp.${region}.amazonaws.com/`;
-  const res = await fetch(endpoint, {
+  const res = await fetchWithTimeout(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-amz-json-1.1',
@@ -417,7 +418,7 @@ async function callXSenseApi(params: {
     headers.Authorization = params.accessToken;
   }
 
-  const res = await fetch(`${params.apiUrl}/app`, {
+  const res = await fetchWithTimeout(`${params.apiUrl}/app`, {
     method: 'POST',
     headers,
     body: JSON.stringify(bodyObj),
@@ -535,7 +536,7 @@ async function fetchAwsIotShadowGet(params: {
     `AWS4-HMAC-SHA256 Credential=${params.accessKeyId}/${scope}, ` +
     `SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
-  const res = await fetch(params.url, {
+  const res = await fetchWithTimeout(params.url, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/x-amz-json-1.0',

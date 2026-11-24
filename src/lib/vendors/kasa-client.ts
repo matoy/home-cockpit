@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { fetchWithTimeout } from '@/lib/http-utils';
 import type { DeviceCategory, RawDpStatus } from '@/types';
 import type { NormalizedVendorDevice, VendorInventoryResult } from './registry';
 
@@ -137,7 +138,7 @@ async function kasaCloudRpc<T = unknown>(
   const cleanUrl = baseUrl.replace(/\/+$/, '');
   const endpoint = token ? `${cleanUrl}?token=${encodeURIComponent(token)}` : cleanUrl;
 
-  const res = await fetch(endpoint, {
+  const res = await fetchWithTimeout(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

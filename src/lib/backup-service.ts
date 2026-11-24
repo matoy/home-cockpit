@@ -11,7 +11,7 @@ import {
   tariffPeriods,
   vendorConnections,
 } from '@/db/schema';
-import { ensureSchemaInitialized } from './data-service';
+import { ensureSchemaInitialized, resetSeedCheckCache } from './services/shared';
 import { getDemoState, type DemoVendorConnectionState } from './demo-store';
 import { isValidVendorId, normalizeSystems } from './vendors/registry';
 import type {
@@ -1419,6 +1419,7 @@ export async function importBackupArchive(
     }
 
     await resetPostgresSequences(db);
+    resetSeedCheckCache();
   } else {
     // mode === 'merge' (Upsert)
     const existingRooms = await db.select().from(rooms);

@@ -1,4 +1,5 @@
 import type { HomeConnectEnv, RawDpStatus } from '@/types';
+import { fetchWithTimeout } from '@/lib/http-utils';
 import type { NormalizedVendorDevice, VendorInventoryResult } from './registry';
 
 const HOME_CONNECT_BASE_URLS: Record<HomeConnectEnv, string> = {
@@ -181,7 +182,7 @@ async function postHomeConnectTokenRequest(
   formParams: URLSearchParams
 ): Promise<{ accessToken: string; refreshToken: string | null; expiresInSec: number }> {
   const baseUrl = getHomeConnectBaseUrl(env);
-  const res = await fetch(`${baseUrl}/security/oauth/token`, {
+  const res = await fetchWithTimeout(`${baseUrl}/security/oauth/token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -468,7 +469,7 @@ async function homeConnectGet<T>(
   path: string,
   accessToken: string
 ): Promise<T> {
-  const res = await fetch(`${baseUrl}${path}`, {
+  const res = await fetchWithTimeout(`${baseUrl}${path}`, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${accessToken}`,

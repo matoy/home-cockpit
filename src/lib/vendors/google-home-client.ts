@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { fetchWithTimeout } from '@/lib/http-utils';
 import type { DeviceCategory, GoogleHomeMode, RawDpStatus } from '@/types';
 import type { NormalizedVendorDevice, VendorInventoryResult } from './registry';
 
@@ -111,7 +112,7 @@ export async function exchangeGoogleCodeForTokens(params: {
     redirect_uri: params.redirectUri,
   });
 
-  const res = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
+  const res = await fetchWithTimeout(GOOGLE_OAUTH_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
@@ -154,7 +155,7 @@ export async function refreshGoogleAccessToken(
     grant_type: 'refresh_token',
   });
 
-  const res = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
+  const res = await fetchWithTimeout(GOOGLE_OAUTH_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
@@ -357,7 +358,7 @@ async function callGoogleMcp(params: {
     rpcBody.id = mcpRequestSeq++;
   }
 
-  const res = await fetch(GOOGLE_HOME_MCP_URL, {
+  const res = await fetchWithTimeout(GOOGLE_HOME_MCP_URL, {
     method: 'POST',
     headers,
     body: JSON.stringify(rpcBody),
@@ -1107,7 +1108,7 @@ export async function fetchGoogleHomeViaSdm(
   const roomNameSet = new Set<string>();
   const roomPathToName = new Map<string, string>();
 
-  const structRes = await fetch(
+  const structRes = await fetchWithTimeout(
     `${GOOGLE_SDM_BASE_URL}/enterprises/${encodeURIComponent(projectId)}/structures`,
     { headers, cache: 'no-store' }
   );
@@ -1122,7 +1123,7 @@ export async function fetchGoogleHomeViaSdm(
     };
     for (const s of structJson.structures ?? []) {
       if (!s.name) continue;
-      const roomsRes = await fetch(`${GOOGLE_SDM_BASE_URL}/${s.name}/rooms`, {
+      const roomsRes = await fetchWithTimeout(`${GOOGLE_SDM_BASE_URL}/${s.name}/rooms`, {
         headers,
         cache: 'no-store',
       }).catch(() => null);
@@ -1144,7 +1145,7 @@ export async function fetchGoogleHomeViaSdm(
     }
   }
 
-  const devRes = await fetch(
+  const devRes = await fetchWithTimeout(
     `${GOOGLE_SDM_BASE_URL}/enterprises/${encodeURIComponent(projectId)}/devices`,
     { headers, cache: 'no-store' }
   );

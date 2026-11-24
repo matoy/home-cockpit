@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import {
   Zap,
@@ -24,26 +25,66 @@ import {
   Plug,
 } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
-import { EnergyTab } from './EnergyTab';
-import { ClimateTab } from './ClimateTab';
-import { ContactsTab } from './ContactsTab';
-import { CoversTab } from './CoversTab';
-import { HvacTab } from './HvacTab';
-import { SecurityTab } from './SecurityTab';
 import { extractCoverSummary } from '@/lib/covers-utils';
 import { extractDaikinSummary, isDaikinHvacDevice } from '@/lib/vendors/daikin-display';
 import { extractXSenseSummary, isXSenseSecurityDevice } from '@/lib/vendors/xsense-display';
 import { extractXiaomiSummary, isXiaomiSecurityOrHomeDevice } from '@/lib/vendors/xiaomi-display';
-import { AutomationsTab } from './AutomationsTab';
-import { TariffsTab } from './TariffsTab';
-import { DevicesRoomsTab } from './DevicesRoomsTab';
-import { RoomsTab } from './RoomsTab';
-import { SystemsTab } from './SystemsTab';
-import { SetupGuideTab } from './SetupGuideTab';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useI18n } from './I18nProvider';
 import { AlertBanner, Button } from './ui';
 import type { DashboardPayload, SystemFilter, TabId, TimeRange } from '@/types';
+
+function TabLoadingFallback() {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 animate-pulse space-y-4">
+      <div className="h-5 w-48 rounded bg-slate-800" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="h-24 rounded-xl bg-slate-800/70" />
+        <div className="h-24 rounded-xl bg-slate-800/70" />
+        <div className="h-24 rounded-xl bg-slate-800/70" />
+      </div>
+      <div className="h-48 rounded-xl bg-slate-800/50" />
+    </div>
+  );
+}
+
+const EnergyTab = dynamic(() => import('./EnergyTab').then((m) => m.EnergyTab), {
+  loading: () => <TabLoadingFallback />,
+});
+const ClimateTab = dynamic(() => import('./ClimateTab').then((m) => m.ClimateTab), {
+  loading: () => <TabLoadingFallback />,
+});
+const ContactsTab = dynamic(() => import('./ContactsTab').then((m) => m.ContactsTab), {
+  loading: () => <TabLoadingFallback />,
+});
+const CoversTab = dynamic(() => import('./CoversTab').then((m) => m.CoversTab), {
+  loading: () => <TabLoadingFallback />,
+});
+const HvacTab = dynamic(() => import('./HvacTab').then((m) => m.HvacTab), {
+  loading: () => <TabLoadingFallback />,
+});
+const SecurityTab = dynamic(() => import('./SecurityTab').then((m) => m.SecurityTab), {
+  loading: () => <TabLoadingFallback />,
+});
+const AutomationsTab = dynamic(() => import('./AutomationsTab').then((m) => m.AutomationsTab), {
+  loading: () => <TabLoadingFallback />,
+});
+const TariffsTab = dynamic(() => import('./TariffsTab').then((m) => m.TariffsTab), {
+  loading: () => <TabLoadingFallback />,
+});
+const DevicesRoomsTab = dynamic(
+  () => import('./DevicesRoomsTab').then((m) => m.DevicesRoomsTab),
+  { loading: () => <TabLoadingFallback /> }
+);
+const RoomsTab = dynamic(() => import('./RoomsTab').then((m) => m.RoomsTab), {
+  loading: () => <TabLoadingFallback />,
+});
+const SystemsTab = dynamic(() => import('./SystemsTab').then((m) => m.SystemsTab), {
+  loading: () => <TabLoadingFallback />,
+});
+const SetupGuideTab = dynamic(() => import('./SetupGuideTab').then((m) => m.SetupGuideTab), {
+  loading: () => <TabLoadingFallback />,
+});
 
 interface DashboardAppProps {
   initialData: DashboardPayload;
@@ -82,6 +123,13 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
   const [loading, setLoading] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const fetchAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      fetchAbortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -148,6 +196,9 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
       customBounds: { from: string; to: string } | null = appliedCustom,
       nextSystem: SystemFilter = systemFilter
     ) => {
+      fetchAbortRef.current?.abort();
+      const controller = new AbortController();
+      fetchAbortRef.current = controller;
       setLoading(true);
       try {
         const params = new URLSearchParams({
@@ -161,6 +212,7 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
         }
         const res = await fetch(`/api/dashboard?${params.toString()}`, {
           cache: 'no-store',
+          signal: controller.signal,
         });
         if (res.status === 401) {
           router.push('/login');
@@ -168,10 +220,18 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
         }
         if (res.ok) {
           const payload = (await res.json()) as DashboardPayload;
-          setData(payload);
+          if (fetchAbortRef.current === controller) {
+            setData(payload);
+          }
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          return;
         }
       } finally {
-        setLoading(false);
+        if (fetchAbortRef.current === controller) {
+          setLoading(false);
+        }
       }
     },
     [range, roomId, appliedCustom, systemFilter, router]
@@ -351,51 +411,70 @@ export function DashboardApp({ initialData }: DashboardAppProps) {
   }
 
   const lastLog = data.logs[0];
-  const connectedSystemsCount = data.vendors.filter((v) => v.connected).length;
-  const activeSystem = data.selectedSystem;
-  const systemScopedDevices =
-    activeSystem === 'all'
-      ? data.devices
-      : data.devices.filter((d) => d.systems.includes(activeSystem));
-  const roomDeviceCounts = new Map<number, number>();
-  for (const dev of systemScopedDevices) {
-    if (dev.roomId !== null) {
-      roomDeviceCounts.set(dev.roomId, (roomDeviceCounts.get(dev.roomId) ?? 0) + 1);
+  const {
+    connectedSystemsCount,
+    systemScopedDevices,
+    roomDeviceCounts,
+    openCoversCount,
+    activeHvacCount,
+    activeSecurityAlertsCount,
+  } = useMemo(() => {
+    const connectedCount = data.vendors.filter((v) => v.connected).length;
+    const activeSystem = data.selectedSystem;
+    const scopedDevices =
+      activeSystem === 'all'
+        ? data.devices
+        : data.devices.filter((d) => d.systems.includes(activeSystem));
+
+    const roomCounts = new Map<number, number>();
+    for (const dev of scopedDevices) {
+      if (dev.roomId !== null) {
+        roomCounts.set(dev.roomId, (roomCounts.get(dev.roomId) ?? 0) + 1);
+      }
     }
-  }
-  const openCoversCount = data.devices.filter((d) => {
-    if (data.selectedSystem !== 'all' && !d.systems.includes(data.selectedSystem)) {
-      return false;
+
+    let coversOpen = 0;
+    let hvacActive = 0;
+    let securityAlerts = 0;
+
+    for (const d of data.devices) {
+      if (data.selectedSystem !== 'all' && !d.systems.includes(data.selectedSystem)) {
+        continue;
+      }
+      if (data.selectedRoomId !== 'all' && String(d.roomId) !== data.selectedRoomId) {
+        continue;
+      }
+
+      const cover = extractCoverSummary(d, locale);
+      if (cover !== null && (cover.state === 'open' || cover.state === 'partial')) {
+        coversOpen++;
+      }
+
+      if (isDaikinHvacDevice(d)) {
+        const summary = extractDaikinSummary(d.lastRawStatus, locale);
+        if (summary?.isOn) {
+          hvacActive++;
+        }
+      }
+
+      if (isXSenseSecurityDevice(d) || isXiaomiSecurityOrHomeDevice(d)) {
+        const xs = extractXSenseSummary(d.lastRawStatus, locale);
+        const mi = extractXiaomiSummary(d.lastRawStatus, locale);
+        if (xs?.isAlert || mi?.isAlert) {
+          securityAlerts++;
+        }
+      }
     }
-    if (data.selectedRoomId !== 'all' && String(d.roomId) !== data.selectedRoomId) {
-      return false;
-    }
-    const cover = extractCoverSummary(d, locale);
-    return cover !== null && (cover.state === 'open' || cover.state === 'partial');
-  }).length;
-  const activeHvacCount = data.devices.filter((d) => {
-    if (data.selectedSystem !== 'all' && !d.systems.includes(data.selectedSystem)) {
-      return false;
-    }
-    if (data.selectedRoomId !== 'all' && String(d.roomId) !== data.selectedRoomId) {
-      return false;
-    }
-    if (!isDaikinHvacDevice(d)) return false;
-    const summary = extractDaikinSummary(d.lastRawStatus, locale);
-    return Boolean(summary?.isOn);
-  }).length;
-  const activeSecurityAlertsCount = data.devices.filter((d) => {
-    if (data.selectedSystem !== 'all' && !d.systems.includes(data.selectedSystem)) {
-      return false;
-    }
-    if (data.selectedRoomId !== 'all' && String(d.roomId) !== data.selectedRoomId) {
-      return false;
-    }
-    if (!isXSenseSecurityDevice(d) && !isXiaomiSecurityOrHomeDevice(d)) return false;
-    const xs = extractXSenseSummary(d.lastRawStatus, locale);
-    const mi = extractXiaomiSummary(d.lastRawStatus, locale);
-    return Boolean(xs?.isAlert || mi?.isAlert);
-  }).length;
+
+    return {
+      connectedSystemsCount: connectedCount,
+      systemScopedDevices: scopedDevices,
+      roomDeviceCounts: roomCounts,
+      openCoversCount: coversOpen,
+      activeHvacCount: hvacActive,
+      activeSecurityAlertsCount: securityAlerts,
+    };
+  }, [data.devices, data.vendors, data.selectedSystem, data.selectedRoomId, locale]);
 
   const rangeOptions: Array<{ id: Exclude<TimeRange, 'custom'>; label: string }> = [
     { id: '24h', label: t('header.range24h') },

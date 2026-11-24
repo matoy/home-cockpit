@@ -251,10 +251,47 @@ export function mapDbAutomation(row: typeof automations.$inferSelect): Automatio
 }
 
 let schemaInitPromise: Promise<void> | null = null;
+let seedCompletedPromise: Promise<void> | null = null;
+
+function isSchemaProbeReady(probeResult: unknown): boolean {
+  const rows = Array.isArray(probeResult)
+    ? probeResult
+    : ((probeResult as { rows?: unknown[] } | null)?.rows ?? []);
+  const first = rows[0] as { ready?: unknown } | undefined;
+  return first?.ready === true;
+}
+
+export function resetSeedCheckCache(): void {
+  seedCompletedPromise = null;
+}
 
 export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
   if (!schemaInitPromise) {
     schemaInitPromise = (async () => {
+      try {
+        const probe = await db.execute(sql`
+          SELECT (
+            to_regclass('public.rooms') IS NOT NULL
+            AND to_regclass('public.devices') IS NOT NULL
+            AND to_regclass('public.metric_readings') IS NOT NULL
+            AND to_regclass('public.tariff_periods') IS NOT NULL
+            AND to_regclass('public.collection_logs') IS NOT NULL
+            AND to_regclass('public.automations') IS NOT NULL
+            AND to_regclass('public.device_vendor_links') IS NOT NULL
+            AND to_regclass('public.vendor_connections') IS NOT NULL
+            AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'devices' AND column_name = 'systems')
+            AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'devices' AND column_name = 'exclude_from_totals')
+            AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'metric_readings' AND column_name = 'cover_open_pct')
+            AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'automations' AND column_name = 'vendor')
+          ) AS ready
+        `);
+        if (isSchemaProbeReady(probe)) {
+          return;
+        }
+      } catch {
+        // En cas d'échec de la sonde, on exécute les créations/migrations idempotentes
+      }
+
       await db.execute(sql`
         CREATE TABLE IF NOT EXISTS "rooms" (
           "id" serial PRIMARY KEY NOT NULL,
@@ -510,68 +547,77 @@ export function inferRoomStyle(name: string, index: number): {
 export async function seedDefaultDataIfEmpty(db: AppDatabase): Promise<void> {
   await ensureSchemaInitialized(db);
 
-  if (!getTuyaConfig().configured) {
-    const [existingRooms, existingDevices] = await Promise.all([
-      db.select().from(rooms).limit(1),
-      db.select().from(devices).limit(1),
-    ]);
-    if (existingRooms.length === 0 && existingDevices.length === 0) {
-      await db.insert(rooms).values([
-        {
-          name: 'Salon',
-          icon: 'Sofa',
-          color: '#3b82f6',
-          targetTempMin: 19.5,
-          targetTempMax: 22.5,
-          targetHumidityMin: 40,
-          targetHumidityMax: 60,
-        },
-        {
-          name: 'Bureau',
-          icon: 'Monitor',
-          color: '#8b5cf6',
-          targetTempMin: 19,
-          targetTempMax: 22,
-          targetHumidityMin: 40,
-          targetHumidityMax: 60,
-        },
-        {
-          name: 'Cuisine',
-          icon: 'Utensils',
-          color: '#f59e0b',
-          targetTempMin: 18.5,
-          targetTempMax: 23,
-          targetHumidityMin: 40,
-          targetHumidityMax: 65,
-        },
-        {
-          name: 'Chambre',
-          icon: 'Bed',
-          color: '#10b981',
-          targetTempMin: 17,
-          targetTempMax: 20,
-          targetHumidityMin: 40,
-          targetHumidityMax: 60,
-        },
-      ]);
-    }
-  }
+  if (!seedCompletedPromise) {
+    seedCompletedPromise = (async () => {
+      if (!getTuyaConfig().configured) {
+        const [existingRooms, existingDevices] = await Promise.all([
+          db.select().from(rooms).limit(1),
+          db.select().from(devices).limit(1),
+        ]);
+        if (existingRooms.length === 0 && existingDevices.length === 0) {
+          await db.insert(rooms).values([
+            {
+              name: 'Salon',
+              icon: 'Sofa',
+              color: '#3b82f6',
+              targetTempMin: 19.5,
+              targetTempMax: 22.5,
+              targetHumidityMin: 40,
+              targetHumidityMax: 60,
+            },
+            {
+              name: 'Bureau',
+              icon: 'Monitor',
+              color: '#8b5cf6',
+              targetTempMin: 19,
+              targetTempMax: 22,
+              targetHumidityMin: 40,
+              targetHumidityMax: 60,
+            },
+            {
+              name: 'Cuisine',
+              icon: 'Utensils',
+              color: '#f59e0b',
+              targetTempMin: 18.5,
+              targetTempMax: 23,
+              targetHumidityMin: 40,
+              targetHumidityMax: 65,
+            },
+            {
+              name: 'Chambre',
+              icon: 'Bed',
+              color: '#10b981',
+              targetTempMin: 17,
+              targetTempMax: 20,
+              targetHumidityMin: 40,
+              targetHumidityMax: 60,
+            },
+          ]);
+        }
+      }
 
-  const existingTariffs = await db.select().from(tariffPeriods).limit(1);
-  if (existingTariffs.length === 0) {
-    const year = new Date().getUTCFullYear();
-    await db.insert(tariffPeriods).values({
-      label: `Tarif Base ${year}`,
-      startDate: `${year}-01-01`,
-      endDate: null,
-      mode: 'BASE',
-      baseRateEur: 0.2016,
-      hpRateEur: 0.2146,
-      hcRateEur: 0.1696,
-      hcSlots: [{ start: '22:00', end: '06:00' }],
-      monthlySubscriptionEur: 14.18,
+      const existingTariffs = await db.select().from(tariffPeriods).limit(1);
+      if (existingTariffs.length === 0) {
+        const year = new Date().getUTCFullYear();
+        await db.insert(tariffPeriods).values({
+          label: `Tarif Base ${year}`,
+          startDate: `${year}-01-01`,
+          endDate: null,
+          mode: 'BASE',
+          baseRateEur: 0.2016,
+          hpRateEur: 0.2146,
+          hcRateEur: 0.1696,
+          hcSlots: [{ start: '22:00', end: '06:00' }],
+          monthlySubscriptionEur: 14.18,
+        });
+      }
+    })().catch((err) => {
+      seedCompletedPromise = null;
+      throw err;
     });
   }
+
+  await seedCompletedPromise;
 }
 
 export async function ensureMissingRoomsInDb(

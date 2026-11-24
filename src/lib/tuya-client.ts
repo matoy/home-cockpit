@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { fetchWithTimeout } from '@/lib/http-utils';
 import { inferDeviceCategory, LIGHTING_TUYA_CATEGORIES } from './device-utils';
 import type {
   AutomationAction,
@@ -146,7 +147,7 @@ async function getAccessToken(): Promise<string> {
     accessSecret: cfg.accessSecret,
   });
 
-  const res = await fetch(`${cfg.baseUrl}${pathWithQuery}`, {
+  const res = await fetchWithTimeout(`${cfg.baseUrl}${pathWithQuery}`, {
     method: 'GET',
     headers,
     cache: 'no-store',
@@ -186,7 +187,7 @@ async function tuyaRequest<T>(pathWithQuery: string, method = 'GET', body?: unkn
     accessSecret: cfg.accessSecret,
   });
 
-  const res = await fetch(`${cfg.baseUrl}${pathWithQuery}`, {
+  const res = await fetchWithTimeout(`${cfg.baseUrl}${pathWithQuery}`, {
     method,
     headers,
     body: bodyStr || undefined,

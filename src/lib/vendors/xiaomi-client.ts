@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { fetchWithTimeout } from '@/lib/http-utils';
 import { formatMacAddress } from '@/lib/tuya-client';
 import { asRecord, toFiniteNumber as toNum, toStr } from '@/lib/utils';
 import type { DeviceCategory, RawDpStatus } from '@/types';
@@ -220,7 +221,7 @@ async function exchangeLocationForServiceToken(
   const collectedCookies: Record<string, string> = {};
 
   for (let hop = 0; hop < 5; hop++) {
-    const res = await fetch(currentUrl, {
+    const res = await fetchWithTimeout(currentUrl, {
       method: 'GET',
       headers: {
         'User-Agent': XIAOMI_USER_AGENT,
@@ -275,7 +276,7 @@ export async function startXiaomiQrLogin(regionInput?: string): Promise<{
     _json: 'true',
   });
 
-  const res = await fetch(`https://account.xiaomi.com/longPolling/loginUrl?${qs.toString()}`, {
+  const res = await fetchWithTimeout(`https://account.xiaomi.com/longPolling/loginUrl?${qs.toString()}`, {
     method: 'GET',
     headers: { 'User-Agent': XIAOMI_USER_AGENT },
     cache: 'no-store',
@@ -388,7 +389,7 @@ export async function loginXiaomiWithCredentials(input?: {
   }
 
   // Étape 1 : récupération _sign via serviceLogin
-  const step1Res = await fetch(
+  const step1Res = await fetchWithTimeout(
     'https://account.xiaomi.com/pass/serviceLogin?sid=xiaomiio&_json=true',
     {
       method: 'GET',
@@ -421,7 +422,7 @@ export async function loginXiaomiWithCredentials(input?: {
     ...(sign ? { _sign: sign } : {}),
   });
 
-  const step2Res = await fetch('https://account.xiaomi.com/pass/serviceLoginAuth2', {
+  const step2Res = await fetchWithTimeout('https://account.xiaomi.com/pass/serviceLoginAuth2', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -496,7 +497,7 @@ export async function verifyXiaomi2faCode(params: {
 
   const notifUrl = new URL(state.notificationUrl);
   const context = notifUrl.searchParams.get('context') ?? '';
-  const verifyRes = await fetch('https://account.xiaomi.com/identity/auth/verifyEmail', {
+  const verifyRes = await fetchWithTimeout('https://account.xiaomi.com/identity/auth/verifyEmail', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -521,7 +522,7 @@ export async function verifyXiaomi2faCode(params: {
     throw new Error('Code 2FA Xiaomi invalide ou refusé. Réessayez ou utilisez le QR Code.');
   }
 
-  const finishRes = await fetch(finishUrl, {
+  const finishRes = await fetchWithTimeout(finishUrl, {
     method: 'GET',
     headers: { 'User-Agent': XIAOMI_USER_AGENT },
     cache: 'no-store',
@@ -569,7 +570,7 @@ async function callXiaomiCloudEndpoint(params: {
     _nonce: formParams._nonce,
   });
 
-  const res = await fetch(fullUrl, {
+  const res = await fetchWithTimeout(fullUrl, {
     method: 'POST',
     headers: {
       'Accept-Encoding': 'identity',

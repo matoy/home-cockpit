@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { fetchWithTimeout } from '@/lib/http-utils';
 import type { DeviceCategory, RawDpStatus } from '@/types';
 import { isSomfyCoverUiClass, type SomfyProtocol } from '@/lib/covers-utils';
 import type { NormalizedVendorDevice, VendorInventoryResult } from './registry';
@@ -415,7 +416,7 @@ export async function somfyCloudLogin(config = getSomfyConfig()): Promise<{
     userPassword: config.password,
   }).toString();
 
-  const res = await fetch(`${config.baseUrl}/login`, {
+  const res = await fetchWithTimeout(`${config.baseUrl}/login`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -467,7 +468,7 @@ export async function fetchSomfySetup(
   sessionCookie: string
 ): Promise<OverkizSetupPayload> {
   // Appel strictement en lecture seule : GET /setup uniquement (aucun POST /exec/apply)
-  const res = await fetch(`${baseUrl}/setup`, {
+  const res = await fetchWithTimeout(`${baseUrl}/setup`, {
     method: 'GET',
     headers: {
       Cookie: sessionCookie,

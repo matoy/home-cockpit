@@ -1,4 +1,5 @@
 import { formatMacAddress } from '@/lib/tuya-client';
+import { fetchWithTimeout } from '@/lib/http-utils';
 import { asRecord, toFiniteNumber } from '@/lib/utils';
 import type { RawDpStatus } from '@/types';
 import type { NormalizedVendorDevice, VendorInventoryResult } from './registry';
@@ -134,7 +135,7 @@ export async function exchangeDaikinCodeForTokens(params: {
     redirect_uri: params.redirectUri,
   });
 
-  const res = await fetch(DAIKIN_TOKEN_URL, {
+  const res = await fetchWithTimeout(DAIKIN_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form.toString(),
@@ -177,7 +178,7 @@ export async function refreshDaikinAccessToken(params: {
     refresh_token: params.refreshToken,
   });
 
-  const res = await fetch(DAIKIN_TOKEN_URL, {
+  const res = await fetchWithTimeout(DAIKIN_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form.toString(),
@@ -479,7 +480,7 @@ export function normalizeDaikinGatewayDevices(rawDevice: unknown): NormalizedVen
 export async function fetchDaikinInventory(params: {
   accessToken: string;
 }): Promise<VendorInventoryResult> {
-  const res = await fetch(DAIKIN_GATEWAY_DEVICES_URL, {
+  const res = await fetchWithTimeout(DAIKIN_GATEWAY_DEVICES_URL, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${params.accessToken}`,
