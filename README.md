@@ -137,6 +137,12 @@ See [`.env.example`](.env.example) for the complete annotated template.
    - **Method:** `GET` or `POST`
    - **Header:** `Authorization: Bearer <YOUR_SCHEDULE_SECRET>`
 
+### Branching & CI/CD Workflow
+
+- Active development happens on the **`dev`** branch (Vercel preview deployments on `dev` are disabled via `vercel.json`).
+- Pushing to `dev` automatically runs the GitHub Actions `quality-and-build` job (`typecheck`, `lint`, `npm test`, `npm run build`).
+- When all checks pass on `dev`, `promote-to-main` automatically syncs `dev` into `main`, which triggers the production deployment on **Vercel** (set a `PROMOTE_TOKEN` secret if branch protection on `main` blocks `GITHUB_TOKEN`).
+
 ---
 
 ## Available Scripts
