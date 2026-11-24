@@ -15,9 +15,21 @@ import {
   Wind,
   Workflow,
 } from 'lucide-react';
-import { computeHomeHealth } from '@/lib/home-health';
+import { computeHomeHealth, type HomeHealthOfflineItem } from '@/lib/home-health';
+import { VENDOR_REGISTRY } from '@/lib/vendors/registry';
 import { useI18n } from './I18nProvider';
-import type { DashboardPayload, TabId } from '@/types';
+import type { DashboardPayload, DeviceCategory, TabId } from '@/types';
+
+const CATEGORY_KEY_MAP: Record<
+  DeviceCategory,
+  'devices.catPower' | 'devices.catClimate' | 'devices.catContact' | 'devices.catHybrid' | 'devices.catOther'
+> = {
+  power: 'devices.catPower',
+  climate: 'devices.catClimate',
+  contact: 'devices.catContact',
+  hybrid: 'devices.catHybrid',
+  other: 'devices.catOther',
+};
 
 interface HealthTabProps {
   data: DashboardPayload;
@@ -29,6 +41,42 @@ export function HealthTab({ data, onNavigateTab, onRefresh }: HealthTabProps) {
   const { t, locale, formatDateTime } = useI18n();
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const report = useMemo(() => computeHomeHealth(data, locale), [data, locale]);
+
+  function formatCategoryShort(category: DeviceCategory): string {
+    return t(CATEGORY_KEY_MAP[category] ?? 'devices.catOther').replace(/\s*\([^)]*\)\s*$/, '');
+  }
+
+  function renderDeviceTypeAndSystems(d: HomeHealthOfflineItem) {
+    const typeLabel = d.productName || d.tuyaCategory || formatCategoryShort(d.category);
+    const systems = d.systems.length > 0 ? d.systems : [d.primaryVendor];
+    return (
+      <div className="mt-1 space-y-1">
+        <div
+          className="text-[10px] font-mono text-slate-400 truncate"
+          title={`${typeLabel} · ${formatCategoryShort(d.category)}`}
+        >
+          {typeLabel}
+          {(d.productName || d.tuyaCategory) && (
+            <span className="font-sans text-slate-500"> · {formatCategoryShort(d.category)}</span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          {systems.map((sys) => {
+            const meta = VENDOR_REGISTRY[sys];
+            return (
+              <span
+                key={sys}
+                className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${meta.badgeClass}`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${meta.dotClass}`} />
+                {meta.label}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   async function handleToggleOfflineExempt(deviceId: string, ignoreOfflineAlert: boolean) {
     setTogglingId(deviceId);
@@ -455,11 +503,11 @@ export function HealthTab({ data, onNavigateTab, onRefresh }: HealthTabProps) {
                 {report.offlineDevices.map((d) => (
                   <div
                     key={d.id}
-                    className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3.5 py-2.5 text-xs"
+                    className="flex items-start justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3.5 py-2.5 text-xs"
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-start gap-2 min-w-0">
                       <span
-                        className="h-2.5 w-2.5 rounded-full shrink-0"
+                        className="mt-1.5 h-2.5 w-2.5 rounded-full shrink-0"
                         style={{ backgroundColor: d.roomColor }}
                       />
                       <div className="min-w-0">
@@ -470,6 +518,7 @@ export function HealthTab({ data, onNavigateTab, onRefresh }: HealthTabProps) {
                             ? t('health.lastSeenLabel', { date: formatDateTime(d.lastSeenAt) })
                             : t('health.neverSeen')}
                         </div>
+                        {renderDeviceTypeAndSystems(d)}
                       </div>
                     </div>
                     <button
@@ -532,11 +581,11 @@ export function HealthTab({ data, onNavigateTab, onRefresh }: HealthTabProps) {
             {report.exemptedDevices.map((d) => (
               <div
                 key={d.id}
-                className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3.5 py-2.5 text-xs"
+                className="flex items-start justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3.5 py-2.5 text-xs"
               >
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-start gap-2 min-w-0">
                   <span
-                    className="h-2.5 w-2.5 rounded-full shrink-0"
+                    className="mt-1.5 h-2.5 w-2.5 rounded-full shrink-0"
                     style={{ backgroundColor: d.roomColor }}
                   />
                   <div className="min-w-0">
@@ -544,6 +593,7 @@ export function HealthTab({ data, onNavigateTab, onRefresh }: HealthTabProps) {
                     <div className="text-[11px] text-slate-500 truncate">
                       {d.roomName} · {d.isOnline ? t('common.online') : t('common.offline')}
                     </div>
+                    {renderDeviceTypeAndSystems(d)}
                   </div>
                 </div>
                 <button

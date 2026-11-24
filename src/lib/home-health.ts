@@ -23,6 +23,10 @@ export interface HomeHealthOfflineItem {
   roomColor: string;
   lastSeenAt: string | null;
   primaryVendor: VendorId;
+  systems: VendorId[];
+  category: DeviceCategory;
+  productName: string | null;
+  tuyaCategory: string | null;
   ignoreOfflineAlert: boolean;
 }
 
@@ -163,6 +167,10 @@ export function computeHomeHealth(
           roomColor,
           lastSeenAt: d.lastSeenAt,
           primaryVendor: d.primaryVendor,
+          systems: d.systems,
+          category: d.category,
+          productName: d.productName,
+          tuyaCategory: d.tuyaCategory,
           ignoreOfflineAlert: false,
         };
       })
@@ -180,6 +188,10 @@ export function computeHomeHealth(
           roomColor,
           lastSeenAt: d.lastSeenAt,
           primaryVendor: d.primaryVendor,
+          systems: d.systems,
+          category: d.category,
+          productName: d.productName,
+          tuyaCategory: d.tuyaCategory,
           ignoreOfflineAlert: true,
           isOnline: d.isOnline,
         };

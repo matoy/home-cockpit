@@ -340,12 +340,22 @@ describe('computeHomeHealth', () => {
         makeDevice({
           id: 'offExempt',
           name: 'Seasonal Plug',
+          primaryVendor: 'kasa',
+          systems: ['kasa', 'google_home'],
+          category: 'power',
+          productName: 'TP-Link HS110',
+          tuyaCategory: 'kasa_plug',
           isOnline: false,
           ignoreOfflineAlert: true,
         }),
         makeDevice({
           id: 'offAlert',
           name: 'Main Router Plug',
+          primaryVendor: 'tuya',
+          systems: ['tuya'],
+          category: 'power',
+          productName: 'Nous A1T',
+          tuyaCategory: 'cz',
           isOnline: false,
           ignoreOfflineAlert: false,
         }),
@@ -377,8 +387,20 @@ describe('computeHomeHealth', () => {
 
     const report = computeHomeHealth(payload, 'en');
     expect(report.offlineDevices.map((d) => d.id)).toEqual(['offAlert']);
+    expect(report.offlineDevices[0]).toMatchObject({
+      systems: ['tuya'],
+      category: 'power',
+      productName: 'Nous A1T',
+      tuyaCategory: 'cz',
+    });
     expect(report.exemptedOfflineDevices.map((d) => d.id)).toEqual(['offExempt']);
-    expect(report.exemptedDevices.map((d) => d.id)).toEqual(['offExempt']);
+    expect(report.exemptedDevices[0]).toMatchObject({
+      id: 'offExempt',
+      systems: ['kasa', 'google_home'],
+      category: 'power',
+      productName: 'TP-Link HS110',
+      tuyaCategory: 'kasa_plug',
+    });
     expect(report.vendorIssues).toHaveLength(0);
     expect(report.totalIssues).toBe(1);
     expect(report.status).toBe('warning');
