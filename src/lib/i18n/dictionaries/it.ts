@@ -2,7 +2,7 @@ import type { TranslationKey } from './fr';
 
 export const it: Record<TranslationKey, string> = {
   // Metadati
-  'meta.title': 'Home Cockpit · Multi-Vendors — Monitoraggio Elettrico & Clima',
+  'meta.title': 'Home Cockpit — Monitoraggio Elettrico & Clima',
   'meta.description':
     'Aggregatore domotico multi-marca: potenza elettrica, costi multi-tariffa, clima, aperture, sicurezza e backup.',
 
@@ -81,7 +81,7 @@ export const it: Record<TranslationKey, string> = {
   'lang.ariaLabel': 'Seleziona la lingua',
 
   // Intestazione
-  'header.appTitle': 'Home Cockpit · Multi-Vendors',
+  'header.appTitle': 'Home Cockpit',
   'header.range24h': '24h',
   'header.range7d': '7 giorni',
   'header.range30d': '30 giorni',
@@ -119,7 +119,7 @@ export const it: Record<TranslationKey, string> = {
   'header.oauthDkError': 'Errore Daikin Onecta: {error}',
 
   // Login
-  'login.title': 'Home Cockpit · Multi-Vendors',
+  'login.title': 'Home Cockpit',
   'login.subtitle': 'Potenza elettrica & Clima interno',
   'login.passwordLabel': 'Password di accesso',
   'login.passwordPlaceholder': 'Inserisci APP_PASSWORD',

@@ -1,4 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import {
+  SESSION_COOKIE_NAME,
+  SESSION_FALLBACK_SALT,
+  SESSION_TOKEN_PAYLOAD,
+} from '@/lib/auth-constants';
 
 const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/auth/logout', '/api/schedule/collect'];
 
@@ -6,7 +11,7 @@ async function computeExpectedToken(appPassword: string, scheduleSecret: string)
   const enc = new TextEncoder();
   const secretHashBuf = await crypto.subtle.digest(
     'SHA-256',
-    enc.encode(`${appPassword}:${scheduleSecret || 'tuya-power-temp-salt'}`)
+    enc.encode(`${appPassword}:${scheduleSecret || SESSION_FALLBACK_SALT}`)
   );
   const secretHex = Array.from(new Uint8Array(secretHashBuf))
     .map((b) => b.toString(16).padStart(2, '0'))
@@ -20,13 +25,12 @@ async function computeExpectedToken(appPassword: string, scheduleSecret: string)
     ['sign']
   );
 
-  const payload = 'authenticated-v1';
-  const sigBuf = await crypto.subtle.sign('HMAC', key, enc.encode(payload));
+  const sigBuf = await crypto.subtle.sign('HMAC', key, enc.encode(SESSION_TOKEN_PAYLOAD));
   const sigHex = Array.from(new Uint8Array(sigBuf))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 
-  return `${payload}.${sigHex}`;
+  return `${SESSION_TOKEN_PAYLOAD}.${sigHex}`;
 }
 
 function constantTimeEqual(a: string, b: string): boolean {
@@ -66,7 +70,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const cookieToken = request.cookies.get('tuya_session')?.value;
+  const cookieToken = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const expectedToken = await computeExpectedToken(
     appPassword,
     process.env.SCHEDULE_SECRET?.trim() ?? ''

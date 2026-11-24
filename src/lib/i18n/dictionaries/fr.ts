@@ -1,6 +1,6 @@
 export const fr = {
   // Métadonnées
-  'meta.title': 'Home Cockpit · Multi-Vendors — Monitoring Électrique & Confort',
+  'meta.title': 'Home Cockpit — Monitoring Électrique & Confort',
   'meta.description':
     'Agrégateur domotique multi-vendeurs : puissance électrique, coûts multi-tarifs, climat, ouvertures, sécurité et sauvegardes.',
 
@@ -79,7 +79,7 @@ export const fr = {
   'lang.ariaLabel': 'Sélectionner la langue',
 
   // En-tête Dashboard
-  'header.appTitle': 'Home Cockpit · Multi-Vendors',
+  'header.appTitle': 'Home Cockpit',
   'header.range24h': '24h',
   'header.range7d': '7 jours',
   'header.range30d': '30 jours',
@@ -117,7 +117,7 @@ export const fr = {
   'header.oauthDkError': 'Erreur Daikin Onecta : {error}',
 
   // Connexion (Login)
-  'login.title': 'Home Cockpit · Multi-Vendors',
+  'login.title': 'Home Cockpit',
   'login.subtitle': 'Puissance électrique & Climat intérieur',
   'login.passwordLabel': "Mot de passe d'accès",
   'login.passwordPlaceholder': 'Saisissez APP_PASSWORD',

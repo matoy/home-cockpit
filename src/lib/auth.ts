@@ -1,7 +1,12 @@
 import crypto from 'node:crypto';
 import { cookies } from 'next/headers';
+import {
+  SESSION_COOKIE_NAME,
+  SESSION_FALLBACK_SALT,
+  SESSION_TOKEN_PAYLOAD,
+} from '@/lib/auth-constants';
 
-export const SESSION_COOKIE_NAME = 'tuya_session';
+export { SESSION_COOKIE_NAME };
 
 export function isAppPasswordConfigured(): boolean {
   return Boolean(process.env.APP_PASSWORD?.trim());
@@ -13,15 +18,14 @@ function isProduction(): boolean {
 
 function getSessionSecret(): string {
   const pwd = process.env.APP_PASSWORD?.trim() ?? '';
-  const extra = process.env.SCHEDULE_SECRET?.trim() ?? 'tuya-power-temp-salt';
+  const extra = process.env.SCHEDULE_SECRET?.trim() || SESSION_FALLBACK_SALT;
   return crypto.createHash('sha256').update(`${pwd}:${extra}`).digest('hex');
 }
 
 export function createSessionToken(): string {
   const secret = getSessionSecret();
-  const payload = 'authenticated-v1';
-  const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-  return `${payload}.${sig}`;
+  const sig = crypto.createHmac('sha256', secret).update(SESSION_TOKEN_PAYLOAD).digest('hex');
+  return `${SESSION_TOKEN_PAYLOAD}.${sig}`;
 }
 
 export function verifySessionToken(token: string | undefined): boolean {
