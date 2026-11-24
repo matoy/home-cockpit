@@ -56,7 +56,26 @@ html.light {
   --color-slate-100: #0f172a;
   --color-slate-50: #020617;
 
-  /* Darken -200/-300/-400 accents for legible text on light surfaces */
+  /* Darken -100/-200/-300/-400 accents for legible text on light surfaces */
+  --color-amber-100: #78350f;
+  --color-rose-100: #881337;
+  --color-red-100: #7f1d1d;
+  --color-indigo-100: #312e81;
+  --color-emerald-100: #064e3b;
+  --color-sky-100: #0c4a6e;
+  --color-orange-100: #7c2d12;
+
+  /* Pastel -950 overrides so dark tinted surfaces stay light */
+  --color-amber-950: #fef3c7;
+  --color-rose-950: #ffe4e6;
+  --color-red-950: #fee2e2;
+  --color-emerald-950: #d1fae5;
+  --color-indigo-950: #e0e7ff;
+  --color-sky-950: #e0f2fe;
+  --color-cyan-950: #cffafe;
+  --color-teal-950: #ccfbf1;
+  --color-orange-950: #ffedd5;
+
   --color-indigo-200: #3730a3;
   --color-indigo-300: #4338ca;
   --color-indigo-400: #4f46e5;
@@ -109,6 +128,43 @@ html.light .bg-slate-900\/70,
 html.light .bg-slate-900\/80,
 html.light .bg-slate-900\/60 {
   box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+}
+
+html.light [class*="bg-amber-950"] {
+  background-color: #fffbeb;
+  border-color: rgb(245 158 11 / 0.45);
+  box-shadow: 0 1px 2px 0 rgb(180 83 9 / 0.08);
+}
+
+html.light [class*="bg-rose-950"] {
+  background-color: #fff1f2;
+  border-color: rgb(244 63 94 / 0.4);
+  box-shadow: 0 1px 2px 0 rgb(190 18 60 / 0.08);
+}
+
+html.light [class*="bg-emerald-950"] {
+  background-color: #ecfdf5;
+  border-color: rgb(16 185 129 / 0.35);
+  box-shadow: 0 1px 2px 0 rgb(4 120 87 / 0.07);
+}
+
+html.light [class*="bg-indigo-950"] {
+  background-color: #eef2ff;
+  border-color: rgb(99 102 241 / 0.45);
+  box-shadow: 0 1px 2px 0 rgb(67 56 202 / 0.08);
+}
+
+html.light [class*="bg-amber-950"] .bg-slate-950\/70,
+html.light [class*="bg-rose-950"] .bg-slate-950\/70 {
+  background-color: rgb(255 255 255 / 0.85);
+}
+
+html.light .bg-amber-500\/10 {
+  background-color: #fffbeb;
+}
+
+html.light .bg-rose-500\/10 {
+  background-color: #fff1f2;
 }
 
 html.light .text-white:not([class*="bg-indigo-6"]):not([class*="bg-indigo-500"]):not([class*="bg-emerald-6"]):not([class*="bg-blue-6"]):not([class*="bg-sky-6"]):not([class*="bg-amber-6"]):not([class*="bg-rose-6"]):not([class*="bg-red-6"]):not([class*="bg-orange-6"]):not([class*="bg-teal-6"]):not([class*="bg-cyan-6"]):not([class*="bg-violet-6"]):not([class*="bg-purple-6"]) {
