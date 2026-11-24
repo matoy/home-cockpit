@@ -807,6 +807,12 @@ export function SystemsTab({
         onOpenDevicesTab={onOpenDevicesTab}
       />
 
+      {syncMessage && (
+        <AlertBanner tone={syncMessage.ok ? 'success' : 'error'}>
+          {syncMessage.text}
+        </AlertBanner>
+      )}
+
       {/* Synchronisation Multi-Vendors */}
       <div className={syncGridClass}>
         {/* Tuya Cloud */}
@@ -1645,12 +1651,6 @@ export function SystemsTab({
           />
         ))}
       </div>
-
-      {syncMessage && (
-        <AlertBanner tone={syncMessage.ok ? 'success' : 'error'}>
-          {syncMessage.text}
-        </AlertBanner>
-      )}
 
       {/* Autres systèmes disponibles (non encore configurés dans .env) */}
       <UnconfiguredSystemsSection items={availableUnconfiguredSystems} />

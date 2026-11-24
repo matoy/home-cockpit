@@ -63,6 +63,35 @@ export function ContactsTab({ data, onNavigateTab }: ContactsTabProps) {
     });
   }, [contacts.events, selectedDeviceId, transitionsOnly]);
 
+  const contactHealth = useMemo(() => {
+    const deviceById = new Map(data.devices.map((d) => [d.id, d]));
+    const sensors = contacts.sensors;
+    const withBattery = sensors.filter(
+      (s): s is typeof s & { batteryPct: number } =>
+        s.batteryPct !== null && Number.isFinite(s.batteryPct)
+    );
+    const mainsPoweredCount = sensors.filter(
+      (s) => s.batteryPct === null && !deviceById.get(s.deviceId)?.dpConfig?.battery?.code
+    ).length;
+    const lowBatteryCount = withBattery.filter((s) => s.batteryPct <= 20).length;
+    const avgBatteryPct =
+      withBattery.length > 0
+        ? Math.round(withBattery.reduce((sum, s) => sum + s.batteryPct, 0) / withBattery.length)
+        : null;
+    const minBatteryPct =
+      withBattery.length > 0 ? Math.min(...withBattery.map((s) => s.batteryPct)) : null;
+
+    return {
+      sensors,
+      totalCount: contacts.summary.totalSensors,
+      onlineCount: contacts.summary.onlineCount,
+      mainsPoweredCount,
+      lowBatteryCount,
+      avgBatteryPct,
+      minBatteryPct,
+    };
+  }, [contacts.sensors, contacts.summary.onlineCount, contacts.summary.totalSensors, data.devices]);
+
   if (contacts.summary.totalSensors === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 p-12 text-center space-y-3">
@@ -177,28 +206,57 @@ export function ContactsTab({ data, onNavigateTab }: ContactsTabProps) {
             </span>
             <div
               className={`rounded-lg p-2 ${
-                contacts.summary.lowBatteryCount > 0
+                contactHealth.lowBatteryCount > 0
                   ? 'bg-rose-500/15 text-rose-400'
                   : 'bg-emerald-500/15 text-emerald-400'
               }`}
             >
-              {contacts.summary.lowBatteryCount > 0 ? (
+              {contactHealth.lowBatteryCount > 0 ? (
                 <BatteryWarning className="h-4 w-4" />
               ) : (
                 <Battery className="h-4 w-4" />
               )}
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
+          <div
+            className="mt-3 flex items-baseline gap-2"
+            title={
+              contactHealth.sensors
+                .map(
+                  (s) =>
+                    `${s.name} (${s.isOnline ? t('common.online') : t('common.offline')})`
+                )
+                .join(' • ') || t('contacts.noActiveSensor')
+            }
+          >
             <span className="text-3xl font-bold tracking-tight text-white">
-              {contacts.summary.onlineCount} / {contacts.summary.totalSensors}
+              {contactHealth.onlineCount} / {contactHealth.totalCount}
             </span>
             <span className="text-xs text-slate-400">{t('climate.onlineWord')}</span>
           </div>
-          <p className="mt-2 text-xs text-slate-400">
-            {contacts.summary.lowBatteryCount > 0
-              ? t('contacts.lowBatteryCount', { count: contacts.summary.lowBatteryCount })
-              : t('contacts.allBatteriesGood')}
+          <p
+            className={`mt-2 text-xs ${
+              contactHealth.lowBatteryCount > 0 ? 'text-rose-300' : 'text-slate-400'
+            }`}
+          >
+            {contactHealth.lowBatteryCount > 0
+              ? `${t('contacts.lowBatteryCount', { count: contactHealth.lowBatteryCount })}${
+                  contactHealth.mainsPoweredCount > 0
+                    ? t('climate.onMainsSuffix', { count: contactHealth.mainsPoweredCount })
+                    : ''
+                }`
+              : contactHealth.avgBatteryPct !== null
+                ? `${t('climate.avgMinBattery', {
+                    avg: contactHealth.avgBatteryPct,
+                    min: contactHealth.minBatteryPct ?? 0,
+                  })}${
+                    contactHealth.mainsPoweredCount > 0
+                      ? t('climate.onMainsSuffix', { count: contactHealth.mainsPoweredCount })
+                      : ''
+                  }`
+                : contactHealth.mainsPoweredCount > 0
+                  ? t('contacts.mainsCount', { count: contactHealth.mainsPoweredCount })
+                  : t('climate.noBatteryReported')}
           </p>
         </div>
       </div>
