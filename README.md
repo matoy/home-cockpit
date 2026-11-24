@@ -65,7 +65,7 @@ Home Cockpit is structured around declarative vendor registries (`VENDOR_REGISTR
 
 ```mermaid
 flowchart LR
-  UI["Next.js 15 App Router UI (12 Tabs + UI Kit + 5-Lang i18n)"] --> API["API Routes (/api/dashboard, /api/vendors/[vendor]/sync|disconnect, /api/schedule/collect)"]
+  UI["Next.js 16 App Router UI (12 Tabs + UI Kit + 5-Lang i18n)"] --> API["API Routes (/api/dashboard, /api/vendors/[vendor]/sync|disconnect, /api/schedule/collect)"]
   API --> Facade["Service Layer (src/lib/services/*)"]
   Facade --> Plugins["VENDOR_SERVER_PLUGINS Registry (src/lib/services/vendors/)"]
   Plugins --> Clients["Vendor API Clients & Localized Display Extractors (src/lib/vendors/)"]
@@ -142,8 +142,6 @@ See [`.env.example`](.env.example) for the complete annotated template.
 | **Daikin** | `DAIKIN_CLIENT_ID`, `DAIKIN_CLIENT_SECRET`, `DAIKIN_REDIRECT_URI` | For Daikin Onecta | Daikin Developer Portal OAuth credentials |
 | **X-Sense** | `XSENSE_EMAIL`, `XSENSE_PASSWORD` | For X-Sense | Dedicated secondary shared-account credentials |
 | **Xiaomi** | `XIAOMI_USERNAME`, `XIAOMI_PASSWORD`, `XIAOMI_REGION` | Optional (`env` auth) | Xiaomi account fallback (`de`, `cn`, `us`, `sg`, `ru`, `i2`); interactive 2FA/QR also supported in UI |
-
-> **Backward Compatibility Note:** `SIEMENSHOMECONNET_CLIENT_ID`, `SIEMENSHOMECONNET_CLIENT_SECRET`, `SIEMENSHOMECONNET_ENV`, and `SIEMENSHOMECONNET_REDIRECT_URI` (legacy typo without underscores) remain supported as fallback aliases in `home-connect-client.ts`, though new setups should always use `SIEMENS_HOME_CONNECT_*`.
 
 ---
 
