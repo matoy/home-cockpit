@@ -22,17 +22,46 @@ export interface ParsedConsoReading {
   powerW: number | null;
 }
 
+const MAX_RETRY_AFTER_MS = 7 * 24 * 3_600_000;
+
+/**
+ * Analyse le header HTTP `Retry-After` (secondes ou date HTTP) en millisecondes,
+ * borné entre 1 ms et 7 jours. Retourne `null` si absent ou invalide.
+ */
+export function parseRetryAfterMs(
+  headerValue: string | null | undefined,
+  nowMs = Date.now()
+): number | null {
+  if (!headerValue) return null;
+  const trimmed = headerValue.trim();
+  if (!trimmed) return null;
+
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = Number(trimmed);
+    if (!Number.isFinite(seconds) || seconds <= 0) return null;
+    return Math.min(MAX_RETRY_AFTER_MS, seconds * 1000);
+  }
+
+  const parsedMs = Date.parse(trimmed);
+  if (Number.isNaN(parsedMs)) return null;
+  const delta = parsedMs - nowMs;
+  if (delta <= 0) return null;
+  return Math.min(MAX_RETRY_AFTER_MS, delta);
+}
+
 export class ConsoApiHttpError extends Error {
   readonly status: number;
   readonly isAuthError: boolean;
   readonly isRateLimited: boolean;
+  readonly retryAfterMs: number | null;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, retryAfterMs: number | null = null) {
     super(message);
     this.name = 'ConsoApiHttpError';
     this.status = status;
     this.isAuthError = status === 401;
     this.isRateLimited = status === 403 || status === 429;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -334,6 +363,7 @@ async function callConsoApiEndpoint(params: {
         });
 
   if (!res.ok) {
+    const retryAfterMs = parseRetryAfterMs(res.headers.get('retry-after'));
     const rawText = await res.text().catch(() => '');
     let apiErrMsg = rawText;
     try {
@@ -344,15 +374,24 @@ async function callConsoApiEndpoint(params: {
     }
     const cleanMsg = apiErrMsg.trim() || `HTTP ${res.status}`;
     if (res.status === 401) {
-      throw new ConsoApiHttpError(401, `Conso API token invalide ou expiré (401) : ${cleanMsg}`);
+      throw new ConsoApiHttpError(
+        401,
+        `Conso API token invalide ou expiré (401) — pause automatique 24h activée : ${cleanMsg}`,
+        retryAfterMs
+      );
     }
     if (res.status === 403 || res.status === 429) {
       throw new ConsoApiHttpError(
         res.status,
-        `Conso API quota / limitation (${res.status}) — pause automatique 24h activée : ${cleanMsg}`
+        `Conso API quota / limitation (${res.status}) — pause automatique activée : ${cleanMsg}`,
+        retryAfterMs
       );
     }
-    throw new ConsoApiHttpError(res.status, `Conso API HTTP ${res.status} : ${cleanMsg}`);
+    throw new ConsoApiHttpError(
+      res.status,
+      `Conso API HTTP ${res.status} : ${cleanMsg}`,
+      retryAfterMs
+    );
   }
 
   const json = (await res.json()) as unknown;

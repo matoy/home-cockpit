@@ -22,9 +22,12 @@ import {
 import { decryptSecret, encryptSecret } from '@/lib/vendors/crypto-store';
 
 const DAILY_RETRY_COOLDOWN_MS = 6 * 3_600_000;
-const MANUAL_SYNC_COOLDOWN_MS = 10 * 60_000;
+const MAX_SCHEDULED_ATTEMPTS_PER_DAY = 2;
+const MANUAL_SYNC_COOLDOWN_MS = 15 * 60_000;
 const RATE_LIMIT_BACKOFF_MS = 24 * 3_600_000;
-const SEQUENTIAL_CALL_PAUSE_MS = 500;
+const SEQUENTIAL_CALL_PAUSE_MS = 1_500;
+const SCHEDULE_JITTER_MIN_MS = 1_500;
+const SCHEDULE_JITTER_MAX_MS = 4_500;
 const INITIAL_HISTORY_DAYS = 365;
 const LOAD_CURVE_DAYS = 7;
 
@@ -38,6 +41,8 @@ interface ConsoConnMetadata {
   prm?: string;
   subscribedKva?: number | null;
   lastAttemptAt?: string | null;
+  dailyAttemptsDate?: string | null;
+  dailyAttemptsCount?: number;
   cooldownUntil?: string | null;
   source?: 'db' | 'env';
 }
@@ -60,6 +65,40 @@ export function getParisHour(date: Date): number {
   return Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
 }
 
+export function getParisMinutesOfDay(date: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Paris',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+  return hour * 60 + minute;
+}
+
+/**
+ * Calcule une minute de déclenchement déterministe par PRM entre 08h13 et 09h47 (Europe/Paris),
+ * jamais sur une heure pile (`:00`), afin d'éviter l'effet de pic sur conso.boris.sh.
+ */
+export function getScheduledStartMinutesParis(prm?: string | null): number {
+  const cleanPrm = prm?.trim() ?? '';
+  if (!cleanPrm) {
+    return 8 * 60 + 17;
+  }
+  let hash = 0;
+  for (let i = 0; i < cleanPrm.length; i++) {
+    hash = (hash * 31 + cleanPrm.charCodeAt(i)) >>> 0;
+  }
+  const minMinute = 8 * 60 + 13; // 08h13
+  const maxMinute = 9 * 60 + 47; // 09h47
+  let target = minMinute + (hash % (maxMinute - minMinute + 1));
+  if (target % 60 === 0) {
+    target += 7;
+  }
+  return target;
+}
+
 export function addDaysYmd(ymd: string, deltaDays: number): string {
   const [y, m, d] = ymd.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d + deltaDays, 12, 0, 0));
@@ -72,17 +111,32 @@ function waitMs(ms: number): Promise<void> {
 
 /**
  * Détermine si la collecte planifiée doit appeler Conso API.
- * Enedis publie J-1 le matin : on attend >= 08h00 Paris, on skippe si J-1 existe déjà,
- * et on applique un cooldown strict anti-ban IP conso.boris.sh.
+ * Enedis publie J-1 le matin : on attend la fenêtre décalée (08h13–09h47 Paris, jamais :00),
+ * on skippe si J-1 existe déjà, on plafonne les tentatives journalières (2/j max, 1 seule si
+ * `daily_kwh` est déjà là mais la courbe 30 min absente), et on applique les cooldowns anti-ban.
  */
 export function shouldRunScheduledConsoApiSync(params: {
   now: Date;
   hasYesterdayDaily: boolean;
   hasYesterdayLoadCurve: boolean;
+  hasYesterdayMaxPower?: boolean;
   lastAttemptAt?: string | null;
+  dailyAttemptsDate?: string | null;
+  dailyAttemptsCount?: number;
   cooldownUntil?: string | null;
+  prm?: string | null;
 }): { shouldRun: boolean; reason: string } {
-  const { now, hasYesterdayDaily, hasYesterdayLoadCurve, lastAttemptAt, cooldownUntil } = params;
+  const {
+    now,
+    hasYesterdayDaily,
+    hasYesterdayLoadCurve,
+    hasYesterdayMaxPower = true,
+    lastAttemptAt,
+    dailyAttemptsDate,
+    dailyAttemptsCount = 0,
+    cooldownUntil,
+    prm,
+  } = params;
 
   if (cooldownUntil) {
     const untilMs = new Date(cooldownUntil).getTime();
@@ -95,8 +149,23 @@ export function shouldRunScheduledConsoApiSync(params: {
     return { shouldRun: false, reason: 'before_08h_paris' };
   }
 
-  if (hasYesterdayDaily && hasYesterdayLoadCurve) {
+  if (getParisMinutesOfDay(now) < getScheduledStartMinutesParis(prm)) {
+    return { shouldRun: false, reason: 'before_staggered_window' };
+  }
+
+  if (hasYesterdayDaily && hasYesterdayLoadCurve && hasYesterdayMaxPower) {
     return { shouldRun: false, reason: 'yesterday_already_synced' };
+  }
+
+  const todayParis = getParisYmd(now);
+  const attemptsToday = dailyAttemptsDate === todayParis ? dailyAttemptsCount : 0;
+
+  if (hasYesterdayDaily && attemptsToday >= 1) {
+    return { shouldRun: false, reason: 'daily_already_synced_no_curve' };
+  }
+
+  if (attemptsToday >= MAX_SCHEDULED_ATTEMPTS_PER_DAY) {
+    return { shouldRun: false, reason: 'daily_attempt_limit_reached' };
   }
 
   if (lastAttemptAt) {
@@ -249,11 +318,13 @@ export async function saveConsoApiConfig(input: {
   const encryptedToken = encryptSecret(
     JSON.stringify({ prm: cleanPrm, token: cleanToken, subscribedKva })
   );
+  const credentialsChanged =
+    cleanPrm !== existing.config.prm || cleanToken !== existing.config.token;
   const nextMeta: ConsoConnMetadata = {
     ...existing.metadata,
     prm: cleanPrm,
     subscribedKva,
-    cooldownUntil: null,
+    cooldownUntil: credentialsChanged ? null : (existing.metadata.cooldownUntil ?? null),
     source: 'db',
   };
 
@@ -349,10 +420,10 @@ async function upsertMeterReadingsInDb(
 async function updateConsoConnState(
   db: AppDatabase,
   params: {
-    status: 'connected' | 'error';
+    status?: 'connected' | 'error';
     config: ConsoConnMetadata;
     lastSyncedAt?: Date;
-    lastError: string | null;
+    lastError?: string | null;
     now: Date;
   }
 ) {
@@ -361,10 +432,10 @@ async function updateConsoConnState(
     .values({
       vendor: 'conso_api',
       mode: 'bearer_token',
-      status: params.status,
+      status: params.status ?? 'connected',
       config: params.config as unknown as Record<string, unknown>,
       lastSyncedAt: params.lastSyncedAt ?? null,
-      lastError: params.lastError,
+      lastError: params.lastError ?? null,
       updatedAt: params.now,
     })
     .onConflictDoUpdate({
@@ -374,7 +445,7 @@ async function updateConsoConnState(
         ...(params.status === 'connected' ? { status: 'connected' } : {}),
         config: params.config as unknown as Record<string, unknown>,
         ...(params.lastSyncedAt ? { lastSyncedAt: params.lastSyncedAt } : {}),
-        lastError: params.lastError,
+        ...(params.lastError !== undefined ? { lastError: params.lastError } : {}),
         updatedAt: params.now,
       },
     });
@@ -459,8 +530,12 @@ export async function syncConsoApi(
       now,
       hasYesterdayDaily: lastDailyDate >= yesterdayParis,
       hasYesterdayLoadCurve: Boolean(lastCurveDate && lastCurveDate >= yesterdayParis),
+      hasYesterdayMaxPower: Boolean(lastMaxDate && lastMaxDate >= yesterdayParis),
       lastAttemptAt: metadata.lastAttemptAt,
+      dailyAttemptsDate: metadata.dailyAttemptsDate,
+      dailyAttemptsCount: metadata.dailyAttemptsCount,
       cooldownUntil: metadata.cooldownUntil,
+      prm: config.prm,
     });
     if (!decision.shouldRun) {
       return {
@@ -475,54 +550,99 @@ export async function syncConsoApi(
   if (!isInitialImport && trigger === 'manual' && metadata.lastAttemptAt) {
     const lastMs = new Date(metadata.lastAttemptAt).getTime();
     if (!Number.isNaN(lastMs) && now.getTime() - lastMs < MANUAL_SYNC_COOLDOWN_MS) {
-      if (lastDailyDate >= yesterdayParis && lastCurveDate && lastCurveDate >= yesterdayParis) {
-        return {
-          syncedCount: 0,
-          newCount: 0,
-          mode: 'live',
-          message: `Compteur Linky déjà à jour jusqu'au ${yesterdayParis} (cooldown anti-ban actif).`,
-        };
-      }
+      const remainingMin = Math.max(
+        1,
+        Math.ceil((MANUAL_SYNC_COOLDOWN_MS - (now.getTime() - lastMs)) / 60_000)
+      );
+      return {
+        syncedCount: 0,
+        newCount: 0,
+        mode: 'live',
+        message: `Cooldown anti-ban actif : patientez ${remainingMin} min avant une nouvelle synchro manuelle Linky.`,
+      };
     }
   }
 
+  const needDaily = isInitialImport || !lastDailyDate || lastDailyDate < yesterdayParis;
+  const needMax = isInitialImport || !lastMaxDate || lastMaxDate < yesterdayParis;
+  const needCurve = isInitialImport || !lastCurveDate || lastCurveDate < yesterdayParis;
+
+  if (!needDaily && !needMax && !needCurve) {
+    return {
+      syncedCount: 0,
+      newCount: 0,
+      mode: 'live',
+      message: `Compteur Linky déjà à jour jusqu'au ${yesterdayParis} (0 requête envoyée).`,
+    };
+  }
+
+  const prevAttemptsToday =
+    metadata.dailyAttemptsDate === todayParis ? (metadata.dailyAttemptsCount ?? 0) : 0;
   const nextMeta: ConsoConnMetadata = {
     ...metadata,
     prm: config.prm,
     subscribedKva: config.subscribedKva,
     lastAttemptAt: now.toISOString(),
+    ...(trigger === 'schedule'
+      ? { dailyAttemptsDate: todayParis, dailyAttemptsCount: prevAttemptsToday + 1 }
+      : {}),
   };
 
-  try {
-    // 1. Consommation quotidienne (dateFin est exclusive côté Enedis → todayParis inclut jusqu'à yesterdayParis)
-    const dailyStart = isInitialImport
-      ? addDaysYmd(todayParis, -INITIAL_HISTORY_DAYS)
-      : addDaysYmd(lastDailyDate!, -1) > addDaysYmd(todayParis, -14)
-        ? addDaysYmd(lastDailyDate!, -1)
-        : addDaysYmd(todayParis, -14);
+  // Verrou pré-requête en base avant le 1er appel HTTP pour empêcher les doublons concurrents
+  await updateConsoConnState(db, {
+    config: nextMeta,
+    now,
+  });
 
-    const dailyPoints = await fetchConsoDailyConsumption(config, dailyStart, todayParis);
-    let totalSaved = await upsertMeterReadingsInDb(db, dailyPoints);
+  if (trigger === 'schedule' && !process.env.VITEST) {
+    const jitterRange = Math.max(0, SCHEDULE_JITTER_MAX_MS - SCHEDULE_JITTER_MIN_MS);
+    await waitMs(SCHEDULE_JITTER_MIN_MS + Math.floor(Math.random() * jitterRange));
+  }
+
+  try {
+    let totalSaved = 0;
+    let madeHttpCall = false;
+    let dailyPoints: ParsedConsoReading[] = [];
+    let maxPoints: ParsedConsoReading[] = [];
+    let curvePoints: ParsedConsoReading[] = [];
+
+    // 1. Consommation quotidienne (dateFin est exclusive côté Enedis → todayParis inclut jusqu'à yesterdayParis)
+    if (needDaily) {
+      const dailyStart = isInitialImport
+        ? addDaysYmd(todayParis, -INITIAL_HISTORY_DAYS)
+        : addDaysYmd(lastDailyDate!, -1) > addDaysYmd(todayParis, -14)
+          ? addDaysYmd(lastDailyDate!, -1)
+          : addDaysYmd(todayParis, -14);
+
+      dailyPoints = await fetchConsoDailyConsumption(config, dailyStart, todayParis);
+      totalSaved += await upsertMeterReadingsInDb(db, dailyPoints);
+      madeHttpCall = true;
+    }
 
     // 2. Puissance maximale quotidienne
-    await waitMs(SEQUENTIAL_CALL_PAUSE_MS);
-    const maxStart = !lastMaxDate
-      ? addDaysYmd(todayParis, -INITIAL_HISTORY_DAYS)
-      : addDaysYmd(lastMaxDate, -1) > addDaysYmd(todayParis, -14)
-        ? addDaysYmd(lastMaxDate, -1)
-        : addDaysYmd(todayParis, -14);
-    const maxPoints = await fetchConsoDailyMaxPower(config, maxStart, todayParis);
-    totalSaved += await upsertMeterReadingsInDb(db, maxPoints);
+    if (needMax) {
+      if (madeHttpCall) await waitMs(SEQUENTIAL_CALL_PAUSE_MS);
+      const maxStart = !lastMaxDate
+        ? addDaysYmd(todayParis, -INITIAL_HISTORY_DAYS)
+        : addDaysYmd(lastMaxDate, -1) > addDaysYmd(todayParis, -14)
+          ? addDaysYmd(lastMaxDate, -1)
+          : addDaysYmd(todayParis, -14);
+      maxPoints = await fetchConsoDailyMaxPower(config, maxStart, todayParis);
+      totalSaved += await upsertMeterReadingsInDb(db, maxPoints);
+      madeHttpCall = true;
+    }
 
     // 3. Courbe de charge 30 min (max 7 jours par requête)
-    await waitMs(SEQUENTIAL_CALL_PAUSE_MS);
-    const curveWindowStart = addDaysYmd(todayParis, -LOAD_CURVE_DAYS);
-    const curveStart =
-      lastCurveDate && addDaysYmd(lastCurveDate, -1) > curveWindowStart
-        ? addDaysYmd(lastCurveDate, -1)
-        : curveWindowStart;
-    const curvePoints = await fetchConsoLoadCurve(config, curveStart, todayParis);
-    totalSaved += await upsertMeterReadingsInDb(db, curvePoints);
+    if (needCurve) {
+      if (madeHttpCall) await waitMs(SEQUENTIAL_CALL_PAUSE_MS);
+      const curveWindowStart = addDaysYmd(todayParis, -LOAD_CURVE_DAYS);
+      const curveStart =
+        lastCurveDate && addDaysYmd(lastCurveDate, -1) > curveWindowStart
+          ? addDaysYmd(lastCurveDate, -1)
+          : curveWindowStart;
+      curvePoints = await fetchConsoLoadCurve(config, curveStart, todayParis);
+      totalSaved += await upsertMeterReadingsInDb(db, curvePoints);
+    }
 
     nextMeta.cooldownUntil = null;
     await updateConsoConnState(db, {
@@ -542,8 +662,9 @@ export async function syncConsoApi(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Erreur Conso API';
-    if (err instanceof ConsoApiHttpError && err.isRateLimited) {
-      nextMeta.cooldownUntil = new Date(now.getTime() + RATE_LIMIT_BACKOFF_MS).toISOString();
+    if (err instanceof ConsoApiHttpError && (err.isRateLimited || err.isAuthError)) {
+      const backoffMs = Math.max(RATE_LIMIT_BACKOFF_MS, err.retryAfterMs ?? 0);
+      nextMeta.cooldownUntil = new Date(now.getTime() + backoffMs).toISOString();
     }
     await updateConsoConnState(db, {
       status: 'error',
@@ -567,11 +688,19 @@ export async function collectConsoApiIfDue(
   const todayParis = getParisYmd(now);
   const yesterdayParis = addDaysYmd(todayParis, -1);
 
-  const [dailyRows, curveRows] = await Promise.all([
+  const [dailyRows, maxRows, curveRows] = await Promise.all([
     db
       .select({ dateKey: meterReadings.dateKey })
       .from(meterReadings)
       .where(and(eq(meterReadings.pointId, config.prm), eq(meterReadings.granularity, 'daily_kwh')))
+      .orderBy(desc(meterReadings.dateKey))
+      .limit(1),
+    db
+      .select({ dateKey: meterReadings.dateKey })
+      .from(meterReadings)
+      .where(
+        and(eq(meterReadings.pointId, config.prm), eq(meterReadings.granularity, 'max_power_daily'))
+      )
       .orderBy(desc(meterReadings.dateKey))
       .limit(1),
     db
@@ -587,9 +716,13 @@ export async function collectConsoApiIfDue(
   const decision = shouldRunScheduledConsoApiSync({
     now,
     hasYesterdayDaily: Boolean(dailyRows[0]?.dateKey && dailyRows[0].dateKey >= yesterdayParis),
+    hasYesterdayMaxPower: Boolean(maxRows[0]?.dateKey && maxRows[0].dateKey >= yesterdayParis),
     hasYesterdayLoadCurve: Boolean(curveRows[0]?.dateKey && curveRows[0].dateKey >= yesterdayParis),
     lastAttemptAt: metadata.lastAttemptAt,
+    dailyAttemptsDate: metadata.dailyAttemptsDate,
+    dailyAttemptsCount: metadata.dailyAttemptsCount,
     cooldownUntil: metadata.cooldownUntil,
+    prm: config.prm,
   });
 
   if (!decision.shouldRun) {

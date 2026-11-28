@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   addDaysYmd,
+  getScheduledStartMinutesParis,
   shouldRunScheduledConsoApiSync,
 } from '@/lib/services/vendors/conso-api-sync';
 import {
   isValidPrm,
   maskPrm,
   parseConsoApiResponse,
+  parseRetryAfterMs,
   parseSubscribedKva,
 } from '@/lib/vendors/conso-api-client';
 
@@ -164,6 +166,56 @@ describe('conso-api client helpers & parsers', () => {
         lastAttemptAt: '2026-11-23T08:00:00.000Z',
       })
     ).toEqual({ shouldRun: true, reason: 'due' });
+
+    // Staggered off-peak window: 08:05 Paris -> blocked before staggered start minute (never :00)
+    const eightZeroFiveParis = new Date('2026-11-24T07:05:00.000Z');
+    expect(
+      shouldRunScheduledConsoApiSync({
+        now: eightZeroFiveParis,
+        hasYesterdayDaily: false,
+        hasYesterdayLoadCurve: false,
+      })
+    ).toEqual({ shouldRun: false, reason: 'before_staggered_window' });
+
+    for (const samplePrm of ['12345678901234', '99887766554433', '00000000000001']) {
+      const m = getScheduledStartMinutesParis(samplePrm);
+      expect(m).toBeGreaterThanOrEqual(8 * 60 + 13);
+      expect(m).toBeLessThanOrEqual(9 * 60 + 54);
+      expect(m % 60).not.toBe(0);
+    }
+
+    // No endless retry when daily_kwh is present but Enedis 30-min load curve is not enabled
+    const afternoon = new Date('2026-11-24T15:00:00.000Z');
+    expect(
+      shouldRunScheduledConsoApiSync({
+        now: afternoon,
+        hasYesterdayDaily: true,
+        hasYesterdayLoadCurve: false,
+        dailyAttemptsDate: '2026-11-24',
+        dailyAttemptsCount: 1,
+        lastAttemptAt: '2026-11-24T08:20:00.000Z',
+      })
+    ).toEqual({ shouldRun: false, reason: 'daily_already_synced_no_curve' });
+
+    // Hard cap of 2 scheduled attempts per day even after 6h
+    expect(
+      shouldRunScheduledConsoApiSync({
+        now: new Date('2026-11-24T22:00:00.000Z'),
+        hasYesterdayDaily: false,
+        hasYesterdayLoadCurve: false,
+        dailyAttemptsDate: '2026-11-24',
+        dailyAttemptsCount: 2,
+        lastAttemptAt: '2026-11-24T15:00:00.000Z',
+      })
+    ).toEqual({ shouldRun: false, reason: 'daily_attempt_limit_reached' });
+
+    // Retry-After HTTP header parser (delta seconds, HTTP date, invalid, 7-day cap)
+    expect(parseRetryAfterMs('3600')).toBe(3_600_000);
+    expect(parseRetryAfterMs('9999999')).toBe(7 * 24 * 3_600_000);
+    expect(parseRetryAfterMs('0')).toBeNull();
+    expect(parseRetryAfterMs('invalid')).toBeNull();
+    const baseNow = Date.UTC(2026, 10, 24, 10, 0, 0);
+    expect(parseRetryAfterMs(new Date(baseNow + 90_000).toUTCString(), baseNow)).toBe(90_000);
 
     expect(addDaysYmd('2026-11-24', -1)).toBe('2026-11-23');
   });
