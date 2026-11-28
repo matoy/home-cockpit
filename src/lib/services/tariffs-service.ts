@@ -17,6 +17,9 @@ export interface TariffInput {
   hcSlots: HcSlot[];
   tempoConfig?: TempoConfig | null;
   monthlySubscriptionEur: number;
+  vatRatePct?: number;
+  subscriptionVatRatePct?: number;
+  exciseRateEur?: number;
 }
 
 async function syncTariffTimelineInDb(db: AppDatabase): Promise<TariffPeriodRecord[]> {
@@ -37,13 +40,20 @@ async function syncTariffTimelineInDb(db: AppDatabase): Promise<TariffPeriodReco
 }
 
 export async function createTariff(input: TariffInput): Promise<TariffPeriodRecord[]> {
+  const normalizedInput: TariffInput = {
+    ...input,
+    vatRatePct: input.vatRatePct ?? 20,
+    subscriptionVatRatePct: input.subscriptionVatRatePct ?? 20,
+    exciseRateEur: input.exciseRateEur ?? 0,
+  };
+
   const db = getDb();
   if (!db) {
     const state = getDemoState();
     const created: TariffPeriodRecord = {
       id: state.nextTariffId++,
-      ...input,
-      tempoConfig: input.tempoConfig ?? null,
+      ...normalizedInput,
+      tempoConfig: normalizedInput.tempoConfig ?? null,
       createdAt: new Date().toISOString(),
     };
     state.tariffs = normalizeTariffTimeline([...state.tariffs, created]);
@@ -51,7 +61,7 @@ export async function createTariff(input: TariffInput): Promise<TariffPeriodReco
   }
 
   await ensureSchemaInitialized(db);
-  await db.insert(tariffPeriods).values(input);
+  await db.insert(tariffPeriods).values(normalizedInput);
   return syncTariffTimelineInDb(db);
 }
 

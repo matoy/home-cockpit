@@ -133,6 +133,9 @@ export const tariffPeriods = pgTable('tariff_periods', {
   hcSlots: jsonb('hc_slots').$type<HcSlot[]>().default([]).notNull(),
   tempoConfig: jsonb('tempo_config').$type<TempoConfig | null>(),
   monthlySubscriptionEur: real('monthly_subscription_eur').default(0).notNull(),
+  vatRatePct: real('vat_rate_pct').default(20).notNull(),
+  subscriptionVatRatePct: real('subscription_vat_rate_pct').default(20).notNull(),
+  exciseRateEur: real('excise_rate_eur').default(0).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

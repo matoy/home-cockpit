@@ -1289,6 +1289,9 @@ function createInitialDemoState(): DemoState {
       hcRateEur: 0.2068,
       hcSlots: [{ start: '22:00', end: '06:00' }],
       monthlySubscriptionEur: 13.72,
+      vatRatePct: 20,
+      subscriptionVatRatePct: 5.5,
+      exciseRateEur: 0,
       createdAt: new Date(alignedNow.getTime() - 300 * 86_400_000).toISOString(),
     },
     {
@@ -1302,6 +1305,9 @@ function createInitialDemoState(): DemoState {
       hcRateEur: 0.1696,
       hcSlots: [{ start: '22:00', end: '06:00' }],
       monthlySubscriptionEur: 14.18,
+      vatRatePct: 20,
+      subscriptionVatRatePct: 20,
+      exciseRateEur: 0,
       createdAt: new Date(alignedNow.getTime() - 60 * 86_400_000).toISOString(),
     },
   ]);

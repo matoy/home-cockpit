@@ -417,12 +417,16 @@ export async function exportBackupArchive(options?: {
         label: t.label,
         startDate: t.startDate,
         endDate: t.endDate,
-        mode: t.mode === 'HP_HC' ? 'HP_HC' : 'BASE',
+        mode: t.mode === 'TEMPO' ? 'TEMPO' : t.mode === 'HP_HC' ? 'HP_HC' : 'BASE',
         baseRateEur: t.baseRateEur,
         hpRateEur: t.hpRateEur,
         hcRateEur: t.hcRateEur,
         hcSlots: Array.isArray(t.hcSlots) ? t.hcSlots : [],
+        tempoConfig: t.tempoConfig ?? null,
         monthlySubscriptionEur: t.monthlySubscriptionEur,
+        vatRatePct: t.vatRatePct ?? 20,
+        subscriptionVatRatePct: t.subscriptionVatRatePct ?? 20,
+        exciseRateEur: t.exciseRateEur ?? 0,
         createdAt: t.createdAt.toISOString(),
       })),
       automations: automationRows.map((a) => ({
@@ -728,7 +732,11 @@ export function parseAndValidateBackupBuffer(rawBuffer: Buffer): {
       hpRateEur: toNullableNumber(rec.hpRateEur),
       hcRateEur: toNullableNumber(rec.hcRateEur),
       hcSlots: slots,
+      tempoConfig: (asRecord(rec.tempoConfig) as TariffPeriodRecord['tempoConfig']) ?? null,
       monthlySubscriptionEur: toFiniteNumber(rec.monthlySubscriptionEur, 0),
+      vatRatePct: toFiniteNumber(rec.vatRatePct, 20),
+      subscriptionVatRatePct: toFiniteNumber(rec.subscriptionVatRatePct, 20),
+      exciseRateEur: toFiniteNumber(rec.exciseRateEur, 0),
       createdAt: normalizeIsoDate(rec.createdAt),
     });
   }
@@ -1448,7 +1456,11 @@ export async function importBackupArchive(
         hpRateEur: t.hpRateEur,
         hcRateEur: t.hcRateEur,
         hcSlots: t.hcSlots,
+        tempoConfig: t.tempoConfig ?? null,
         monthlySubscriptionEur: t.monthlySubscriptionEur,
+        vatRatePct: t.vatRatePct ?? 20,
+        subscriptionVatRatePct: t.subscriptionVatRatePct ?? 20,
+        exciseRateEur: t.exciseRateEur ?? 0,
         createdAt: new Date(t.createdAt),
       });
       imported.tariffPeriods++;
@@ -1755,7 +1767,11 @@ export async function importBackupArchive(
             hpRateEur: t.hpRateEur,
             hcRateEur: t.hcRateEur,
             hcSlots: t.hcSlots,
+            tempoConfig: t.tempoConfig ?? null,
             monthlySubscriptionEur: t.monthlySubscriptionEur,
+            vatRatePct: t.vatRatePct ?? 20,
+            subscriptionVatRatePct: t.subscriptionVatRatePct ?? 20,
+            exciseRateEur: t.exciseRateEur ?? 0,
           })
           .where(eq(tariffPeriods.id, existing.id));
       } else {
@@ -1768,7 +1784,11 @@ export async function importBackupArchive(
           hpRateEur: t.hpRateEur,
           hcRateEur: t.hcRateEur,
           hcSlots: t.hcSlots,
+          tempoConfig: t.tempoConfig ?? null,
           monthlySubscriptionEur: t.monthlySubscriptionEur,
+          vatRatePct: t.vatRatePct ?? 20,
+          subscriptionVatRatePct: t.subscriptionVatRatePct ?? 20,
+          exciseRateEur: t.exciseRateEur ?? 0,
           createdAt: new Date(t.createdAt),
         });
       }

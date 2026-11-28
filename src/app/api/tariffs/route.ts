@@ -115,6 +115,10 @@ export async function POST(request: Request) {
     const hcRateEur = body.hcRateEur === undefined ? null : body.hcRateEur;
     const monthlySubscriptionEur =
       body.monthlySubscriptionEur === undefined ? 0 : body.monthlySubscriptionEur;
+    const vatRatePct = body.vatRatePct === undefined ? 20 : body.vatRatePct;
+    const subscriptionVatRatePct =
+      body.subscriptionVatRatePct === undefined ? 20 : body.subscriptionVatRatePct;
+    const exciseRateEur = body.exciseRateEur === undefined ? 0 : body.exciseRateEur;
 
     if (
       !isNonNegativeNullableNumber(baseRateEur) ||
@@ -122,9 +126,21 @@ export async function POST(request: Request) {
       !isNonNegativeNullableNumber(hcRateEur) ||
       typeof monthlySubscriptionEur !== 'number' ||
       !Number.isFinite(monthlySubscriptionEur) ||
-      monthlySubscriptionEur < 0
+      monthlySubscriptionEur < 0 ||
+      typeof vatRatePct !== 'number' ||
+      !Number.isFinite(vatRatePct) ||
+      vatRatePct < 0 ||
+      vatRatePct > 100 ||
+      typeof subscriptionVatRatePct !== 'number' ||
+      !Number.isFinite(subscriptionVatRatePct) ||
+      subscriptionVatRatePct < 0 ||
+      subscriptionVatRatePct > 100 ||
+      typeof exciseRateEur !== 'number' ||
+      !Number.isFinite(exciseRateEur) ||
+      exciseRateEur < 0 ||
+      exciseRateEur > 5
     ) {
-      return NextResponse.json({ error: 'Tarifs ou abonnement invalides.' }, { status: 400 });
+      return NextResponse.json({ error: 'Tarifs, taxes ou abonnement invalides.' }, { status: 400 });
     }
 
     const hcSlots = body.hcSlots === undefined ? [] : parseHcSlots(body.hcSlots);
@@ -155,6 +171,9 @@ export async function POST(request: Request) {
       hcSlots,
       tempoConfig,
       monthlySubscriptionEur,
+      vatRatePct,
+      subscriptionVatRatePct,
+      exciseRateEur,
     });
     return NextResponse.json({ tariffs }, { status: 201 });
   } catch (err) {
@@ -245,6 +264,42 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: 'Abonnement mensuel invalide.' }, { status: 400 });
       }
       updates.monthlySubscriptionEur = body.monthlySubscriptionEur;
+    }
+
+    if (body.vatRatePct !== undefined) {
+      if (
+        typeof body.vatRatePct !== 'number' ||
+        !Number.isFinite(body.vatRatePct) ||
+        body.vatRatePct < 0 ||
+        body.vatRatePct > 100
+      ) {
+        return NextResponse.json({ error: 'Taux de TVA invalide (0 à 100 %).' }, { status: 400 });
+      }
+      updates.vatRatePct = body.vatRatePct;
+    }
+
+    if (body.subscriptionVatRatePct !== undefined) {
+      if (
+        typeof body.subscriptionVatRatePct !== 'number' ||
+        !Number.isFinite(body.subscriptionVatRatePct) ||
+        body.subscriptionVatRatePct < 0 ||
+        body.subscriptionVatRatePct > 100
+      ) {
+        return NextResponse.json({ error: 'Taux de TVA abonnement invalide (0 à 100 %).' }, { status: 400 });
+      }
+      updates.subscriptionVatRatePct = body.subscriptionVatRatePct;
+    }
+
+    if (body.exciseRateEur !== undefined) {
+      if (
+        typeof body.exciseRateEur !== 'number' ||
+        !Number.isFinite(body.exciseRateEur) ||
+        body.exciseRateEur < 0 ||
+        body.exciseRateEur > 5
+      ) {
+        return NextResponse.json({ error: 'Accise / taxe par kWh invalide (0 à 5 €).' }, { status: 400 });
+      }
+      updates.exciseRateEur = body.exciseRateEur;
     }
 
     if (body.hcSlots !== undefined) {

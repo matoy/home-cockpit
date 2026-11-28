@@ -12,7 +12,18 @@ import {
   Scale,
   Calendar,
 } from 'lucide-react';
-import { DEFAULT_TEMPO_CONFIG, isTimeInHcSlot, simulateContracts } from '@/lib/tariff-engine';
+import {
+  DEFAULT_EXCISE_RATE_EUR,
+  DEFAULT_SUBSCRIPTION_VAT_RATE_PCT,
+  DEFAULT_TEMPO_CONFIG,
+  DEFAULT_VAT_RATE_PCT,
+  isTimeInHcSlot,
+  kwhHtToTtc,
+  kwhTtcToHt,
+  simulateContracts,
+  subscriptionHtToTtc,
+  subscriptionTtcToHt,
+} from '@/lib/tariff-engine';
 import { useI18n } from './I18nProvider';
 import type { DashboardPayload, HcSlot, TariffMode, TariffPeriodRecord } from '@/types';
 
@@ -27,6 +38,10 @@ interface TariffFormState {
   startDate: string;
   endDate: string;
   mode: TariffMode;
+  inputTaxMode: 'HT' | 'TTC';
+  vatRatePct: string;
+  subscriptionVatRatePct: string;
+  exciseRateEur: string;
   baseRateEur: string;
   hpRateEur: string;
   hcRateEur: string;
@@ -42,23 +57,32 @@ interface TariffFormState {
 
 function emptyForm(): TariffFormState {
   const today = new Date().toISOString().slice(0, 10);
+  const toDefaultHt = (ttc: number) =>
+    kwhTtcToHt(ttc, DEFAULT_VAT_RATE_PCT, DEFAULT_EXCISE_RATE_EUR).toFixed(4);
   return {
     id: null,
     label: '',
     startDate: today,
     endDate: '',
     mode: 'BASE',
-    baseRateEur: '0.2016',
-    hpRateEur: '0.2146',
-    hcRateEur: '0.1696',
+    inputTaxMode: 'HT',
+    vatRatePct: String(DEFAULT_VAT_RATE_PCT),
+    subscriptionVatRatePct: String(DEFAULT_SUBSCRIPTION_VAT_RATE_PCT),
+    exciseRateEur: String(DEFAULT_EXCISE_RATE_EUR),
+    baseRateEur: toDefaultHt(0.2016),
+    hpRateEur: toDefaultHt(0.2146),
+    hcRateEur: toDefaultHt(0.1696),
     hcSlots: [{ start: '22:00', end: '06:00' }],
-    blueHpRateEur: String(DEFAULT_TEMPO_CONFIG.blueHpRateEur),
-    blueHcRateEur: String(DEFAULT_TEMPO_CONFIG.blueHcRateEur),
-    whiteHpRateEur: String(DEFAULT_TEMPO_CONFIG.whiteHpRateEur),
-    whiteHcRateEur: String(DEFAULT_TEMPO_CONFIG.whiteHcRateEur),
-    redHpRateEur: String(DEFAULT_TEMPO_CONFIG.redHpRateEur),
-    redHcRateEur: String(DEFAULT_TEMPO_CONFIG.redHcRateEur),
-    monthlySubscriptionEur: '14.18',
+    blueHpRateEur: toDefaultHt(DEFAULT_TEMPO_CONFIG.blueHpRateEur),
+    blueHcRateEur: toDefaultHt(DEFAULT_TEMPO_CONFIG.blueHcRateEur),
+    whiteHpRateEur: toDefaultHt(DEFAULT_TEMPO_CONFIG.whiteHpRateEur),
+    whiteHcRateEur: toDefaultHt(DEFAULT_TEMPO_CONFIG.whiteHcRateEur),
+    redHpRateEur: toDefaultHt(DEFAULT_TEMPO_CONFIG.redHpRateEur),
+    redHcRateEur: toDefaultHt(DEFAULT_TEMPO_CONFIG.redHcRateEur),
+    monthlySubscriptionEur: subscriptionTtcToHt(
+      14.18,
+      DEFAULT_SUBSCRIPTION_VAT_RATE_PCT
+    ).toFixed(2),
   };
 }
 
@@ -145,25 +169,31 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
     };
   }, [data.kpis.periodEnergyKwh, data.timeSeries, activeTariff]);
 
-  function startEdit(t: TariffPeriodRecord) {
-    const tc = { ...DEFAULT_TEMPO_CONFIG, ...(t.tempoConfig ?? {}) };
+  function startEdit(item: TariffPeriodRecord) {
+    const tc = { ...DEFAULT_TEMPO_CONFIG, ...(item.tempoConfig ?? {}) };
     setForm({
-      id: t.id,
-      label: t.label,
-      startDate: t.startDate,
-      endDate: t.endDate ?? '',
-      mode: t.mode,
-      baseRateEur: String(t.baseRateEur ?? 0.2016),
-      hpRateEur: String(t.hpRateEur ?? 0.2146),
-      hcRateEur: String(t.hcRateEur ?? 0.1696),
-      hcSlots: t.hcSlots?.length ? t.hcSlots : [{ start: '22:00', end: '06:00' }],
+      id: item.id,
+      label: item.label,
+      startDate: item.startDate,
+      endDate: item.endDate ?? '',
+      mode: item.mode,
+      inputTaxMode: 'TTC',
+      vatRatePct: String(item.vatRatePct ?? DEFAULT_VAT_RATE_PCT),
+      subscriptionVatRatePct: String(
+        item.subscriptionVatRatePct ?? DEFAULT_SUBSCRIPTION_VAT_RATE_PCT
+      ),
+      exciseRateEur: String(item.exciseRateEur ?? DEFAULT_EXCISE_RATE_EUR),
+      baseRateEur: String(item.baseRateEur ?? 0.2016),
+      hpRateEur: String(item.hpRateEur ?? 0.2146),
+      hcRateEur: String(item.hcRateEur ?? 0.1696),
+      hcSlots: item.hcSlots?.length ? item.hcSlots : [{ start: '22:00', end: '06:00' }],
       blueHpRateEur: String(tc.blueHpRateEur),
       blueHcRateEur: String(tc.blueHcRateEur),
       whiteHpRateEur: String(tc.whiteHpRateEur),
       whiteHcRateEur: String(tc.whiteHcRateEur),
       redHpRateEur: String(tc.redHpRateEur),
       redHcRateEur: String(tc.redHcRateEur),
-      monthlySubscriptionEur: String(t.monthlySubscriptionEur ?? 0),
+      monthlySubscriptionEur: String(item.monthlySubscriptionEur ?? 0),
     });
     setShowForm(true);
     setError(null);
@@ -175,10 +205,98 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
     setError(null);
   }
 
+  const parseNonNeg = (raw: string, fallback = 0): number => {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  };
+
+  const formVatRate = parseNonNeg(form.vatRatePct, DEFAULT_VAT_RATE_PCT);
+  const formSubVatRate = parseNonNeg(
+    form.subscriptionVatRatePct,
+    DEFAULT_SUBSCRIPTION_VAT_RATE_PCT
+  );
+  const formExciseRate = parseNonNeg(form.exciseRateEur, DEFAULT_EXCISE_RATE_EUR);
+
+  function handleTaxModeChange(nextMode: 'HT' | 'TTC') {
+    if (nextMode === form.inputTaxMode) return;
+    const convertKwh = (raw: string): string => {
+      const val = Number(raw);
+      if (!Number.isFinite(val) || val < 0) return raw;
+      const converted =
+        nextMode === 'TTC'
+          ? kwhHtToTtc(val, formVatRate, formExciseRate)
+          : kwhTtcToHt(val, formVatRate, formExciseRate);
+      return converted.toFixed(4);
+    };
+    const subVal = Number(form.monthlySubscriptionEur);
+    const convertedSub =
+      Number.isFinite(subVal) && subVal >= 0
+        ? (nextMode === 'TTC'
+            ? subscriptionHtToTtc(subVal, formSubVatRate)
+            : subscriptionTtcToHt(subVal, formSubVatRate)
+          ).toFixed(2)
+        : form.monthlySubscriptionEur;
+
+    setForm({
+      ...form,
+      inputTaxMode: nextMode,
+      baseRateEur: convertKwh(form.baseRateEur),
+      hpRateEur: convertKwh(form.hpRateEur),
+      hcRateEur: convertKwh(form.hcRateEur),
+      blueHpRateEur: convertKwh(form.blueHpRateEur),
+      blueHcRateEur: convertKwh(form.blueHcRateEur),
+      whiteHpRateEur: convertKwh(form.whiteHpRateEur),
+      whiteHcRateEur: convertKwh(form.whiteHcRateEur),
+      redHpRateEur: convertKwh(form.redHpRateEur),
+      redHcRateEur: convertKwh(form.redHcRateEur),
+      monthlySubscriptionEur: convertedSub,
+    });
+  }
+
+  function formatKwhEquivHint(raw: string): string {
+    const val = parseNonNeg(raw, 0);
+    if (form.inputTaxMode === 'HT') {
+      return t('tariffs.equivTtcKwh', {
+        value: kwhHtToTtc(val, formVatRate, formExciseRate).toFixed(4),
+      });
+    }
+    return t('tariffs.equivHtKwh', {
+      value: kwhTtcToHt(val, formVatRate, formExciseRate).toFixed(4),
+    });
+  }
+
+  function formatSubEquivHint(raw: string): string {
+    const val = parseNonNeg(raw, 0);
+    if (form.inputTaxMode === 'HT') {
+      return t('tariffs.equivTtcMonth', {
+        value: subscriptionHtToTtc(val, formSubVatRate).toFixed(2),
+      });
+    }
+    return t('tariffs.equivHtMonth', {
+      value: subscriptionTtcToHt(val, formSubVatRate).toFixed(2),
+    });
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
+
+    const toTtcRate = (raw: string, fallbackTtc?: number): number | null => {
+      const val = Number(raw);
+      if (!Number.isFinite(val) || val < 0) return fallbackTtc ?? null;
+      return form.inputTaxMode === 'HT'
+        ? kwhHtToTtc(val, formVatRate, formExciseRate)
+        : val;
+    };
+
+    const rawSub = Number(form.monthlySubscriptionEur);
+    const storedSub =
+      Number.isFinite(rawSub) && rawSub >= 0
+        ? form.inputTaxMode === 'HT'
+          ? subscriptionHtToTtc(rawSub, formSubVatRate)
+          : rawSub
+        : 0;
 
     const payload = {
       id: form.id ?? undefined,
@@ -186,22 +304,25 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       startDate: form.startDate,
       endDate: form.endDate.trim() || null,
       mode: form.mode,
-      baseRateEur: Number(form.baseRateEur) || null,
-      hpRateEur: Number(form.hpRateEur) || null,
-      hcRateEur: Number(form.hcRateEur) || null,
+      baseRateEur: toTtcRate(form.baseRateEur),
+      hpRateEur: toTtcRate(form.hpRateEur),
+      hcRateEur: toTtcRate(form.hcRateEur),
       hcSlots: form.mode === 'HP_HC' || form.mode === 'TEMPO' ? form.hcSlots : [],
       tempoConfig:
         form.mode === 'TEMPO'
           ? {
-            blueHpRateEur: Number(form.blueHpRateEur) || DEFAULT_TEMPO_CONFIG.blueHpRateEur,
-            blueHcRateEur: Number(form.blueHcRateEur) || DEFAULT_TEMPO_CONFIG.blueHcRateEur,
-            whiteHpRateEur: Number(form.whiteHpRateEur) || DEFAULT_TEMPO_CONFIG.whiteHpRateEur,
-            whiteHcRateEur: Number(form.whiteHcRateEur) || DEFAULT_TEMPO_CONFIG.whiteHcRateEur,
-            redHpRateEur: Number(form.redHpRateEur) || DEFAULT_TEMPO_CONFIG.redHpRateEur,
-            redHcRateEur: Number(form.redHcRateEur) || DEFAULT_TEMPO_CONFIG.redHcRateEur,
+            blueHpRateEur: toTtcRate(form.blueHpRateEur, DEFAULT_TEMPO_CONFIG.blueHpRateEur)!,
+            blueHcRateEur: toTtcRate(form.blueHcRateEur, DEFAULT_TEMPO_CONFIG.blueHcRateEur)!,
+            whiteHpRateEur: toTtcRate(form.whiteHpRateEur, DEFAULT_TEMPO_CONFIG.whiteHpRateEur)!,
+            whiteHcRateEur: toTtcRate(form.whiteHcRateEur, DEFAULT_TEMPO_CONFIG.whiteHcRateEur)!,
+            redHpRateEur: toTtcRate(form.redHpRateEur, DEFAULT_TEMPO_CONFIG.redHpRateEur)!,
+            redHcRateEur: toTtcRate(form.redHcRateEur, DEFAULT_TEMPO_CONFIG.redHcRateEur)!,
           }
           : null,
-      monthlySubscriptionEur: Number(form.monthlySubscriptionEur) || 0,
+      monthlySubscriptionEur: Math.round(storedSub * 100) / 100,
+      vatRatePct: formVatRate,
+      subscriptionVatRatePct: formSubVatRate,
+      exciseRateEur: formExciseRate,
     };
 
     try {
@@ -373,12 +494,111 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
             </div>
           </div>
 
+          {/* Paramètres fiscaux & mode de saisie HT / TTC */}
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-start">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  {t('tariffs.inputModeLabel')}
+                </label>
+                <div className="grid grid-cols-2 rounded-xl border border-slate-700 bg-slate-900 p-0.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => handleTaxModeChange('HT')}
+                    className={`rounded-lg px-3 py-1.5 font-medium transition ${
+                      form.inputTaxMode === 'HT'
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {t('tariffs.inputModeHt')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleTaxModeChange('TTC')}
+                    className={`rounded-lg px-3 py-1.5 font-medium transition ${
+                      form.inputTaxMode === 'TTC'
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {t('tariffs.inputModeTtc')}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  {t('tariffs.vatRateLabel')}
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  value={form.vatRatePct}
+                  onChange={(e) => setForm({ ...form, vatRatePct: e.target.value })}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  {t('tariffs.exciseRateLabel')}
+                </label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  max="5"
+                  value={form.exciseRateEur}
+                  onChange={(e) => setForm({ ...form, exciseRateEur: e.target.value })}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
+                />
+                <p className="mt-1 text-[10.5px] text-slate-500">{t('tariffs.exciseHint')}</p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label className="block text-xs font-medium text-slate-300">
+                    {t('tariffs.subVatRateLabel')}
+                  </label>
+                  <div className="flex gap-1">
+                    {(['20', '5.5'] as const).map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setForm({ ...form, subscriptionVatRatePct: preset })}
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-mono border transition ${
+                          form.subscriptionVatRatePct === preset
+                            ? 'border-indigo-500/60 bg-indigo-500/20 text-indigo-200'
+                            : 'border-slate-700 bg-slate-900 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {preset}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  value={form.subscriptionVatRatePct}
+                  onChange={(e) => setForm({ ...form, subscriptionVatRatePct: e.target.value })}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Prix du kWh selon le mode */}
           {form.mode === 'TEMPO' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-xs font-medium text-sky-300 mb-1.5">
-                  {t('tariffs.tempoBlueHp')}
+                  {t('tariffs.tempoBlueHp')} ({form.inputTaxMode})
                 </label>
                 <input
                   type="number"
@@ -389,10 +609,13 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                   onChange={(e) => setForm({ ...form, blueHpRateEur: e.target.value })}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-sky-500 focus:outline-none"
                 />
+                <p className="mt-1 text-[11px] font-mono text-slate-400">
+                  {formatKwhEquivHint(form.blueHpRateEur)}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-sky-200 mb-1.5">
-                  {t('tariffs.tempoBlueHc')}
+                  {t('tariffs.tempoBlueHc')} ({form.inputTaxMode})
                 </label>
                 <input
                   type="number"
@@ -403,10 +626,13 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                   onChange={(e) => setForm({ ...form, blueHcRateEur: e.target.value })}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-sky-500 focus:outline-none"
                 />
+                <p className="mt-1 text-[11px] font-mono text-slate-400">
+                  {formatKwhEquivHint(form.blueHcRateEur)}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-200 mb-1.5">
-                  {t('tariffs.tempoWhiteHp')}
+                  {t('tariffs.tempoWhiteHp')} ({form.inputTaxMode})
                 </label>
                 <input
                   type="number"
@@ -417,10 +643,13 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                   onChange={(e) => setForm({ ...form, whiteHpRateEur: e.target.value })}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-sky-500 focus:outline-none"
                 />
+                <p className="mt-1 text-[11px] font-mono text-slate-400">
+                  {formatKwhEquivHint(form.whiteHpRateEur)}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  {t('tariffs.tempoWhiteHc')}
+                  {t('tariffs.tempoWhiteHc')} ({form.inputTaxMode})
                 </label>
                 <input
                   type="number"
@@ -431,10 +660,13 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                   onChange={(e) => setForm({ ...form, whiteHcRateEur: e.target.value })}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-sky-500 focus:outline-none"
                 />
+                <p className="mt-1 text-[11px] font-mono text-slate-400">
+                  {formatKwhEquivHint(form.whiteHcRateEur)}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-rose-300 mb-1.5">
-                  {t('tariffs.tempoRedHp')}
+                  {t('tariffs.tempoRedHp')} ({form.inputTaxMode})
                 </label>
                 <input
                   type="number"
@@ -445,10 +677,13 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                   onChange={(e) => setForm({ ...form, redHpRateEur: e.target.value })}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-rose-500 focus:outline-none"
                 />
+                <p className="mt-1 text-[11px] font-mono text-slate-400">
+                  {formatKwhEquivHint(form.redHpRateEur)}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-rose-200 mb-1.5">
-                  {t('tariffs.tempoRedHc')}
+                  {t('tariffs.tempoRedHc')} ({form.inputTaxMode})
                 </label>
                 <input
                   type="number"
@@ -459,10 +694,13 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                   onChange={(e) => setForm({ ...form, redHcRateEur: e.target.value })}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-rose-500 focus:outline-none"
                 />
+                <p className="mt-1 text-[11px] font-mono text-slate-400">
+                  {formatKwhEquivHint(form.redHcRateEur)}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  {t('tariffs.subLabel')}
+                  {t('tariffs.subLabel')} ({form.inputTaxMode})
                 </label>
                 <input
                   type="number"
@@ -472,6 +710,9 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                   onChange={(e) => setForm({ ...form, monthlySubscriptionEur: e.target.value })}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
                 />
+                <p className="mt-1 text-[11px] font-mono text-slate-400">
+                  {formatSubEquivHint(form.monthlySubscriptionEur)}
+                </p>
               </div>
             </div>
           ) : (
@@ -479,7 +720,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
               {form.mode === 'BASE' ? (
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    {t('tariffs.baseRateLabel')}
+                    {t('tariffs.baseRateLabel')} ({form.inputTaxMode})
                   </label>
                   <input
                     type="number"
@@ -490,12 +731,15 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                     onChange={(e) => setForm({ ...form, baseRateEur: e.target.value })}
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
                   />
+                  <p className="mt-1 text-[11px] font-mono text-slate-400">
+                    {formatKwhEquivHint(form.baseRateEur)}
+                  </p>
                 </div>
               ) : (
                 <>
                   <div>
                     <label className="block text-xs font-medium text-amber-300 mb-1.5">
-                      {t('tariffs.hpRateLabel')}
+                      {t('tariffs.hpRateLabel')} ({form.inputTaxMode})
                     </label>
                     <input
                       type="number"
@@ -506,10 +750,13 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                       onChange={(e) => setForm({ ...form, hpRateEur: e.target.value })}
                       className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
                     />
+                    <p className="mt-1 text-[11px] font-mono text-slate-400">
+                      {formatKwhEquivHint(form.hpRateEur)}
+                    </p>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-emerald-300 mb-1.5">
-                      {t('tariffs.hcRateLabel')}
+                      {t('tariffs.hcRateLabel')} ({form.inputTaxMode})
                     </label>
                     <input
                       type="number"
@@ -520,13 +767,16 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                       onChange={(e) => setForm({ ...form, hcRateEur: e.target.value })}
                       className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
                     />
+                    <p className="mt-1 text-[11px] font-mono text-slate-400">
+                      {formatKwhEquivHint(form.hcRateEur)}
+                    </p>
                   </div>
                 </>
               )}
 
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  {t('tariffs.subLabel')}
+                  {t('tariffs.subLabel')} ({form.inputTaxMode})
                 </label>
                 <input
                   type="number"
@@ -536,6 +786,9 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                   onChange={(e) => setForm({ ...form, monthlySubscriptionEur: e.target.value })}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
                 />
+                <p className="mt-1 text-[11px] font-mono text-slate-400">
+                  {formatSubEquivHint(form.monthlySubscriptionEur)}
+                </p>
               </div>
             </div>
           )}
@@ -649,6 +902,15 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
         <div className="lg:col-span-2 space-y-3">
           {sortedTariffs.map((tariffItem) => {
             const isCurrent = activeTariff?.id === tariffItem.id;
+            const vatPct = tariffItem.vatRatePct ?? DEFAULT_VAT_RATE_PCT;
+            const subVatPct =
+              tariffItem.subscriptionVatRatePct ?? DEFAULT_SUBSCRIPTION_VAT_RATE_PCT;
+            const exciseEur = tariffItem.exciseRateEur ?? DEFAULT_EXCISE_RATE_EUR;
+            const ttcLabel = t('tariffs.ttcShort');
+            const htLabel = t('tariffs.htShort');
+            const formatKwhPair = (ttcVal: number) =>
+              `${ttcVal.toFixed(4)} €/kWh ${ttcLabel} · ${kwhTtcToHt(ttcVal, vatPct, exciseEur).toFixed(4)} € ${htLabel}`;
+
             return (
               <div
                 key={tariffItem.id}
@@ -659,7 +921,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-sm font-semibold text-white">{tariffItem.label}</h3>
                       <span
                         className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${tariffItem.mode === 'TEMPO'
@@ -674,6 +936,15 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                           : tariffItem.mode === 'HP_HC'
                             ? 'HP / HC'
                             : 'BASE'}
+                      </span>
+                      <span className="rounded-full border border-slate-700 bg-slate-950/60 px-2 py-0.5 text-[10px] font-mono text-slate-300">
+                        {t('tariffs.taxBadgeVat', { vat: vatPct })}
+                        {exciseEur > 0
+                          ? ` · ${t('tariffs.taxBadgeExcise', { excise: exciseEur.toFixed(4) })}`
+                          : ''}
+                        {subVatPct !== vatPct
+                          ? ` · ${t('tariffs.taxBadgeSubVat', { vat: subVatPct })}`
+                          : ''}
                       </span>
                       {isCurrent && (
                         <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-300">
@@ -714,25 +985,42 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-4 text-xs">
+                <div className="mt-4 flex flex-wrap gap-3 text-xs">
                   {tariffItem.mode === 'BASE' ? (
                     <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2">
                       <span className="text-slate-400">{t('tariffs.uniquePrice')} </span>
                       <span className="font-mono font-semibold text-white">
-                        {(tariffItem.baseRateEur ?? 0).toFixed(4)} €/kWh
+                        {(tariffItem.baseRateEur ?? 0).toFixed(4)} €/kWh {ttcLabel}
+                      </span>
+                      <span className="ml-2 font-mono text-[11px] text-slate-400">
+                        ({kwhTtcToHt(tariffItem.baseRateEur ?? 0, vatPct, exciseEur).toFixed(4)} € {htLabel})
                       </span>
                     </div>
                   ) : tariffItem.mode === 'TEMPO' ? (
                     <>
-                      <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2 font-mono text-[11px] text-slate-200">
-                        {t('tariffs.tempoRatesSummary', {
-                          bHp: (tariffItem.tempoConfig?.blueHpRateEur ?? DEFAULT_TEMPO_CONFIG.blueHpRateEur).toFixed(4),
-                          bHc: (tariffItem.tempoConfig?.blueHcRateEur ?? DEFAULT_TEMPO_CONFIG.blueHcRateEur).toFixed(4),
-                          wHp: (tariffItem.tempoConfig?.whiteHpRateEur ?? DEFAULT_TEMPO_CONFIG.whiteHpRateEur).toFixed(4),
-                          wHc: (tariffItem.tempoConfig?.whiteHcRateEur ?? DEFAULT_TEMPO_CONFIG.whiteHcRateEur).toFixed(4),
-                          rHp: (tariffItem.tempoConfig?.redHpRateEur ?? DEFAULT_TEMPO_CONFIG.redHpRateEur).toFixed(4),
-                          rHc: (tariffItem.tempoConfig?.redHcRateEur ?? DEFAULT_TEMPO_CONFIG.redHcRateEur).toFixed(4),
-                        })}
+                      <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2 font-mono text-[11px] text-slate-200 space-y-1">
+                        <div>
+                          <span className="text-slate-400 mr-1.5">{ttcLabel}:</span>
+                          {t('tariffs.tempoRatesSummary', {
+                            bHp: (tariffItem.tempoConfig?.blueHpRateEur ?? DEFAULT_TEMPO_CONFIG.blueHpRateEur).toFixed(4),
+                            bHc: (tariffItem.tempoConfig?.blueHcRateEur ?? DEFAULT_TEMPO_CONFIG.blueHcRateEur).toFixed(4),
+                            wHp: (tariffItem.tempoConfig?.whiteHpRateEur ?? DEFAULT_TEMPO_CONFIG.whiteHpRateEur).toFixed(4),
+                            wHc: (tariffItem.tempoConfig?.whiteHcRateEur ?? DEFAULT_TEMPO_CONFIG.whiteHcRateEur).toFixed(4),
+                            rHp: (tariffItem.tempoConfig?.redHpRateEur ?? DEFAULT_TEMPO_CONFIG.redHpRateEur).toFixed(4),
+                            rHc: (tariffItem.tempoConfig?.redHcRateEur ?? DEFAULT_TEMPO_CONFIG.redHcRateEur).toFixed(4),
+                          })}
+                        </div>
+                        <div className="text-slate-400">
+                          <span className="mr-1.5">{htLabel}:</span>
+                          {t('tariffs.tempoRatesSummary', {
+                            bHp: kwhTtcToHt(tariffItem.tempoConfig?.blueHpRateEur ?? DEFAULT_TEMPO_CONFIG.blueHpRateEur, vatPct, exciseEur).toFixed(4),
+                            bHc: kwhTtcToHt(tariffItem.tempoConfig?.blueHcRateEur ?? DEFAULT_TEMPO_CONFIG.blueHcRateEur, vatPct, exciseEur).toFixed(4),
+                            wHp: kwhTtcToHt(tariffItem.tempoConfig?.whiteHpRateEur ?? DEFAULT_TEMPO_CONFIG.whiteHpRateEur, vatPct, exciseEur).toFixed(4),
+                            wHc: kwhTtcToHt(tariffItem.tempoConfig?.whiteHcRateEur ?? DEFAULT_TEMPO_CONFIG.whiteHcRateEur, vatPct, exciseEur).toFixed(4),
+                            rHp: kwhTtcToHt(tariffItem.tempoConfig?.redHpRateEur ?? DEFAULT_TEMPO_CONFIG.redHpRateEur, vatPct, exciseEur).toFixed(4),
+                            rHc: kwhTtcToHt(tariffItem.tempoConfig?.redHcRateEur ?? DEFAULT_TEMPO_CONFIG.redHcRateEur, vatPct, exciseEur).toFixed(4),
+                          })}
+                        </div>
                       </div>
                       <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2 text-slate-300">
                         {t('tariffs.hcSlotsList')}{' '}
@@ -748,13 +1036,13 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                       <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2">
                         <span className="text-amber-300">{t('tariffs.hpShort')} </span>
                         <span className="font-mono font-semibold text-white">
-                          {(tariffItem.hpRateEur ?? 0).toFixed(4)} €/kWh
+                          {formatKwhPair(tariffItem.hpRateEur ?? 0)}
                         </span>
                       </div>
                       <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2">
                         <span className="text-emerald-300">{t('tariffs.hcShort')} </span>
                         <span className="font-mono font-semibold text-white">
-                          {(tariffItem.hcRateEur ?? 0).toFixed(4)} €/kWh
+                          {formatKwhPair(tariffItem.hcRateEur ?? 0)}
                         </span>
                       </div>
                       <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2 text-slate-300">
@@ -768,7 +1056,10 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                   <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2 text-slate-400">
                     {t('tariffs.subscription')}{' '}
                     <span className="font-mono text-slate-200">
-                      {(tariffItem.monthlySubscriptionEur ?? 0).toFixed(2)} {t('common.perMonth')}
+                      {(tariffItem.monthlySubscriptionEur ?? 0).toFixed(2)} {t('common.perMonth')} {ttcLabel}
+                    </span>
+                    <span className="ml-1.5 font-mono text-[11px] text-slate-400">
+                      ({subscriptionTtcToHt(tariffItem.monthlySubscriptionEur ?? 0, subVatPct).toFixed(2)} € {htLabel})
                     </span>
                   </div>
                 </div>

@@ -229,6 +229,9 @@ export function mapDbTariff(row: typeof tariffPeriods.$inferSelect): TariffPerio
     hcSlots: row.hcSlots ?? [],
     tempoConfig: row.tempoConfig ?? null,
     monthlySubscriptionEur: row.monthlySubscriptionEur,
+    vatRatePct: row.vatRatePct ?? 20,
+    subscriptionVatRatePct: row.subscriptionVatRatePct ?? 20,
+    exciseRateEur: row.exciseRateEur ?? 0,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -326,6 +329,7 @@ export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'metric_readings' AND column_name = 'cover_open_pct')
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'automations' AND column_name = 'vendor')
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'tariff_periods' AND column_name = 'tempo_config')
+            AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'tariff_periods' AND column_name = 'excise_rate_eur')
           ) AS ready
         `);
         if (isSchemaProbeReady(probe)) {
@@ -437,11 +441,23 @@ export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
           "hc_slots" jsonb DEFAULT '[]'::jsonb NOT NULL,
           "tempo_config" jsonb,
           "monthly_subscription_eur" real DEFAULT 0 NOT NULL,
+          "vat_rate_pct" real DEFAULT 20 NOT NULL,
+          "subscription_vat_rate_pct" real DEFAULT 20 NOT NULL,
+          "excise_rate_eur" real DEFAULT 0 NOT NULL,
           "created_at" timestamp with time zone DEFAULT now() NOT NULL
         )
       `);
       await db.execute(sql`
         ALTER TABLE "tariff_periods" ADD COLUMN IF NOT EXISTS "tempo_config" jsonb
+      `);
+      await db.execute(sql`
+        ALTER TABLE "tariff_periods" ADD COLUMN IF NOT EXISTS "vat_rate_pct" real DEFAULT 20 NOT NULL
+      `);
+      await db.execute(sql`
+        ALTER TABLE "tariff_periods" ADD COLUMN IF NOT EXISTS "subscription_vat_rate_pct" real DEFAULT 20 NOT NULL
+      `);
+      await db.execute(sql`
+        ALTER TABLE "tariff_periods" ADD COLUMN IF NOT EXISTS "excise_rate_eur" real DEFAULT 0 NOT NULL
       `);
       await db.execute(sql`
         CREATE TABLE IF NOT EXISTS "collection_logs" (
@@ -685,6 +701,9 @@ export async function seedDefaultDataIfEmpty(db: AppDatabase): Promise<void> {
           hcRateEur: 0.1696,
           hcSlots: [{ start: '22:00', end: '06:00' }],
           monthlySubscriptionEur: 14.18,
+          vatRatePct: 20,
+          subscriptionVatRatePct: 20,
+          exciseRateEur: 0,
         });
       }
     })().catch((err) => {

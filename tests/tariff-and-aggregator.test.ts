@@ -5,8 +5,12 @@ import {
   computeReadingCost,
   DEFAULT_TEMPO_CONFIG,
   isTimeInHcSlot,
+  kwhHtToTtc,
+  kwhTtcToHt,
   normalizeTariffTimeline,
   simulateContracts,
+  subscriptionHtToTtc,
+  subscriptionTtcToHt,
 } from '@/lib/tariff-engine';
 import type { DeviceRecord, EnvStatus, MetricReadingRecord, RoomRecord, TariffPeriodRecord } from '@/types';
 
@@ -785,5 +789,25 @@ describe('tariff-engine & dashboard aggregator', () => {
       now,
     });
     expect(payload30m.timeSeries.map((pt) => pt.label)).toEqual(['11:00', '11:30']);
+  });
+
+  it('converts kWh and subscription rates cleanly between HT and TTC with VAT and excise', () => {
+    // Pure 20% VAT: 0.1680 HT -> 0.2016 TTC
+    expect(kwhHtToTtc(0.168, 20, 0)).toBeCloseTo(0.2016, 6);
+    expect(kwhTtcToHt(0.2016, 20, 0)).toBeCloseTo(0.168, 6);
+
+    // 20% VAT + 0.02998 €/kWh excise: (0.1380 + 0.02998) * 1.2 = 0.201576
+    expect(kwhHtToTtc(0.138, 20, 0.02998)).toBeCloseTo(0.201576, 6);
+    expect(kwhTtcToHt(0.201576, 20, 0.02998)).toBeCloseTo(0.138, 6);
+
+    // Clamps HT to 0 if TTC < excise * (1 + VAT) and handles 0% VAT
+    expect(kwhTtcToHt(0.01, 20, 0.05)).toBe(0);
+    expect(kwhHtToTtc(0.15, 0, 0.02)).toBeCloseTo(0.17, 6);
+
+    // Subscription: 20% vs 5.5% VAT without excise
+    expect(subscriptionHtToTtc(11.816667, 20)).toBeCloseTo(14.18, 2);
+    expect(subscriptionTtcToHt(14.18, 20)).toBeCloseTo(11.816667, 5);
+    expect(subscriptionHtToTtc(13.004739, 5.5)).toBeCloseTo(13.72, 2);
+    expect(subscriptionTtcToHt(13.72, 5.5)).toBeCloseTo(13.004739, 5);
   });
 });

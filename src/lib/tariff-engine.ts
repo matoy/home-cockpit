@@ -7,6 +7,72 @@ import type {
   TempoDayColor,
 } from '@/types';
 
+export const DEFAULT_VAT_RATE_PCT = 20;
+export const DEFAULT_SUBSCRIPTION_VAT_RATE_PCT = 20;
+export const DEFAULT_EXCISE_RATE_EUR = 0;
+
+function roundTax6(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+/**
+ * Convertit un prix du kWh HT en TTC selon la formule : (HT + accise) × (1 + TVA/100).
+ */
+export function kwhHtToTtc(
+  htEur: number,
+  vatRatePct: number = DEFAULT_VAT_RATE_PCT,
+  exciseRateEur: number = DEFAULT_EXCISE_RATE_EUR
+): number {
+  if (!Number.isFinite(htEur) || htEur < 0) return 0;
+  const safeVat = Number.isFinite(vatRatePct) && vatRatePct >= 0 ? vatRatePct : DEFAULT_VAT_RATE_PCT;
+  const safeExcise = Number.isFinite(exciseRateEur) && exciseRateEur >= 0 ? exciseRateEur : 0;
+  return roundTax6((htEur + safeExcise) * (1 + safeVat / 100));
+}
+
+/**
+ * Convertit un prix du kWh TTC en HT : max(0, TTC / (1 + TVA/100) - accise).
+ */
+export function kwhTtcToHt(
+  ttcEur: number,
+  vatRatePct: number = DEFAULT_VAT_RATE_PCT,
+  exciseRateEur: number = DEFAULT_EXCISE_RATE_EUR
+): number {
+  if (!Number.isFinite(ttcEur) || ttcEur < 0) return 0;
+  const safeVat = Number.isFinite(vatRatePct) && vatRatePct >= 0 ? vatRatePct : DEFAULT_VAT_RATE_PCT;
+  const safeExcise = Number.isFinite(exciseRateEur) && exciseRateEur >= 0 ? exciseRateEur : 0;
+  return roundTax6(Math.max(0, ttcEur / (1 + safeVat / 100) - safeExcise));
+}
+
+/**
+ * Convertit un abonnement mensuel HT en TTC : HT × (1 + TVA_abo/100).
+ */
+export function subscriptionHtToTtc(
+  htEur: number,
+  subscriptionVatRatePct: number = DEFAULT_SUBSCRIPTION_VAT_RATE_PCT
+): number {
+  if (!Number.isFinite(htEur) || htEur < 0) return 0;
+  const safeVat =
+    Number.isFinite(subscriptionVatRatePct) && subscriptionVatRatePct >= 0
+      ? subscriptionVatRatePct
+      : DEFAULT_SUBSCRIPTION_VAT_RATE_PCT;
+  return roundTax6(htEur * (1 + safeVat / 100));
+}
+
+/**
+ * Convertit un abonnement mensuel TTC en HT : TTC / (1 + TVA_abo/100).
+ */
+export function subscriptionTtcToHt(
+  ttcEur: number,
+  subscriptionVatRatePct: number = DEFAULT_SUBSCRIPTION_VAT_RATE_PCT
+): number {
+  if (!Number.isFinite(ttcEur) || ttcEur < 0) return 0;
+  const safeVat =
+    Number.isFinite(subscriptionVatRatePct) && subscriptionVatRatePct >= 0
+      ? subscriptionVatRatePct
+      : DEFAULT_SUBSCRIPTION_VAT_RATE_PCT;
+  return roundTax6(ttcEur / (1 + safeVat / 100));
+}
+
 export const DEFAULT_TEMPO_CONFIG: TempoConfig = {
   blueHpRateEur: 0.1494,
   blueHcRateEur: 0.1232,

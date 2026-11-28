@@ -135,6 +135,14 @@ describe('backup-service Gzip export, preview, and restore', () => {
       archiveOut.archive.data.meterReadings?.length ?? 0
     );
 
+    // Preserves tariff fiscal metadata (VAT, subscription VAT, excise) across export + import
+    const exportedTariff = archiveOut.archive.data.tariffPeriods[0];
+    expect(exportedTariff.vatRatePct).toBe(20);
+    expect(exportedTariff.subscriptionVatRatePct).toBe(5.5);
+    expect(exportedTariff.exciseRateEur).toBe(0);
+    const restoredTariff = getDemoState().tariffs.find((t) => t.id === exportedTariff.id);
+    expect(restoredTariff?.subscriptionVatRatePct).toBe(5.5);
+
     // Rejects invalid gzip or invalid JSON schema
     await expect(previewBackupArchive(Buffer.from('corrupt-bytes'))).rejects.toThrow();
     const badJsonGz = zlib.gzipSync(Buffer.from(JSON.stringify({ format: 'wrong' }), 'utf8'));

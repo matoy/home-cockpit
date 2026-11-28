@@ -189,6 +189,9 @@ export interface TariffPeriodRecord {
   hcSlots: HcSlot[];
   tempoConfig?: TempoConfig | null;
   monthlySubscriptionEur: number;
+  vatRatePct?: number;
+  subscriptionVatRatePct?: number;
+  exciseRateEur?: number;
   createdAt: string;
 }
 

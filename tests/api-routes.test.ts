@@ -269,10 +269,53 @@ describe('API route security & input validation', () => {
           hcRateEur: 0.18,
           hcSlots: [{ start: '22:00', end: '06:00' }],
           monthlySubscriptionEur: 15,
+          vatRatePct: 20,
+          subscriptionVatRatePct: 5.5,
+          exciseRateEur: 0.02998,
         }),
       })
     );
     expect(created.status).toBe(201);
+    const createdJson = (await created.json()) as {
+      tariffs: Array<{
+        label: string;
+        vatRatePct?: number;
+        subscriptionVatRatePct?: number;
+        exciseRateEur?: number;
+      }>;
+    };
+    const edfCreated = createdJson.tariffs.find((t) => t.label === 'EDF HP/HC');
+    expect(edfCreated?.vatRatePct).toBe(20);
+    expect(edfCreated?.subscriptionVatRatePct).toBe(5.5);
+    expect(edfCreated?.exciseRateEur).toBeCloseTo(0.02998, 5);
+
+    const badVat = await tariffsPost(
+      new Request('https://cockpit.local/api/tariffs', {
+        method: 'POST',
+        body: JSON.stringify({
+          label: 'Bad VAT',
+          startDate: '2026-01-01',
+          mode: 'BASE',
+          baseRateEur: 0.2,
+          vatRatePct: 120,
+        }),
+      })
+    );
+    expect(badVat.status).toBe(400);
+
+    const badExcise = await tariffsPost(
+      new Request('https://cockpit.local/api/tariffs', {
+        method: 'POST',
+        body: JSON.stringify({
+          label: 'Bad Excise',
+          startDate: '2026-01-01',
+          mode: 'BASE',
+          baseRateEur: 0.2,
+          exciseRateEur: -0.01,
+        }),
+      })
+    );
+    expect(badExcise.status).toBe(400);
 
     const badDelete = await tariffsDelete(
       new Request('https://cockpit.local/api/tariffs?id=1.5', { method: 'DELETE' })
@@ -286,6 +329,14 @@ describe('API route security & input validation', () => {
       })
     );
     expect(badPatch.status).toBe(400);
+
+    const badSubVatPatch = await tariffsPatch(
+      new Request('https://cockpit.local/api/tariffs', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: 1, subscriptionVatRatePct: -5 }),
+      })
+    );
+    expect(badSubVatPatch.status).toBe(400);
   });
 
   it('validates room comfort bounds and rejects non-integer room IDs', async () => {
