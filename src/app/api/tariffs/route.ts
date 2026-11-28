@@ -2,7 +2,13 @@ import { NextResponse } from 'next/server';
 import { createTariff, deleteTariff, updateTariff } from '@/lib/data-service';
 import { apiErrorResponse, requireApiAuth } from '@/lib/http-utils';
 import { asRecord } from '@/lib/utils';
-import type { HcSlot, TariffMode, TempoConfig, TempoDayColor } from '@/types';
+import type {
+  HcSlot,
+  TariffContribution,
+  TariffMode,
+  TempoConfig,
+  TempoDayColor,
+} from '@/types';
 
 const DATE_ISO_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_HHMM_REGEX = /^\d{2}:\d{2}$/;
@@ -71,6 +77,43 @@ function parseHcSlots(raw: unknown): HcSlot[] | null {
     slots.push({ start, end });
   }
   return slots;
+}
+
+function parseContributions(raw: unknown): TariffContribution[] | null {
+  if (!Array.isArray(raw) || raw.length > 25) return null;
+  const result: TariffContribution[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const rec = asRecord(raw[i]);
+    if (!rec) return null;
+    const name = typeof rec.name === 'string' ? rec.name.trim() : '';
+    const kind = rec.kind;
+    const amountHtEur = rec.amountHtEur;
+    const vatRatePct = rec.vatRatePct === undefined ? 20 : rec.vatRatePct;
+    if (
+      !name ||
+      name.length > 80 ||
+      (kind !== 'per_kwh' && kind !== 'monthly') ||
+      typeof amountHtEur !== 'number' ||
+      !Number.isFinite(amountHtEur) ||
+      amountHtEur < 0 ||
+      amountHtEur > 500 ||
+      typeof vatRatePct !== 'number' ||
+      !Number.isFinite(vatRatePct) ||
+      vatRatePct < 0 ||
+      vatRatePct > 100
+    ) {
+      return null;
+    }
+    const rawId = typeof rec.id === 'string' ? rec.id.trim().slice(0, 60) : '';
+    result.push({
+      id: rawId || `contrib_${i + 1}`,
+      name,
+      kind,
+      amountHtEur: Math.round(amountHtEur * 1_000_000) / 1_000_000,
+      vatRatePct,
+    });
+  }
+  return result;
 }
 
 export async function POST(request: Request) {
@@ -151,6 +194,15 @@ export async function POST(request: Request) {
       );
     }
 
+    const contributions =
+      body.contributions === undefined ? [] : parseContributions(body.contributions);
+    if (!contributions) {
+      return NextResponse.json(
+        { error: 'Contributions & taxes invalides (libellé, type, montant HT et TVA 0-100 % requis).' },
+        { status: 400 }
+      );
+    }
+
     let tempoConfig: TempoConfig | null = null;
     if (body.tempoConfig !== undefined && body.tempoConfig !== null) {
       const parsedTempo = parseTempoConfig(body.tempoConfig);
@@ -174,6 +226,7 @@ export async function POST(request: Request) {
       vatRatePct,
       subscriptionVatRatePct,
       exciseRateEur,
+      contributions,
     });
     return NextResponse.json({ tariffs }, { status: 201 });
   } catch (err) {
@@ -308,6 +361,14 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: 'Créneaux heures creuses invalides.' }, { status: 400 });
       }
       updates.hcSlots = slots;
+    }
+
+    if (body.contributions !== undefined) {
+      const parsedContribs = parseContributions(body.contributions);
+      if (!parsedContribs) {
+        return NextResponse.json({ error: 'Contributions & taxes invalides.' }, { status: 400 });
+      }
+      updates.contributions = parsedContribs;
     }
 
     if (body.tempoConfig !== undefined) {

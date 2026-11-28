@@ -1,5 +1,14 @@
 import { extractCoverSummary } from './covers-utils';
-import { computeDewPointC, computeReadingCost, getParisDateAndTime } from './tariff-engine';
+import {
+  computeDewPointC,
+  computeReadingCost,
+  contributionHtToTtc,
+  DEFAULT_SUBSCRIPTION_VAT_RATE_PCT,
+  DEFAULT_VAT_RATE_PCT,
+  getParisDateAndTime,
+  subscriptionTtcToHt,
+  summarizeTariffContributions,
+} from './tariff-engine';
 import { hasValidHumidityMeasurement, hasValidTempMeasurement } from './device-utils';
 import { findDuplicateCandidates } from './vendors/deduplication';
 import { normalizeSystems } from './vendors/registry';
@@ -14,6 +23,7 @@ import type {
   ContactEventItem,
   ContactSensorStat,
   ContactsPayload,
+  ContributionCostBreakdownItem,
   CoverActivityPoint,
   CoverDeviceHistoryStat,
   CoverEventItem,
@@ -731,12 +741,55 @@ export function buildDashboardPayload(params: {
   // KPIs globaux & répartition tarifaire
   let periodEnergyKwh = 0;
   let periodCostEur = 0;
+  let periodEnergyCostEur = 0;
+  let periodEnergyCostHtEur = 0;
+  let periodVarContribEur = 0;
+  let periodVarContribHtEur = 0;
   let hpEnergyKwh = 0;
   let hcEnergyKwh = 0;
   let baseEnergyKwh = 0;
   let hpCostEur = 0;
   let hcCostEur = 0;
   let baseCostEur = 0;
+
+  interface PerKwhContribAcc {
+    id: string;
+    name: string;
+    vatRatePct: number;
+    costHtEur: number;
+    costTtcEur: number;
+  }
+  const perKwhContribMap = new Map<string, PerKwhContribAcc>();
+
+  const accumulatePerKwhContribs = (
+    tariff: TariffPeriodRecord | null,
+    energyKwh: number,
+    scale = 1,
+    target: Map<string, PerKwhContribAcc> = perKwhContribMap
+  ) => {
+    if (!tariff?.contributions?.length || energyKwh <= 0 || scale <= 0) return;
+    for (const c of tariff.contributions) {
+      if (c.kind !== 'per_kwh' || !Number.isFinite(c.amountHtEur) || c.amountHtEur <= 0) continue;
+      const vatPct =
+        Number.isFinite(c.vatRatePct) && c.vatRatePct >= 0 ? c.vatRatePct : DEFAULT_VAT_RATE_PCT;
+      const key = `${c.name.trim().toLowerCase()}|${vatPct}`;
+      const htDelta = energyKwh * c.amountHtEur * scale;
+      const ttcDelta = energyKwh * contributionHtToTtc(c.amountHtEur, vatPct) * scale;
+      const existing = target.get(key);
+      if (existing) {
+        existing.costHtEur += htDelta;
+        existing.costTtcEur += ttcDelta;
+      } else {
+        target.set(key, {
+          id: c.id,
+          name: c.name,
+          vatRatePct: vatPct,
+          costHtEur: htDelta,
+          costTtcEur: ttcDelta,
+        });
+      }
+    }
+  };
 
   // Regroupement par pièce et par appareil
   const energyByRoomAcc = new Map<
@@ -815,6 +868,11 @@ export function buildDashboardPayload(params: {
       if (countsInTotals) {
         periodEnergyKwh += energy;
         periodCostEur += costInfo.costEur;
+        periodEnergyCostEur += costInfo.energyCostEur;
+        periodEnergyCostHtEur += costInfo.energyCostHtEur;
+        periodVarContribEur += costInfo.variableContributionsCostEur;
+        periodVarContribHtEur += costInfo.variableContributionsCostHtEur;
+        accumulatePerKwhContribs(costInfo.tariff, energy);
 
         if (costInfo.periodType === 'HP') {
           hpEnergyKwh += energy;
@@ -1007,6 +1065,11 @@ export function buildDashboardPayload(params: {
         label: string;
         energyKwh: number;
         costEur: number;
+        energyCostEur: number;
+        energyCostHtEur: number;
+        varContribEur: number;
+        varContribHtEur: number;
+        perKwhItems: Map<string, PerKwhContribAcc>;
         hpKwh: number;
         hcKwh: number;
         baseKwh: number;
@@ -1048,6 +1111,11 @@ export function buildDashboardPayload(params: {
           label: bLabel,
           energyKwh: 0,
           costEur: 0,
+          energyCostEur: 0,
+          energyCostHtEur: 0,
+          varContribEur: 0,
+          varContribHtEur: 0,
+          perKwhItems: new Map<string, PerKwhContribAcc>(),
           hpKwh: 0,
           hcKwh: 0,
           baseKwh: 0,
@@ -1060,6 +1128,11 @@ export function buildDashboardPayload(params: {
           const c = computeReadingCost(dt, sliceEnergy, tariffs);
           acc.energyKwh += sliceEnergy;
           acc.costEur += c.costEur;
+          acc.energyCostEur += c.energyCostEur;
+          acc.energyCostHtEur += c.energyCostHtEur;
+          acc.varContribEur += c.variableContributionsCostEur;
+          acc.varContribHtEur += c.variableContributionsCostHtEur;
+          accumulatePerKwhContribs(c.tariff, sliceEnergy, 1, acc.perKwhItems);
           if (c.periodType === 'HP') {
             acc.hpKwh += sliceEnergy;
             acc.hpCost += c.costEur;
@@ -1083,6 +1156,11 @@ export function buildDashboardPayload(params: {
             acc.energyKwh += sliceEnergy;
             if (middayCost.periodType === 'BASE') {
               acc.costEur += middayCost.costEur;
+              acc.energyCostEur += middayCost.energyCostEur;
+              acc.energyCostHtEur += middayCost.energyCostHtEur;
+              acc.varContribEur += middayCost.variableContributionsCostEur;
+              acc.varContribHtEur += middayCost.variableContributionsCostHtEur;
+              accumulatePerKwhContribs(middayCost.tariff, sliceEnergy, 1, acc.perKwhItems);
               acc.baseKwh += sliceEnergy;
               acc.baseCost += middayCost.costEur;
             } else {
@@ -1092,6 +1170,19 @@ export function buildDashboardPayload(params: {
               const hcC = computeReadingCost(hcDt, hcPart, tariffs);
               const bC = computeReadingCost(dt, basePart, tariffs);
               acc.costEur += hpC.costEur + hcC.costEur + bC.costEur;
+              acc.energyCostEur += hpC.energyCostEur + hcC.energyCostEur + bC.energyCostEur;
+              acc.energyCostHtEur += hpC.energyCostHtEur + hcC.energyCostHtEur + bC.energyCostHtEur;
+              acc.varContribEur +=
+                hpC.variableContributionsCostEur +
+                hcC.variableContributionsCostEur +
+                bC.variableContributionsCostEur;
+              acc.varContribHtEur +=
+                hpC.variableContributionsCostHtEur +
+                hcC.variableContributionsCostHtEur +
+                bC.variableContributionsCostHtEur;
+              accumulatePerKwhContribs(hpC.tariff, hpPart, 1, acc.perKwhItems);
+              accumulatePerKwhContribs(hcC.tariff, hcPart, 1, acc.perKwhItems);
+              accumulatePerKwhContribs(bC.tariff, basePart, 1, acc.perKwhItems);
               acc.hpKwh += hpPart;
               acc.hcKwh += hcPart;
               acc.baseKwh += basePart;
@@ -1103,6 +1194,11 @@ export function buildDashboardPayload(params: {
             const c = computeReadingCost(dt, sliceEnergy, tariffs);
             acc.energyKwh += sliceEnergy;
             acc.costEur += c.costEur;
+            acc.energyCostEur += c.energyCostEur;
+            acc.energyCostHtEur += c.energyCostHtEur;
+            acc.varContribEur += c.variableContributionsCostEur;
+            acc.varContribHtEur += c.variableContributionsCostHtEur;
+            accumulatePerKwhContribs(c.tariff, sliceEnergy, 1, acc.perKwhItems);
             if (c.periodType === 'HP') {
               acc.hpKwh += sliceEnergy;
               acc.hpCost += c.costEur;
@@ -1160,6 +1256,27 @@ export function buildDashboardPayload(params: {
         periodUnmeasuredCostEur += unmCost;
         periodEnergyKwh += unmKwh;
         periodCostEur += unmCost;
+
+        const unmShare = mAcc.costEur > 0 ? unmCost / mAcc.costEur : 0;
+        if (unmShare > 0) {
+          periodEnergyCostEur += mAcc.energyCostEur * unmShare;
+          periodEnergyCostHtEur += mAcc.energyCostHtEur * unmShare;
+          periodVarContribEur += mAcc.varContribEur * unmShare;
+          periodVarContribHtEur += mAcc.varContribHtEur * unmShare;
+          for (const [k, item] of mAcc.perKwhItems.entries()) {
+            const existing = perKwhContribMap.get(k);
+            if (existing) {
+              existing.costHtEur += item.costHtEur * unmShare;
+              existing.costTtcEur += item.costTtcEur * unmShare;
+            } else {
+              perKwhContribMap.set(k, {
+                ...item,
+                costHtEur: item.costHtEur * unmShare,
+                costTtcEur: item.costTtcEur * unmShare,
+              });
+            }
+          }
+        }
 
         const surplusHp = Math.max(0, mAcc.hpKwh - (mb?.hpKwh ?? 0));
         const surplusHc = Math.max(0, mAcc.hcKwh - (mb?.hcKwh ?? 0));
@@ -1338,22 +1455,85 @@ export function buildDashboardPayload(params: {
     standbyPowerW = round2(nightValues[idx]);
   }
 
+  const latestTariff = tariffs.length > 0 ? tariffs[tariffs.length - 1] : null;
+  const fallbackEnergyRate = latestTariff
+    ? latestTariff.baseRateEur ?? latestTariff.hpRateEur ?? 0.2016
+    : 0.2016;
+  const fallbackVarContribRate = latestTariff
+    ? summarizeTariffContributions(latestTariff.contributions).perKwhTtcEur
+    : 0;
   const effectiveRateEurPerKwh =
     periodEnergyKwh > 0
       ? round3(periodCostEur / periodEnergyKwh)
-      : tariffs.length > 0
-        ? tariffs[tariffs.length - 1].baseRateEur ?? tariffs[tariffs.length - 1].hpRateEur ?? 0.2016
-        : 0.2016;
+      : round3(fallbackEnergyRate + fallbackVarContribRate);
 
   const standbyAnnualCostEur = round2(
     (standbyPowerW / 1000) * 24 * 365 * effectiveRateEurPerKwh
   );
 
-  // Abonnement proratisé sur la période
-  const latestTariff = tariffs.length > 0 ? tariffs[tariffs.length - 1] : null;
+  // Abonnement & contributions fixes proratisés sur la période
+  const prorationFactor = effectiveHours / 24 / 30.4375;
   const subscriptionCostEur = latestTariff
-    ? round2((effectiveHours / 24 / 30.4375) * (latestTariff.monthlySubscriptionEur ?? 0))
+    ? round2(prorationFactor * (latestTariff.monthlySubscriptionEur ?? 0))
     : 0;
+  const subscriptionCostHtEur = latestTariff
+    ? round2(
+        prorationFactor *
+          subscriptionTtcToHt(
+            latestTariff.monthlySubscriptionEur ?? 0,
+            latestTariff.subscriptionVatRatePct ?? DEFAULT_SUBSCRIPTION_VAT_RATE_PCT
+          )
+      )
+    : 0;
+
+  let fixedContribHtAcc = 0;
+  let fixedContribTtcAcc = 0;
+  const contributionsBreakdown: ContributionCostBreakdownItem[] = Array.from(
+    perKwhContribMap.values()
+  ).map((item) => ({
+    id: item.id,
+    name: item.name,
+    kind: 'per_kwh',
+    costHtEur: round2(item.costHtEur),
+    costTtcEur: round2(item.costTtcEur),
+    vatRatePct: item.vatRatePct,
+  }));
+
+  if (latestTariff?.contributions?.length) {
+    for (const c of latestTariff.contributions) {
+      if (c.kind !== 'monthly' || !Number.isFinite(c.amountHtEur) || c.amountHtEur <= 0) continue;
+      const vatPct =
+        Number.isFinite(c.vatRatePct) && c.vatRatePct >= 0 ? c.vatRatePct : DEFAULT_VAT_RATE_PCT;
+      const costHt = prorationFactor * c.amountHtEur;
+      const costTtc = prorationFactor * contributionHtToTtc(c.amountHtEur, vatPct);
+      fixedContribHtAcc += costHt;
+      fixedContribTtcAcc += costTtc;
+      contributionsBreakdown.push({
+        id: c.id,
+        name: c.name,
+        kind: 'monthly',
+        costHtEur: round2(costHt),
+        costTtcEur: round2(costTtc),
+        vatRatePct: vatPct,
+      });
+    }
+  }
+
+  const energyCostEur = round2(periodEnergyCostEur);
+  const energyCostHtEur = round2(periodEnergyCostHtEur);
+  const variableContributionsCostEur = round2(periodVarContribEur);
+  const variableContributionsCostHtEur = round2(periodVarContribHtEur);
+  const fixedContributionsCostEur = round2(fixedContribTtcAcc);
+  const fixedContributionsCostHtEur = round2(fixedContribHtAcc);
+  const contributionsCostEur = round2(variableContributionsCostEur + fixedContributionsCostEur);
+  const contributionsCostHtEur = round2(
+    variableContributionsCostHtEur + fixedContributionsCostHtEur
+  );
+  const totalPeriodCostEur = round2(energyCostEur + subscriptionCostEur + contributionsCostEur);
+  const totalPeriodCostHtEur = round2(
+    energyCostHtEur + subscriptionCostHtEur + contributionsCostHtEur
+  );
+  const totalPeriodVatEur = round2(Math.max(0, totalPeriodCostEur - totalPeriodCostHtEur));
 
   // Comparaison avec la période précédente équivalente & projection fin de mois
   const durationMs = Math.max(3_600_000, endMs - startMs);
@@ -1448,13 +1628,16 @@ export function buildDashboardPayload(params: {
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const effectiveDays = effectiveHours / 24;
   const monthlySub = latestTariff?.monthlySubscriptionEur ?? 0;
+  const monthlyFixedContribTtc = latestTariff
+    ? summarizeTariffContributions(latestTariff.contributions).monthlyTtcEur
+    : 0;
   const projectedMonthEnergyKwh =
     periodEnergyKwh > 0 && effectiveDays > 0
       ? round2((periodEnergyKwh / effectiveDays) * daysInMonth)
       : null;
   const projectedMonthCostEur =
     periodEnergyKwh > 0 && effectiveDays > 0
-      ? round2((periodCostEur / effectiveDays) * daysInMonth + monthlySub)
+      ? round2((periodCostEur / effectiveDays) * daysInMonth + monthlySub + monthlyFixedContribTtc)
       : null;
 
   // Climat moyen
@@ -1784,7 +1967,20 @@ export function buildDashboardPayload(params: {
       totalPowerDevices: powerDevices.length,
       periodEnergyKwh: round3(periodEnergyKwh),
       periodCostEur: round2(periodCostEur),
+      energyCostEur,
+      energyCostHtEur,
       subscriptionCostEur,
+      subscriptionCostHtEur,
+      variableContributionsCostEur,
+      variableContributionsCostHtEur,
+      fixedContributionsCostEur,
+      fixedContributionsCostHtEur,
+      contributionsCostEur,
+      contributionsCostHtEur,
+      totalPeriodCostHtEur,
+      totalPeriodVatEur,
+      totalPeriodCostEur,
+      contributionsBreakdown,
       effectiveRateEurPerKwh,
       hpEnergyKwh: round3(hpEnergyKwh),
       hcEnergyKwh: round3(hcEnergyKwh),

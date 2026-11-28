@@ -4,7 +4,13 @@ import { tariffPeriods } from '@/db/schema';
 import { getDemoState } from '@/lib/demo-store';
 import { ensureSchemaInitialized, mapDbTariff } from '@/lib/services/shared';
 import { normalizeTariffTimeline } from '@/lib/tariff-engine';
-import type { HcSlot, TariffMode, TariffPeriodRecord, TempoConfig } from '@/types';
+import type {
+  HcSlot,
+  TariffContribution,
+  TariffMode,
+  TariffPeriodRecord,
+  TempoConfig,
+} from '@/types';
 
 export interface TariffInput {
   label: string;
@@ -20,6 +26,7 @@ export interface TariffInput {
   vatRatePct?: number;
   subscriptionVatRatePct?: number;
   exciseRateEur?: number;
+  contributions?: TariffContribution[];
 }
 
 async function syncTariffTimelineInDb(db: AppDatabase): Promise<TariffPeriodRecord[]> {
@@ -45,6 +52,7 @@ export async function createTariff(input: TariffInput): Promise<TariffPeriodReco
     vatRatePct: input.vatRatePct ?? 20,
     subscriptionVatRatePct: input.subscriptionVatRatePct ?? 20,
     exciseRateEur: input.exciseRateEur ?? 0,
+    contributions: input.contributions ?? [],
   };
 
   const db = getDb();

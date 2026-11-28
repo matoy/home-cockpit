@@ -17,6 +17,7 @@ import type {
   DpConfig,
   HcSlot,
   RawDpStatus,
+  TariffContribution,
   TempoConfig,
   VendorId,
 } from '@/types';
@@ -136,6 +137,7 @@ export const tariffPeriods = pgTable('tariff_periods', {
   vatRatePct: real('vat_rate_pct').default(20).notNull(),
   subscriptionVatRatePct: real('subscription_vat_rate_pct').default(20).notNull(),
   exciseRateEur: real('excise_rate_eur').default(0).notNull(),
+  contributions: jsonb('contributions').$type<TariffContribution[]>().default([]).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

@@ -610,28 +610,82 @@ export function EnergyTab({ data }: EnergyTabProps) {
             </div>
           </div>
 
-          <div className="mt-4 pt-4 border-t border-slate-800 space-y-1.5 text-xs">
-            <div className="flex justify-between text-slate-400">
-              <span>{t('energy.effectiveRateLabel')}</span>
-              <span className="font-mono text-white font-medium">
-                {data.kpis.effectiveRateEurPerKwh.toFixed(4)} €/kWh
-              </span>
-            </div>
-            <div className="flex justify-between text-slate-400">
-              <span>{t('energy.proratedSubLabel')}</span>
-              <span className="font-mono text-slate-300">
-                +{data.kpis.subscriptionCostEur.toFixed(2)} €
-              </span>
-            </div>
-            <div className="flex justify-between text-slate-200 font-semibold pt-1">
-              <span className="flex items-center gap-1">
-                <Zap className="h-3.5 w-3.5 text-indigo-400" /> {t('energy.estimatedTotalLabel')}
-              </span>
-              <span className="text-emerald-400">
-                {(data.kpis.periodCostEur + data.kpis.subscriptionCostEur).toFixed(2)} €
-              </span>
-            </div>
-          </div>
+          {(() => {
+            const energyCostEur = data.kpis.energyCostEur ?? data.kpis.periodCostEur;
+            const energyCostHtEur = data.kpis.energyCostHtEur ?? 0;
+            const subCostEur = data.kpis.subscriptionCostEur;
+            const subCostHtEur = data.kpis.subscriptionCostHtEur ?? 0;
+            const contribsCostEur = data.kpis.contributionsCostEur ?? 0;
+            const contribsCostHtEur = data.kpis.contributionsCostHtEur ?? 0;
+            const totalHtEur =
+              data.kpis.totalPeriodCostHtEur ?? energyCostHtEur + subCostHtEur + contribsCostHtEur;
+            const totalVatEur = data.kpis.totalPeriodVatEur ?? 0;
+            const totalTtcEur =
+              data.kpis.totalPeriodCostEur ?? energyCostEur + subCostEur + contribsCostEur;
+            const contribsItems = data.kpis.contributionsBreakdown ?? [];
+
+            return (
+              <div className="mt-4 pt-4 border-t border-slate-800 space-y-1.5 text-xs">
+                <div className="flex justify-between text-slate-400">
+                  <span>{t('energy.effectiveRateLabel')}</span>
+                  <span className="font-mono text-white font-medium">
+                    {data.kpis.effectiveRateEurPerKwh.toFixed(4)} €/kWh
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>{t('energy.invoiceEnergyLabel')}</span>
+                  <span className="font-mono text-slate-200">
+                    {energyCostEur.toFixed(2)} €{' '}
+                    <span className="text-slate-500">({energyCostHtEur.toFixed(2)} € HT)</span>
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>{t('energy.proratedSubLabel')}</span>
+                  <span className="font-mono text-slate-200">
+                    +{subCostEur.toFixed(2)} €{' '}
+                    <span className="text-slate-500">({subCostHtEur.toFixed(2)} € HT)</span>
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>{t('energy.invoiceContributionsLabel')}</span>
+                  <span className="font-mono text-amber-300">
+                    +{contribsCostEur.toFixed(2)} €{' '}
+                    <span className="text-slate-500">({contribsCostHtEur.toFixed(2)} € HT)</span>
+                  </span>
+                </div>
+                {contribsItems.length > 0 && (
+                  <div className="pl-3 space-y-0.5 border-l border-slate-800 text-[11px] text-slate-400">
+                    {contribsItems.map((item) => (
+                      <div key={`${item.id}-${item.kind}`} className="flex justify-between gap-2">
+                        <span className="truncate">
+                          {item.name} ({item.vatRatePct}%)
+                        </span>
+                        <span className="font-mono text-slate-300 shrink-0">
+                          +{item.costTtcEur.toFixed(2)} €
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="pt-1.5 mt-1 border-t border-slate-800/80 flex justify-between text-[11px] text-slate-400">
+                  <span>
+                    {t('energy.invoiceTotalHtLabel')}:{' '}
+                    <span className="font-mono text-slate-300">{totalHtEur.toFixed(2)} €</span>
+                  </span>
+                  <span>
+                    {t('energy.invoiceVatLabel')}:{' '}
+                    <span className="font-mono text-slate-300">{totalVatEur.toFixed(2)} €</span>
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-200 font-semibold pt-0.5">
+                  <span className="flex items-center gap-1">
+                    <Zap className="h-3.5 w-3.5 text-indigo-400" /> {t('energy.invoiceTotalTtcLabel')}
+                  </span>
+                  <span className="text-emerald-400 font-mono">{totalTtcEur.toFixed(2)} €</span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>

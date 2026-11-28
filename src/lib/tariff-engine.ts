@@ -2,6 +2,7 @@ import type {
   EnergyMode,
   EnergySource,
   HcSlot,
+  TariffContribution,
   TariffPeriodRecord,
   TempoConfig,
   TempoDayColor,
@@ -13,6 +14,121 @@ export const DEFAULT_EXCISE_RATE_EUR = 0;
 
 function roundTax6(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+/**
+ * Convertit un prix HT (contribution/taxe) en TTC selon la formule : HT × (1 + TVA/100).
+ */
+export function contributionHtToTtc(
+  amountHtEur: number,
+  vatRatePct: number = DEFAULT_VAT_RATE_PCT
+): number {
+  if (!Number.isFinite(amountHtEur) || amountHtEur < 0) return 0;
+  const safeVat = Number.isFinite(vatRatePct) && vatRatePct >= 0 ? vatRatePct : DEFAULT_VAT_RATE_PCT;
+  return roundTax6(amountHtEur * (1 + safeVat / 100));
+}
+
+/**
+ * Convertit un montant TTC (contribution/taxe) en HT : TTC / (1 + TVA/100).
+ */
+export function contributionTtcToHt(
+  amountTtcEur: number,
+  vatRatePct: number = DEFAULT_VAT_RATE_PCT
+): number {
+  if (!Number.isFinite(amountTtcEur) || amountTtcEur < 0) return 0;
+  const safeVat = Number.isFinite(vatRatePct) && vatRatePct >= 0 ? vatRatePct : DEFAULT_VAT_RATE_PCT;
+  return roundTax6(amountTtcEur / (1 + safeVat / 100));
+}
+
+/**
+ * Nettoie et normalise un tableau brut de contributions & taxes.
+ */
+export function sanitizeTariffContributions(raw: unknown): TariffContribution[] {
+  if (!Array.isArray(raw)) return [];
+  const result: TariffContribution[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const item = raw[i];
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const rec = item as Record<string, unknown>;
+    const name = typeof rec.name === 'string' ? rec.name.trim().slice(0, 80) : '';
+    if (!name) continue;
+    const kind = rec.kind === 'monthly' ? 'monthly' : rec.kind === 'per_kwh' ? 'per_kwh' : null;
+    if (!kind) continue;
+    const amountHtEur =
+      typeof rec.amountHtEur === 'number' && Number.isFinite(rec.amountHtEur) && rec.amountHtEur >= 0
+        ? Math.min(500, rec.amountHtEur)
+        : 0;
+    const vatRatePct =
+      typeof rec.vatRatePct === 'number' &&
+      Number.isFinite(rec.vatRatePct) &&
+      rec.vatRatePct >= 0 &&
+      rec.vatRatePct <= 100
+        ? rec.vatRatePct
+        : DEFAULT_VAT_RATE_PCT;
+    const rawId = typeof rec.id === 'string' ? rec.id.trim().slice(0, 60) : '';
+    result.push({
+      id: rawId || `contrib_${i + 1}`,
+      name,
+      kind,
+      amountHtEur: roundTax6(amountHtEur),
+      vatRatePct,
+    });
+  }
+  return result;
+}
+
+export interface TariffContributionsSummary {
+  perKwhHtEur: number;
+  perKwhTtcEur: number;
+  perKwhVatEur: number;
+  monthlyHtEur: number;
+  monthlyTtcEur: number;
+  monthlyVatEur: number;
+}
+
+/**
+ * Agrège les contributions variables (€/kWh) et fixes (€/mois) en HT, TVA et TTC.
+ */
+export function summarizeTariffContributions(
+  contributions?: TariffContribution[] | null
+): TariffContributionsSummary {
+  if (!contributions || contributions.length === 0) {
+    return {
+      perKwhHtEur: 0,
+      perKwhTtcEur: 0,
+      perKwhVatEur: 0,
+      monthlyHtEur: 0,
+      monthlyTtcEur: 0,
+      monthlyVatEur: 0,
+    };
+  }
+
+  let perKwhHt = 0;
+  let perKwhTtc = 0;
+  let monthlyHt = 0;
+  let monthlyTtc = 0;
+
+  for (const c of contributions) {
+    if (!c || !Number.isFinite(c.amountHtEur) || c.amountHtEur < 0) continue;
+    const vat = Number.isFinite(c.vatRatePct) && c.vatRatePct >= 0 ? c.vatRatePct : DEFAULT_VAT_RATE_PCT;
+    const ttc = contributionHtToTtc(c.amountHtEur, vat);
+    if (c.kind === 'monthly') {
+      monthlyHt += c.amountHtEur;
+      monthlyTtc += ttc;
+    } else {
+      perKwhHt += c.amountHtEur;
+      perKwhTtc += ttc;
+    }
+  }
+
+  return {
+    perKwhHtEur: roundTax6(perKwhHt),
+    perKwhTtcEur: roundTax6(perKwhTtc),
+    perKwhVatEur: roundTax6(Math.max(0, perKwhTtc - perKwhHt)),
+    monthlyHtEur: roundTax6(monthlyHt),
+    monthlyTtcEur: roundTax6(monthlyTtc),
+    monthlyVatEur: roundTax6(Math.max(0, monthlyTtc - monthlyHt)),
+  };
 }
 
 /**
@@ -246,8 +362,13 @@ export function findTariffForDate(
 export interface ReadingCostResult {
   costEur: number;
   rateEur: number;
+  energyCostEur: number;
+  energyCostHtEur: number;
+  variableContributionsCostEur: number;
+  variableContributionsCostHtEur: number;
   periodType: 'BASE' | 'HP' | 'HC';
   tariffLabel: string;
+  tariff: TariffPeriodRecord | null;
 }
 
 export function computeReadingCost(
@@ -259,8 +380,13 @@ export function computeReadingCost(
     return {
       costEur: 0,
       rateEur: 0,
+      energyCostEur: 0,
+      energyCostHtEur: 0,
+      variableContributionsCostEur: 0,
+      variableContributionsCostHtEur: 0,
       periodType: 'BASE',
       tariffLabel: 'Aucun',
+      tariff: null,
     };
   }
 
@@ -269,13 +395,22 @@ export function computeReadingCost(
 
   if (!tariff) {
     const fallbackRate = 0.2016;
+    const energyCostEur = energyKwh * fallbackRate;
     return {
-      costEur: energyKwh * fallbackRate,
+      costEur: energyCostEur,
       rateEur: fallbackRate,
+      energyCostEur,
+      energyCostHtEur: energyKwh * kwhTtcToHt(fallbackRate, DEFAULT_VAT_RATE_PCT),
+      variableContributionsCostEur: 0,
+      variableContributionsCostHtEur: 0,
       periodType: 'BASE',
       tariffLabel: 'Tarif par défaut',
+      tariff: null,
     };
   }
+
+  let periodType: 'BASE' | 'HP' | 'HC' = 'BASE';
+  let energyRateEur = tariff.baseRateEur ?? tariff.hpRateEur ?? 0.2016;
 
   if (tariff.mode === 'TEMPO') {
     const slots = tariff.hcSlots?.length
@@ -284,7 +419,8 @@ export function computeReadingCost(
     const inHc = slots.some((slot) => isTimeInHcSlot(timeStr, slot));
     const tc: TempoConfig = { ...DEFAULT_TEMPO_CONFIG, ...(tariff.tempoConfig ?? {}) };
     const color = getTempoDayColor(dateStr, tc);
-    const rate =
+    periodType = inHc ? 'HC' : 'HP';
+    energyRateEur =
       color === 'RED'
         ? inHc
           ? tc.redHcRateEur
@@ -296,32 +432,32 @@ export function computeReadingCost(
           : inHc
             ? tc.blueHcRateEur
             : tc.blueHpRateEur;
-    return {
-      costEur: energyKwh * rate,
-      rateEur: rate,
-      periodType: inHc ? 'HC' : 'HP',
-      tariffLabel: tariff.label,
-    };
-  }
-
-  if (tariff.mode === 'HP_HC') {
+  } else if (tariff.mode === 'HP_HC') {
     const slots = tariff.hcSlots ?? [];
     const inHc = slots.some((slot) => isTimeInHcSlot(timeStr, slot));
-    const rate = inHc ? tariff.hcRateEur ?? tariff.baseRateEur ?? 0.16 : tariff.hpRateEur ?? tariff.baseRateEur ?? 0.22;
-    return {
-      costEur: energyKwh * rate,
-      rateEur: rate,
-      periodType: inHc ? 'HC' : 'HP',
-      tariffLabel: tariff.label,
-    };
+    periodType = inHc ? 'HC' : 'HP';
+    energyRateEur = inHc
+      ? tariff.hcRateEur ?? tariff.baseRateEur ?? 0.16
+      : tariff.hpRateEur ?? tariff.baseRateEur ?? 0.22;
   }
 
-  const baseRate = tariff.baseRateEur ?? tariff.hpRateEur ?? 0.2016;
+  const vatPct = tariff.vatRatePct ?? DEFAULT_VAT_RATE_PCT;
+  const energyCostEur = energyKwh * energyRateEur;
+  const energyCostHtEur = energyKwh * kwhTtcToHt(energyRateEur, vatPct);
+  const contribSummary = summarizeTariffContributions(tariff.contributions);
+  const variableContributionsCostEur = energyKwh * contribSummary.perKwhTtcEur;
+  const variableContributionsCostHtEur = energyKwh * contribSummary.perKwhHtEur;
+
   return {
-    costEur: energyKwh * baseRate,
-    rateEur: baseRate,
-    periodType: 'BASE',
+    costEur: energyCostEur + variableContributionsCostEur,
+    rateEur: energyRateEur + contribSummary.perKwhTtcEur,
+    energyCostEur,
+    energyCostHtEur,
+    variableContributionsCostEur,
+    variableContributionsCostHtEur,
+    periodType,
     tariffLabel: tariff.label,
+    tariff,
   };
 }
 
@@ -388,18 +524,36 @@ export function simulateContracts(params: {
   hpRate: number;
   hcRate: number;
   tempoConfig?: TempoConfig | null;
+  perKwhContributionsTtc?: number;
+  fixedPeriodTtc?: number;
 }): ContractSimulationResult {
-  const { totalKwh, hpKwh, hcKwh, baseRate, hpRate, hcRate, tempoConfig } = params;
+  const {
+    totalKwh,
+    hpKwh,
+    hcKwh,
+    baseRate,
+    hpRate,
+    hcRate,
+    tempoConfig,
+    perKwhContributionsTtc = 0,
+    fixedPeriodTtc = 0,
+  } = params;
   const tc: TempoConfig = { ...DEFAULT_TEMPO_CONFIG, ...(tempoConfig ?? {}) };
+  const safeContrib =
+    Number.isFinite(perKwhContributionsTtc) && perKwhContributionsTtc >= 0
+      ? perKwhContributionsTtc
+      : 0;
+  const safeFixed =
+    Number.isFinite(fixedPeriodTtc) && fixedPeriodTtc >= 0 ? fixedPeriodTtc : 0;
 
   const weightedTempoHp =
-    (300 * tc.blueHpRateEur + 43 * tc.whiteHpRateEur + 22 * tc.redHpRateEur) / 365;
+    (300 * tc.blueHpRateEur + 43 * tc.whiteHpRateEur + 22 * tc.redHpRateEur) / 365 + safeContrib;
   const weightedTempoHc =
-    (300 * tc.blueHcRateEur + 43 * tc.whiteHcRateEur + 22 * tc.redHcRateEur) / 365;
+    (300 * tc.blueHcRateEur + 43 * tc.whiteHcRateEur + 22 * tc.redHcRateEur) / 365 + safeContrib;
 
-  const baseCost = totalKwh * baseRate;
-  const hpHcCost = hpKwh * hpRate + hcKwh * hcRate;
-  const tempoCost = hpKwh * weightedTempoHp + hcKwh * weightedTempoHc;
+  const baseCost = totalKwh * (baseRate + safeContrib) + safeFixed;
+  const hpHcCost = hpKwh * (hpRate + safeContrib) + hcKwh * (hcRate + safeContrib) + safeFixed;
+  const tempoCost = hpKwh * weightedTempoHp + hcKwh * weightedTempoHc + safeFixed;
 
   const minCost = Math.min(baseCost, hpHcCost, tempoCost);
   const cheapest: ContractSimulationResult['cheapest'] =

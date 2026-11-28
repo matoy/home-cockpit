@@ -232,6 +232,7 @@ export function mapDbTariff(row: typeof tariffPeriods.$inferSelect): TariffPerio
     vatRatePct: row.vatRatePct ?? 20,
     subscriptionVatRatePct: row.subscriptionVatRatePct ?? 20,
     exciseRateEur: row.exciseRateEur ?? 0,
+    contributions: Array.isArray(row.contributions) ? row.contributions : [],
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -330,6 +331,7 @@ export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'automations' AND column_name = 'vendor')
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'tariff_periods' AND column_name = 'tempo_config')
             AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'tariff_periods' AND column_name = 'excise_rate_eur')
+            AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'tariff_periods' AND column_name = 'contributions')
           ) AS ready
         `);
         if (isSchemaProbeReady(probe)) {
@@ -444,6 +446,7 @@ export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
           "vat_rate_pct" real DEFAULT 20 NOT NULL,
           "subscription_vat_rate_pct" real DEFAULT 20 NOT NULL,
           "excise_rate_eur" real DEFAULT 0 NOT NULL,
+          "contributions" jsonb DEFAULT '[]'::jsonb NOT NULL,
           "created_at" timestamp with time zone DEFAULT now() NOT NULL
         )
       `);
@@ -458,6 +461,52 @@ export async function ensureSchemaInitialized(db: AppDatabase): Promise<void> {
       `);
       await db.execute(sql`
         ALTER TABLE "tariff_periods" ADD COLUMN IF NOT EXISTS "excise_rate_eur" real DEFAULT 0 NOT NULL
+      `);
+      await db.execute(sql`
+        ALTER TABLE "tariff_periods" ADD COLUMN IF NOT EXISTS "contributions" jsonb DEFAULT '[]'::jsonb NOT NULL
+      `);
+      await db.execute(sql`
+        UPDATE "tariff_periods"
+        SET
+          "contributions" = jsonb_build_array(
+            jsonb_build_object(
+              'id', 'excise',
+              'name', 'Accise sur l''électricité',
+              'kind', 'per_kwh',
+              'amountHtEur', "excise_rate_eur",
+              'vatRatePct', "vat_rate_pct"
+            )
+          ),
+          "base_rate_eur" = CASE
+            WHEN "base_rate_eur" IS NOT NULL
+            THEN GREATEST(0, "base_rate_eur" - "excise_rate_eur" * (1 + "vat_rate_pct" / 100.0))
+            ELSE NULL
+          END,
+          "hp_rate_eur" = CASE
+            WHEN "hp_rate_eur" IS NOT NULL
+            THEN GREATEST(0, "hp_rate_eur" - "excise_rate_eur" * (1 + "vat_rate_pct" / 100.0))
+            ELSE NULL
+          END,
+          "hc_rate_eur" = CASE
+            WHEN "hc_rate_eur" IS NOT NULL
+            THEN GREATEST(0, "hc_rate_eur" - "excise_rate_eur" * (1 + "vat_rate_pct" / 100.0))
+            ELSE NULL
+          END,
+          "tempo_config" = CASE
+            WHEN "tempo_config" IS NOT NULL
+            THEN jsonb_build_object(
+              'blueHpRateEur', GREATEST(0, COALESCE(("tempo_config"->>'blueHpRateEur')::double precision, 0) - "excise_rate_eur" * (1 + "vat_rate_pct" / 100.0)),
+              'blueHcRateEur', GREATEST(0, COALESCE(("tempo_config"->>'blueHcRateEur')::double precision, 0) - "excise_rate_eur" * (1 + "vat_rate_pct" / 100.0)),
+              'whiteHpRateEur', GREATEST(0, COALESCE(("tempo_config"->>'whiteHpRateEur')::double precision, 0) - "excise_rate_eur" * (1 + "vat_rate_pct" / 100.0)),
+              'whiteHcRateEur', GREATEST(0, COALESCE(("tempo_config"->>'whiteHcRateEur')::double precision, 0) - "excise_rate_eur" * (1 + "vat_rate_pct" / 100.0)),
+              'redHpRateEur', GREATEST(0, COALESCE(("tempo_config"->>'redHpRateEur')::double precision, 0) - "excise_rate_eur" * (1 + "vat_rate_pct" / 100.0)),
+              'redHcRateEur', GREATEST(0, COALESCE(("tempo_config"->>'redHcRateEur')::double precision, 0) - "excise_rate_eur" * (1 + "vat_rate_pct" / 100.0))
+            ) || CASE WHEN "tempo_config" ? 'dayColors' THEN jsonb_build_object('dayColors', "tempo_config"->'dayColors') ELSE '{}'::jsonb END
+            ELSE NULL
+          END,
+          "excise_rate_eur" = 0
+        WHERE "excise_rate_eur" > 0
+          AND jsonb_array_length(COALESCE("contributions", '[]'::jsonb)) = 0
       `);
       await db.execute(sql`
         CREATE TABLE IF NOT EXISTS "collection_logs" (
@@ -704,6 +753,7 @@ export async function seedDefaultDataIfEmpty(db: AppDatabase): Promise<void> {
           vatRatePct: 20,
           subscriptionVatRatePct: 20,
           exciseRateEur: 0,
+          contributions: [],
         });
       }
     })().catch((err) => {

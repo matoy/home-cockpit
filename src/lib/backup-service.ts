@@ -16,6 +16,7 @@ import {
 import { safeEqualString } from './http-utils';
 import { ensureSchemaInitialized, resetSeedCheckCache } from './services/shared';
 import { getDemoState, type DemoVendorConnectionState } from './demo-store';
+import { contributionHtToTtc, sanitizeTariffContributions } from './tariff-engine';
 import { isValidVendorId, normalizeSystems } from './vendors/registry';
 import type {
   AutomationAction,
@@ -291,6 +292,9 @@ export async function exportBackupArchive(options?: {
       tariffPeriods: state.tariffs.map((t) => ({
         ...t,
         hcSlots: t.hcSlots.map((s) => ({ ...s })),
+        contributions: Array.isArray(t.contributions)
+          ? t.contributions.map((c) => ({ ...c }))
+          : [],
       })),
       automations: state.automations.map((a) => ({ ...a })),
       vendorConnections: exportedVendorConnections,
@@ -427,6 +431,7 @@ export async function exportBackupArchive(options?: {
         vatRatePct: t.vatRatePct ?? 20,
         subscriptionVatRatePct: t.subscriptionVatRatePct ?? 20,
         exciseRateEur: t.exciseRateEur ?? 0,
+        contributions: Array.isArray(t.contributions) ? t.contributions : [],
         createdAt: t.createdAt.toISOString(),
       })),
       automations: automationRows.map((a) => ({
@@ -712,7 +717,8 @@ export function parseAndValidateBackupBuffer(rawBuffer: Buffer): {
     const label = toStringOrNull(rec?.label);
     const startDate = toStringOrNull(rec?.startDate);
     if (!rec || !label || !startDate) continue;
-    const mode: TariffMode = rec.mode === 'HP_HC' ? 'HP_HC' : 'BASE';
+    const mode: TariffMode =
+      rec.mode === 'TEMPO' ? 'TEMPO' : rec.mode === 'HP_HC' ? 'HP_HC' : 'BASE';
     const slots: HcSlot[] = Array.isArray(rec.hcSlots)
       ? rec.hcSlots
           .map(asRecord)
@@ -722,21 +728,63 @@ export function parseAndValidateBackupBuffer(rawBuffer: Buffer): {
           )
           .map((s) => ({ start: s.start as string, end: s.end as string }))
       : [];
+    const parsedVatRatePct = toFiniteNumber(rec.vatRatePct, 20);
+    const legacyExciseRateEur = toFiniteNumber(rec.exciseRateEur, 0);
+    let parsedContributions = sanitizeTariffContributions(rec.contributions);
+    let baseRateEur = toNullableNumber(rec.baseRateEur);
+    let hpRateEur = toNullableNumber(rec.hpRateEur);
+    let hcRateEur = toNullableNumber(rec.hcRateEur);
+    const rawTempo = asRecord(rec.tempoConfig) as TariffPeriodRecord['tempoConfig'] | null;
+    let tempoConfig: TariffPeriodRecord['tempoConfig'] = rawTempo ? { ...rawTempo } : null;
+    let finalExciseRateEur = legacyExciseRateEur;
+
+    // Rétrocompatibilité des anciennes sauvegardes : convertir exciseRateEur > 0 en ligne de contribution dédiée
+    if (parsedContributions.length === 0 && legacyExciseRateEur > 0) {
+      const legacyExciseTtc = contributionHtToTtc(legacyExciseRateEur, parsedVatRatePct);
+      parsedContributions = [
+        {
+          id: 'excise',
+          name: "Accise sur l'électricité",
+          kind: 'per_kwh',
+          amountHtEur: legacyExciseRateEur,
+          vatRatePct: parsedVatRatePct,
+        },
+      ];
+      const stripExcise = (val: number | null) =>
+        val !== null ? Math.max(0, Math.round((val - legacyExciseTtc) * 1_000_000) / 1_000_000) : null;
+      baseRateEur = stripExcise(baseRateEur);
+      hpRateEur = stripExcise(hpRateEur);
+      hcRateEur = stripExcise(hcRateEur);
+      if (tempoConfig) {
+        tempoConfig = {
+          ...tempoConfig,
+          blueHpRateEur: stripExcise(tempoConfig.blueHpRateEur) ?? 0,
+          blueHcRateEur: stripExcise(tempoConfig.blueHcRateEur) ?? 0,
+          whiteHpRateEur: stripExcise(tempoConfig.whiteHpRateEur) ?? 0,
+          whiteHcRateEur: stripExcise(tempoConfig.whiteHcRateEur) ?? 0,
+          redHpRateEur: stripExcise(tempoConfig.redHpRateEur) ?? 0,
+          redHcRateEur: stripExcise(tempoConfig.redHcRateEur) ?? 0,
+        };
+      }
+      finalExciseRateEur = 0;
+    }
+
     parsedTariffs.push({
       id: Math.trunc(toFiniteNumber(rec.id, parsedTariffs.length + 1)),
       label,
       startDate,
       endDate: toStringOrNull(rec.endDate),
       mode,
-      baseRateEur: toNullableNumber(rec.baseRateEur),
-      hpRateEur: toNullableNumber(rec.hpRateEur),
-      hcRateEur: toNullableNumber(rec.hcRateEur),
+      baseRateEur,
+      hpRateEur,
+      hcRateEur,
       hcSlots: slots,
-      tempoConfig: (asRecord(rec.tempoConfig) as TariffPeriodRecord['tempoConfig']) ?? null,
+      tempoConfig,
       monthlySubscriptionEur: toFiniteNumber(rec.monthlySubscriptionEur, 0),
-      vatRatePct: toFiniteNumber(rec.vatRatePct, 20),
+      vatRatePct: parsedVatRatePct,
       subscriptionVatRatePct: toFiniteNumber(rec.subscriptionVatRatePct, 20),
-      exciseRateEur: toFiniteNumber(rec.exciseRateEur, 0),
+      exciseRateEur: finalExciseRateEur,
+      contributions: parsedContributions,
       createdAt: normalizeIsoDate(rec.createdAt),
     });
   }
@@ -1078,6 +1126,9 @@ export async function importBackupArchive(
       state.tariffs = archive.data.tariffPeriods.map((t) => ({
         ...t,
         hcSlots: t.hcSlots.map((s) => ({ ...s })),
+        contributions: Array.isArray(t.contributions)
+          ? t.contributions.map((c) => ({ ...c }))
+          : [],
       }));
       imported.tariffPeriods = state.tariffs.length;
 
@@ -1207,12 +1258,22 @@ export async function importBackupArchive(
             cur.label.trim().toLowerCase() === t.label.trim().toLowerCase()
         );
         if (existing) {
-          Object.assign(existing, { ...t, id: existing.id, hcSlots: t.hcSlots.map((s) => ({ ...s })) });
+          Object.assign(existing, {
+            ...t,
+            id: existing.id,
+            hcSlots: t.hcSlots.map((s) => ({ ...s })),
+            contributions: Array.isArray(t.contributions)
+              ? t.contributions.map((c) => ({ ...c }))
+              : [],
+          });
         } else {
           state.tariffs.push({
             ...t,
             id: state.nextTariffId++,
             hcSlots: t.hcSlots.map((s) => ({ ...s })),
+            contributions: Array.isArray(t.contributions)
+              ? t.contributions.map((c) => ({ ...c }))
+              : [],
           });
         }
         imported.tariffPeriods++;
@@ -1461,6 +1522,7 @@ export async function importBackupArchive(
         vatRatePct: t.vatRatePct ?? 20,
         subscriptionVatRatePct: t.subscriptionVatRatePct ?? 20,
         exciseRateEur: t.exciseRateEur ?? 0,
+        contributions: Array.isArray(t.contributions) ? t.contributions : [],
         createdAt: new Date(t.createdAt),
       });
       imported.tariffPeriods++;
@@ -1772,6 +1834,7 @@ export async function importBackupArchive(
             vatRatePct: t.vatRatePct ?? 20,
             subscriptionVatRatePct: t.subscriptionVatRatePct ?? 20,
             exciseRateEur: t.exciseRateEur ?? 0,
+            contributions: Array.isArray(t.contributions) ? t.contributions : [],
           })
           .where(eq(tariffPeriods.id, existing.id));
       } else {
@@ -1789,6 +1852,7 @@ export async function importBackupArchive(
           vatRatePct: t.vatRatePct ?? 20,
           subscriptionVatRatePct: t.subscriptionVatRatePct ?? 20,
           exciseRateEur: t.exciseRateEur ?? 0,
+          contributions: Array.isArray(t.contributions) ? t.contributions : [],
           createdAt: new Date(t.createdAt),
         });
       }

@@ -118,11 +118,27 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
             )}
           </div>
           <p className="mt-2 text-xs text-slate-400">
-            {t('overview.avgPrice', {
-              rate: kpis.effectiveRateEurPerKwh.toFixed(4),
-              sub: kpis.subscriptionCostEur.toFixed(2),
-            })}
+            {(kpis.contributionsCostEur ?? 0) > 0
+              ? t('overview.avgPriceWithTaxes', {
+                  rate: kpis.effectiveRateEurPerKwh.toFixed(4),
+                  sub: kpis.subscriptionCostEur.toFixed(2),
+                  taxes: (kpis.contributionsCostEur ?? 0).toFixed(2),
+                })
+              : t('overview.avgPrice', {
+                  rate: kpis.effectiveRateEurPerKwh.toFixed(4),
+                  sub: kpis.subscriptionCostEur.toFixed(2),
+                })}
           </p>
+          {(kpis.totalPeriodCostEur ?? kpis.periodCostEur + kpis.subscriptionCostEur) >
+            kpis.periodCostEur && (
+            <p className="mt-1 text-[11px] font-medium text-emerald-300">
+              {t('overview.totalBillTtc', {
+                total: (
+                  kpis.totalPeriodCostEur ?? kpis.periodCostEur + kpis.subscriptionCostEur
+                ).toFixed(2),
+              })}
+            </p>
+          )}
           {kpis.projectedMonthCostEur !== null && kpis.projectedMonthCostEur !== undefined && (
             <p className="mt-1 text-[11px] font-medium text-indigo-300">
               {t('overview.projectedMonth', {

@@ -271,7 +271,23 @@ describe('API route security & input validation', () => {
           monthlySubscriptionEur: 15,
           vatRatePct: 20,
           subscriptionVatRatePct: 5.5,
-          exciseRateEur: 0.02998,
+          exciseRateEur: 0,
+          contributions: [
+            {
+              id: 'accise',
+              name: "Accise sur l'électricité",
+              kind: 'per_kwh',
+              amountHtEur: 0.02998,
+              vatRatePct: 20,
+            },
+            {
+              id: 'cta',
+              name: 'CTA',
+              kind: 'monthly',
+              amountHtEur: 3.45,
+              vatRatePct: 20,
+            },
+          ],
         }),
       })
     );
@@ -282,12 +298,28 @@ describe('API route security & input validation', () => {
         vatRatePct?: number;
         subscriptionVatRatePct?: number;
         exciseRateEur?: number;
+        contributions?: Array<{ name: string; kind: string; amountHtEur: number; vatRatePct: number }>;
       }>;
     };
     const edfCreated = createdJson.tariffs.find((t) => t.label === 'EDF HP/HC');
     expect(edfCreated?.vatRatePct).toBe(20);
     expect(edfCreated?.subscriptionVatRatePct).toBe(5.5);
-    expect(edfCreated?.exciseRateEur).toBeCloseTo(0.02998, 5);
+    expect(edfCreated?.contributions).toHaveLength(2);
+    expect(edfCreated?.contributions?.[0].amountHtEur).toBeCloseTo(0.02998, 5);
+
+    const badContrib = await tariffsPost(
+      new Request('https://cockpit.local/api/tariffs', {
+        method: 'POST',
+        body: JSON.stringify({
+          label: 'Bad Contrib',
+          startDate: '2026-01-01',
+          mode: 'BASE',
+          baseRateEur: 0.2,
+          contributions: [{ name: '', kind: 'per_kwh', amountHtEur: -1, vatRatePct: 20 }],
+        }),
+      })
+    );
+    expect(badContrib.status).toBe(400);
 
     const badVat = await tariffsPost(
       new Request('https://cockpit.local/api/tariffs', {

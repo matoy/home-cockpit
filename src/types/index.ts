@@ -23,6 +23,25 @@ export type EnergySource = 'add_ele' | 'integration';
 
 export type TariffMode = 'BASE' | 'HP_HC' | 'TEMPO';
 
+export type TariffContributionKind = 'per_kwh' | 'monthly';
+
+export interface TariffContribution {
+  id: string;
+  name: string;
+  kind: TariffContributionKind;
+  amountHtEur: number;
+  vatRatePct: number;
+}
+
+export interface ContributionCostBreakdownItem {
+  id: string;
+  name: string;
+  kind: TariffContributionKind;
+  costHtEur: number;
+  costTtcEur: number;
+  vatRatePct: number;
+}
+
 export type TempoDayColor = 'BLUE' | 'WHITE' | 'RED';
 
 export interface TempoConfig {
@@ -192,6 +211,7 @@ export interface TariffPeriodRecord {
   vatRatePct?: number;
   subscriptionVatRatePct?: number;
   exciseRateEur?: number;
+  contributions?: TariffContribution[];
   createdAt: string;
 }
 
@@ -550,7 +570,20 @@ export interface DashboardPayload {
     totalPowerDevices: number;
     periodEnergyKwh: number;
     periodCostEur: number;
+    energyCostEur?: number;
+    energyCostHtEur?: number;
     subscriptionCostEur: number;
+    subscriptionCostHtEur?: number;
+    variableContributionsCostEur?: number;
+    variableContributionsCostHtEur?: number;
+    fixedContributionsCostEur?: number;
+    fixedContributionsCostHtEur?: number;
+    contributionsCostEur?: number;
+    contributionsCostHtEur?: number;
+    totalPeriodCostHtEur?: number;
+    totalPeriodVatEur?: number;
+    totalPeriodCostEur?: number;
+    contributionsBreakdown?: ContributionCostBreakdownItem[];
     effectiveRateEurPerKwh: number;
     hpEnergyKwh: number;
     hcEnergyKwh: number;

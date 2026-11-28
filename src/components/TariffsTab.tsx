@@ -11,9 +11,11 @@ import {
   X,
   Scale,
   Calendar,
+  Receipt,
 } from 'lucide-react';
 import {
-  DEFAULT_EXCISE_RATE_EUR,
+  contributionHtToTtc,
+  contributionTtcToHt,
   DEFAULT_SUBSCRIPTION_VAT_RATE_PCT,
   DEFAULT_TEMPO_CONFIG,
   DEFAULT_VAT_RATE_PCT,
@@ -23,13 +25,29 @@ import {
   simulateContracts,
   subscriptionHtToTtc,
   subscriptionTtcToHt,
+  summarizeTariffContributions,
 } from '@/lib/tariff-engine';
 import { useI18n } from './I18nProvider';
-import type { DashboardPayload, HcSlot, TariffMode, TariffPeriodRecord } from '@/types';
+import type {
+  DashboardPayload,
+  HcSlot,
+  TariffContribution,
+  TariffContributionKind,
+  TariffMode,
+  TariffPeriodRecord,
+} from '@/types';
 
 interface TariffsTabProps {
   data: DashboardPayload;
   onRefresh: () => Promise<void>;
+}
+
+interface TariffFormContributionRow {
+  id: string;
+  name: string;
+  kind: TariffContributionKind;
+  amountEur: string;
+  vatRatePct: string;
 }
 
 interface TariffFormState {
@@ -41,7 +59,6 @@ interface TariffFormState {
   inputTaxMode: 'HT' | 'TTC';
   vatRatePct: string;
   subscriptionVatRatePct: string;
-  exciseRateEur: string;
   baseRateEur: string;
   hpRateEur: string;
   hcRateEur: string;
@@ -53,12 +70,12 @@ interface TariffFormState {
   redHpRateEur: string;
   redHcRateEur: string;
   monthlySubscriptionEur: string;
+  contributions: TariffFormContributionRow[];
 }
 
 function emptyForm(): TariffFormState {
   const today = new Date().toISOString().slice(0, 10);
-  const toDefaultHt = (ttc: number) =>
-    kwhTtcToHt(ttc, DEFAULT_VAT_RATE_PCT, DEFAULT_EXCISE_RATE_EUR).toFixed(4);
+  const toDefaultHt = (ttc: number) => kwhTtcToHt(ttc, DEFAULT_VAT_RATE_PCT).toFixed(4);
   return {
     id: null,
     label: '',
@@ -68,7 +85,6 @@ function emptyForm(): TariffFormState {
     inputTaxMode: 'HT',
     vatRatePct: String(DEFAULT_VAT_RATE_PCT),
     subscriptionVatRatePct: String(DEFAULT_SUBSCRIPTION_VAT_RATE_PCT),
-    exciseRateEur: String(DEFAULT_EXCISE_RATE_EUR),
     baseRateEur: toDefaultHt(0.2016),
     hpRateEur: toDefaultHt(0.2146),
     hcRateEur: toDefaultHt(0.1696),
@@ -83,6 +99,7 @@ function emptyForm(): TariffFormState {
       14.18,
       DEFAULT_SUBSCRIPTION_VAT_RATE_PCT
     ).toFixed(2),
+    contributions: [],
   };
 }
 
@@ -146,6 +163,10 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       hpKwh = totalKwh * 0.65;
     }
 
+    const perKwhContribTtc = summarizeTariffContributions(activeTariff?.contributions).perKwhTtcEur;
+    const fixedPeriodTtc =
+      data.kpis.subscriptionCostEur + (data.kpis.fixedContributionsCostEur ?? 0);
+
     const sim = simulateContracts({
       totalKwh,
       hpKwh,
@@ -154,6 +175,8 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       hpRate,
       hcRate,
       tempoConfig: activeTariff?.tempoConfig ?? DEFAULT_TEMPO_CONFIG,
+      perKwhContributionsTtc: perKwhContribTtc,
+      fixedPeriodTtc,
     });
 
     return {
@@ -161,16 +184,35 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       hcKwh,
       hpKwh,
       hcPct: totalKwh > 0 ? (hcKwh / totalKwh) * 100 : 0,
-      baseRate,
-      hpRate,
-      hcRate,
+      baseRate: baseRate + perKwhContribTtc,
+      hpRate: hpRate + perKwhContribTtc,
+      hcRate: hcRate + perKwhContribTtc,
+      perKwhContribTtc,
+      fixedPeriodTtc,
       ...sim,
       exactFromBuckets,
     };
-  }, [data.kpis.periodEnergyKwh, data.timeSeries, activeTariff]);
+  }, [
+    data.kpis.periodEnergyKwh,
+    data.kpis.subscriptionCostEur,
+    data.kpis.fixedContributionsCostEur,
+    data.timeSeries,
+    activeTariff,
+  ]);
 
   function startEdit(item: TariffPeriodRecord) {
     const tc = { ...DEFAULT_TEMPO_CONFIG, ...(item.tempoConfig ?? {}) };
+    const existingContribs: TariffFormContributionRow[] = (item.contributions ?? []).map((c, idx) => {
+      const decimals = c.kind === 'monthly' ? 2 : 4;
+      const vat = c.vatRatePct ?? DEFAULT_VAT_RATE_PCT;
+      return {
+        id: c.id || `contrib_${idx + 1}`,
+        name: c.name,
+        kind: c.kind,
+        amountEur: contributionHtToTtc(c.amountHtEur, vat).toFixed(decimals),
+        vatRatePct: String(vat),
+      };
+    });
     setForm({
       id: item.id,
       label: item.label,
@@ -182,7 +224,6 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       subscriptionVatRatePct: String(
         item.subscriptionVatRatePct ?? DEFAULT_SUBSCRIPTION_VAT_RATE_PCT
       ),
-      exciseRateEur: String(item.exciseRateEur ?? DEFAULT_EXCISE_RATE_EUR),
       baseRateEur: String(item.baseRateEur ?? 0.2016),
       hpRateEur: String(item.hpRateEur ?? 0.2146),
       hcRateEur: String(item.hcRateEur ?? 0.1696),
@@ -194,6 +235,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       redHpRateEur: String(tc.redHpRateEur),
       redHcRateEur: String(tc.redHcRateEur),
       monthlySubscriptionEur: String(item.monthlySubscriptionEur ?? 0),
+      contributions: existingContribs,
     });
     setShowForm(true);
     setError(null);
@@ -215,7 +257,21 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
     form.subscriptionVatRatePct,
     DEFAULT_SUBSCRIPTION_VAT_RATE_PCT
   );
-  const formExciseRate = parseNonNeg(form.exciseRateEur, DEFAULT_EXCISE_RATE_EUR);
+
+  const formContributionsHt: TariffContribution[] = form.contributions.map((row, idx) => {
+    const vat = parseNonNeg(row.vatRatePct, DEFAULT_VAT_RATE_PCT);
+    const rawVal = parseNonNeg(row.amountEur, 0);
+    const amountHtEur =
+      form.inputTaxMode === 'HT' ? rawVal : contributionTtcToHt(rawVal, vat);
+    return {
+      id: row.id || `contrib_${idx + 1}`,
+      name: row.name,
+      kind: row.kind,
+      amountHtEur,
+      vatRatePct: vat,
+    };
+  });
+  const formContribSummary = summarizeTariffContributions(formContributionsHt);
 
   function handleTaxModeChange(nextMode: 'HT' | 'TTC') {
     if (nextMode === form.inputTaxMode) return;
@@ -224,8 +280,8 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       if (!Number.isFinite(val) || val < 0) return raw;
       const converted =
         nextMode === 'TTC'
-          ? kwhHtToTtc(val, formVatRate, formExciseRate)
-          : kwhTtcToHt(val, formVatRate, formExciseRate);
+          ? kwhHtToTtc(val, formVatRate)
+          : kwhTtcToHt(val, formVatRate);
       return converted.toFixed(4);
     };
     const subVal = Number(form.monthlySubscriptionEur);
@@ -236,6 +292,18 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
             : subscriptionTtcToHt(subVal, formSubVatRate)
           ).toFixed(2)
         : form.monthlySubscriptionEur;
+
+    const convertedContribs = form.contributions.map((row) => {
+      const val = Number(row.amountEur);
+      if (!Number.isFinite(val) || val < 0) return row;
+      const rowVat = parseNonNeg(row.vatRatePct, DEFAULT_VAT_RATE_PCT);
+      const decimals = row.kind === 'monthly' ? 2 : 4;
+      const nextAmount =
+        nextMode === 'TTC'
+          ? contributionHtToTtc(val, rowVat)
+          : contributionTtcToHt(val, rowVat);
+      return { ...row, amountEur: nextAmount.toFixed(decimals) };
+    });
 
     setForm({
       ...form,
@@ -250,18 +318,56 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       redHpRateEur: convertKwh(form.redHpRateEur),
       redHcRateEur: convertKwh(form.redHcRateEur),
       monthlySubscriptionEur: convertedSub,
+      contributions: convertedContribs,
     });
+  }
+
+  function addContributionRow(preset: 'accise' | 'cta' | 'custom') {
+    const uid = `contrib_${Date.now().toString(36)}_${form.contributions.length + 1}`;
+    const formatPresetAmount = (htVal: number, vat: number, kind: TariffContributionKind) => {
+      const decimals = kind === 'monthly' ? 2 : 4;
+      return form.inputTaxMode === 'HT'
+        ? htVal.toFixed(kind === 'per_kwh' && htVal === 0.02998 ? 5 : decimals)
+        : contributionHtToTtc(htVal, vat).toFixed(decimals);
+    };
+
+    const nextRow: TariffFormContributionRow =
+      preset === 'accise'
+        ? {
+            id: uid,
+            name: t('tariffs.contribAcciseDefaultName'),
+            kind: 'per_kwh',
+            amountEur: formatPresetAmount(0.02998, 20, 'per_kwh'),
+            vatRatePct: '20',
+          }
+        : preset === 'cta'
+          ? {
+              id: uid,
+              name: t('tariffs.contribCtaDefaultName'),
+              kind: 'monthly',
+              amountEur: formatPresetAmount(3.45, 20, 'monthly'),
+              vatRatePct: '20',
+            }
+          : {
+              id: uid,
+              name: '',
+              kind: 'per_kwh',
+              amountEur: '0.0000',
+              vatRatePct: '20',
+            };
+
+    setForm({ ...form, contributions: [...form.contributions, nextRow] });
   }
 
   function formatKwhEquivHint(raw: string): string {
     const val = parseNonNeg(raw, 0);
     if (form.inputTaxMode === 'HT') {
       return t('tariffs.equivTtcKwh', {
-        value: kwhHtToTtc(val, formVatRate, formExciseRate).toFixed(4),
+        value: kwhHtToTtc(val, formVatRate).toFixed(4),
       });
     }
     return t('tariffs.equivHtKwh', {
-      value: kwhTtcToHt(val, formVatRate, formExciseRate).toFixed(4),
+      value: kwhTtcToHt(val, formVatRate).toFixed(4),
     });
   }
 
@@ -277,6 +383,22 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
     });
   }
 
+  function formatContribEquivHint(row: TariffFormContributionRow): string {
+    const val = parseNonNeg(row.amountEur, 0);
+    const vat = parseNonNeg(row.vatRatePct, DEFAULT_VAT_RATE_PCT);
+    const decimals = row.kind === 'monthly' ? 2 : 4;
+    if (form.inputTaxMode === 'HT') {
+      const converted = contributionHtToTtc(val, vat).toFixed(decimals);
+      return row.kind === 'monthly'
+        ? t('tariffs.equivTtcMonth', { value: converted })
+        : t('tariffs.equivTtcKwh', { value: converted });
+    }
+    const converted = contributionTtcToHt(val, vat).toFixed(decimals);
+    return row.kind === 'monthly'
+      ? t('tariffs.equivHtMonth', { value: converted })
+      : t('tariffs.equivHtKwh', { value: converted });
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -285,9 +407,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
     const toTtcRate = (raw: string, fallbackTtc?: number): number | null => {
       const val = Number(raw);
       if (!Number.isFinite(val) || val < 0) return fallbackTtc ?? null;
-      return form.inputTaxMode === 'HT'
-        ? kwhHtToTtc(val, formVatRate, formExciseRate)
-        : val;
+      return form.inputTaxMode === 'HT' ? kwhHtToTtc(val, formVatRate) : val;
     };
 
     const rawSub = Number(form.monthlySubscriptionEur);
@@ -297,6 +417,23 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
           ? subscriptionHtToTtc(rawSub, formSubVatRate)
           : rawSub
         : 0;
+
+    const cleanedContributions: TariffContribution[] = form.contributions
+      .map((row, idx) => {
+        const name = row.name.trim();
+        const vat = parseNonNeg(row.vatRatePct, DEFAULT_VAT_RATE_PCT);
+        const rawAmount = parseNonNeg(row.amountEur, 0);
+        const amountHtEur =
+          form.inputTaxMode === 'HT' ? rawAmount : contributionTtcToHt(rawAmount, vat);
+        return {
+          id: row.id || `contrib_${idx + 1}`,
+          name,
+          kind: row.kind,
+          amountHtEur: Math.round(amountHtEur * 1_000_000) / 1_000_000,
+          vatRatePct: Math.min(100, Math.max(0, vat)),
+        };
+      })
+      .filter((c) => c.name.length > 0);
 
     const payload = {
       id: form.id ?? undefined,
@@ -311,18 +448,19 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
       tempoConfig:
         form.mode === 'TEMPO'
           ? {
-            blueHpRateEur: toTtcRate(form.blueHpRateEur, DEFAULT_TEMPO_CONFIG.blueHpRateEur)!,
-            blueHcRateEur: toTtcRate(form.blueHcRateEur, DEFAULT_TEMPO_CONFIG.blueHcRateEur)!,
-            whiteHpRateEur: toTtcRate(form.whiteHpRateEur, DEFAULT_TEMPO_CONFIG.whiteHpRateEur)!,
-            whiteHcRateEur: toTtcRate(form.whiteHcRateEur, DEFAULT_TEMPO_CONFIG.whiteHcRateEur)!,
-            redHpRateEur: toTtcRate(form.redHpRateEur, DEFAULT_TEMPO_CONFIG.redHpRateEur)!,
-            redHcRateEur: toTtcRate(form.redHcRateEur, DEFAULT_TEMPO_CONFIG.redHcRateEur)!,
-          }
+              blueHpRateEur: toTtcRate(form.blueHpRateEur, DEFAULT_TEMPO_CONFIG.blueHpRateEur)!,
+              blueHcRateEur: toTtcRate(form.blueHcRateEur, DEFAULT_TEMPO_CONFIG.blueHcRateEur)!,
+              whiteHpRateEur: toTtcRate(form.whiteHpRateEur, DEFAULT_TEMPO_CONFIG.whiteHpRateEur)!,
+              whiteHcRateEur: toTtcRate(form.whiteHcRateEur, DEFAULT_TEMPO_CONFIG.whiteHcRateEur)!,
+              redHpRateEur: toTtcRate(form.redHpRateEur, DEFAULT_TEMPO_CONFIG.redHpRateEur)!,
+              redHcRateEur: toTtcRate(form.redHcRateEur, DEFAULT_TEMPO_CONFIG.redHcRateEur)!,
+            }
           : null,
       monthlySubscriptionEur: Math.round(storedSub * 100) / 100,
       vatRatePct: formVatRate,
       subscriptionVatRatePct: formSubVatRate,
-      exciseRateEur: formExciseRate,
+      exciseRateEur: 0,
+      contributions: cleanedContributions,
     };
 
     try {
@@ -496,7 +634,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
 
           {/* Paramètres fiscaux & mode de saisie HT / TTC */}
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-start">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">
                   {t('tariffs.inputModeLabel')}
@@ -540,22 +678,7 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                   onChange={(e) => setForm({ ...form, vatRatePct: e.target.value })}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
                 />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  {t('tariffs.exciseRateLabel')}
-                </label>
-                <input
-                  type="number"
-                  step="0.0001"
-                  min="0"
-                  max="5"
-                  value={form.exciseRateEur}
-                  onChange={(e) => setForm({ ...form, exciseRateEur: e.target.value })}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
-                />
-                <p className="mt-1 text-[10.5px] text-slate-500">{t('tariffs.exciseHint')}</p>
+                <p className="mt-1 text-[10.5px] text-slate-500">{t('tariffs.energyOnlyNote')}</p>
               </div>
 
               <div>
@@ -793,6 +916,222 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
             </div>
           )}
 
+          {/* Section Contributions & Taxes + Récapitulatif tout compris */}
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                  <Receipt className="h-3.5 w-3.5 text-amber-400" />
+                  {t('tariffs.contributionsTitle')}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {t('tariffs.contributionsDesc')}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => addContributionRow('accise')}
+                  className="rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 px-2.5 py-1 text-[11px] font-medium text-amber-200 transition"
+                >
+                  {t('tariffs.addAccisePreset')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addContributionRow('cta')}
+                  className="rounded-lg border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 px-2.5 py-1 text-[11px] font-medium text-sky-200 transition"
+                >
+                  {t('tariffs.addCtaPreset')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addContributionRow('custom')}
+                  className="rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-200 transition"
+                >
+                  {t('tariffs.addCustomContrib')}
+                </button>
+              </div>
+            </div>
+
+            {form.contributions.length === 0 ? (
+              <p className="text-xs text-slate-500 italic">{t('tariffs.contributionsEmpty')}</p>
+            ) : (
+              <div className="space-y-2.5">
+                {form.contributions.map((row, idx) => (
+                  <div
+                    key={row.id}
+                    className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-start rounded-xl border border-slate-800 bg-slate-900/60 p-3"
+                  >
+                    <div className="sm:col-span-4">
+                      <label className="block text-[10.5px] text-slate-400 mb-1">
+                        {t('tariffs.contribNameLabel')}
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={80}
+                        placeholder={t('tariffs.contribNamePlaceholder')}
+                        value={row.name}
+                        onChange={(e) => {
+                          const next = [...form.contributions];
+                          next[idx] = { ...row, name: e.target.value };
+                          setForm({ ...form, contributions: next });
+                        }}
+                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-3">
+                      <label className="block text-[10.5px] text-slate-400 mb-1">
+                        {t('tariffs.contribKindLabel')}
+                      </label>
+                      <select
+                        value={row.kind}
+                        onChange={(e) => {
+                          const nextKind = e.target.value === 'monthly' ? 'monthly' : 'per_kwh';
+                          const next = [...form.contributions];
+                          next[idx] = { ...row, kind: nextKind };
+                          setForm({ ...form, contributions: next });
+                        }}
+                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="per_kwh">{t('tariffs.contribKindPerKwh')}</option>
+                        <option value="monthly">{t('tariffs.contribKindMonthly')}</option>
+                      </select>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[10.5px] text-slate-400 mb-1">
+                        {t('tariffs.contribAmountLabel')} ({form.inputTaxMode})
+                      </label>
+                      <input
+                        type="number"
+                        step={row.kind === 'monthly' ? '0.01' : '0.00001'}
+                        min="0"
+                        max="500"
+                        required
+                        value={row.amountEur}
+                        onChange={(e) => {
+                          const next = [...form.contributions];
+                          next[idx] = { ...row, amountEur: e.target.value };
+                          setForm({ ...form, contributions: next });
+                        }}
+                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
+                      />
+                      <p className="mt-0.5 text-[10px] font-mono text-slate-400">
+                        {formatContribEquivHint(row)}
+                      </p>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <div className="flex items-center justify-between gap-1 mb-1">
+                        <label className="block text-[10.5px] text-slate-400">
+                          {t('tariffs.contribVatLabel')}
+                        </label>
+                        <div className="flex gap-1">
+                          {(['20', '5.5', '0'] as const).map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => {
+                                const next = [...form.contributions];
+                                next[idx] = { ...row, vatRatePct: preset };
+                                setForm({ ...form, contributions: next });
+                              }}
+                              className={`rounded px-1 py-0.2 text-[9px] font-mono border transition ${
+                                row.vatRatePct === preset
+                                  ? 'border-indigo-500/60 bg-indigo-500/20 text-indigo-200'
+                                  : 'border-slate-700 bg-slate-950 text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {preset}%
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        value={row.vatRatePct}
+                        onChange={(e) => {
+                          const next = [...form.contributions];
+                          next[idx] = { ...row, vatRatePct: e.target.value };
+                          setForm({ ...form, contributions: next });
+                        }}
+                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-1 flex sm:justify-end sm:pt-5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            contributions: form.contributions.filter((_, i) => i !== idx),
+                          })
+                        }
+                        title={t('tariffs.contribDelete')}
+                        className="rounded-lg p-1.5 text-rose-400 hover:bg-rose-500/10"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Récapitulatif en direct tout compris */}
+            {(() => {
+              const energyTtc = (raw: string) => {
+                const v = parseNonNeg(raw, 0);
+                return form.inputTaxMode === 'HT' ? kwhHtToTtc(v, formVatRate) : v;
+              };
+              const subVal = parseNonNeg(form.monthlySubscriptionEur, 0);
+              const subHt =
+                form.inputTaxMode === 'HT' ? subVal : subscriptionTtcToHt(subVal, formSubVatRate);
+              const subTtc =
+                form.inputTaxMode === 'HT' ? subscriptionHtToTtc(subVal, formSubVatRate) : subVal;
+              const fixedAllInHt = subHt + formContribSummary.monthlyHtEur;
+              const fixedAllInTtc = subTtc + formContribSummary.monthlyTtcEur;
+
+              const kwhRecap =
+                form.mode === 'BASE'
+                  ? `${(energyTtc(form.baseRateEur) + formContribSummary.perKwhTtcEur).toFixed(4)} €/kWh ${t('tariffs.ttcShort')}`
+                  : form.mode === 'HP_HC'
+                    ? `${t('tariffs.hpShort')} ${(energyTtc(form.hpRateEur) + formContribSummary.perKwhTtcEur).toFixed(4)} € · ${t('tariffs.hcShort')} ${(energyTtc(form.hcRateEur) + formContribSummary.perKwhTtcEur).toFixed(4)} € ${t('tariffs.ttcShort')}`
+                    : `${t('tariffs.tempoRatesSummary', {
+                        bHp: (energyTtc(form.blueHpRateEur) + formContribSummary.perKwhTtcEur).toFixed(4),
+                        bHc: (energyTtc(form.blueHcRateEur) + formContribSummary.perKwhTtcEur).toFixed(4),
+                        wHp: (energyTtc(form.whiteHpRateEur) + formContribSummary.perKwhTtcEur).toFixed(4),
+                        wHc: (energyTtc(form.whiteHcRateEur) + formContribSummary.perKwhTtcEur).toFixed(4),
+                        rHp: (energyTtc(form.redHpRateEur) + formContribSummary.perKwhTtcEur).toFixed(4),
+                        rHc: (energyTtc(form.redHcRateEur) + formContribSummary.perKwhTtcEur).toFixed(4),
+                      })} (${t('tariffs.ttcShort')})`;
+
+              return (
+                <div className="rounded-xl border border-indigo-500/25 bg-indigo-500/10 px-3.5 py-2.5 text-[11px] flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold text-indigo-200">
+                    {t('tariffs.allInRecapTitle')}
+                  </span>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-slate-200">
+                    <span>
+                      <span className="text-slate-400">{t('tariffs.allInKwhLabel')} </span>
+                      {kwhRecap}
+                    </span>
+                    <span>
+                      <span className="text-slate-400">{t('tariffs.allInMonthlyFixedLabel')} </span>
+                      {fixedAllInTtc.toFixed(2)} {t('common.perMonth')} {t('tariffs.ttcShort')} ({fixedAllInHt.toFixed(2)} € {t('tariffs.htShort')})
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
           {/* Éditeur de plages HC */}
           {(form.mode === 'HP_HC' || form.mode === 'TEMPO') && (
             <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
@@ -905,11 +1244,15 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
             const vatPct = tariffItem.vatRatePct ?? DEFAULT_VAT_RATE_PCT;
             const subVatPct =
               tariffItem.subscriptionVatRatePct ?? DEFAULT_SUBSCRIPTION_VAT_RATE_PCT;
-            const exciseEur = tariffItem.exciseRateEur ?? DEFAULT_EXCISE_RATE_EUR;
+            const itemContribs = tariffItem.contributions ?? [];
+            const itemContribSummary = summarizeTariffContributions(itemContribs);
             const ttcLabel = t('tariffs.ttcShort');
             const htLabel = t('tariffs.htShort');
             const formatKwhPair = (ttcVal: number) =>
-              `${ttcVal.toFixed(4)} €/kWh ${ttcLabel} · ${kwhTtcToHt(ttcVal, vatPct, exciseEur).toFixed(4)} € ${htLabel}`;
+              `${ttcVal.toFixed(4)} €/kWh ${ttcLabel} · ${kwhTtcToHt(ttcVal, vatPct).toFixed(4)} € ${htLabel}`;
+            const subTtc = tariffItem.monthlySubscriptionEur ?? 0;
+            const subHt = subscriptionTtcToHt(subTtc, subVatPct);
+            const fixedMonthlyTotalTtc = subTtc + itemContribSummary.monthlyTtcEur;
 
             return (
               <div
@@ -939,11 +1282,14 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                       </span>
                       <span className="rounded-full border border-slate-700 bg-slate-950/60 px-2 py-0.5 text-[10px] font-mono text-slate-300">
                         {t('tariffs.taxBadgeVat', { vat: vatPct })}
-                        {exciseEur > 0
-                          ? ` · ${t('tariffs.taxBadgeExcise', { excise: exciseEur.toFixed(4) })}`
-                          : ''}
                         {subVatPct !== vatPct
                           ? ` · ${t('tariffs.taxBadgeSubVat', { vat: subVatPct })}`
+                          : ''}
+                        {itemContribSummary.perKwhTtcEur > 0
+                          ? ` · +${itemContribSummary.perKwhTtcEur.toFixed(4)} €/kWh`
+                          : ''}
+                        {itemContribSummary.monthlyTtcEur > 0
+                          ? ` · +${itemContribSummary.monthlyTtcEur.toFixed(2)} ${t('common.perMonth')}`
                           : ''}
                       </span>
                       {isCurrent && (
@@ -993,8 +1339,14 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                         {(tariffItem.baseRateEur ?? 0).toFixed(4)} €/kWh {ttcLabel}
                       </span>
                       <span className="ml-2 font-mono text-[11px] text-slate-400">
-                        ({kwhTtcToHt(tariffItem.baseRateEur ?? 0, vatPct, exciseEur).toFixed(4)} € {htLabel})
+                        ({kwhTtcToHt(tariffItem.baseRateEur ?? 0, vatPct).toFixed(4)} € {htLabel})
                       </span>
+                      {itemContribSummary.perKwhTtcEur > 0 && (
+                        <span className="ml-2 font-mono text-[11px] text-amber-300">
+                          · {t('tariffs.allInShort')}{' '}
+                          {((tariffItem.baseRateEur ?? 0) + itemContribSummary.perKwhTtcEur).toFixed(4)} € {ttcLabel}
+                        </span>
+                      )}
                     </div>
                   ) : tariffItem.mode === 'TEMPO' ? (
                     <>
@@ -1013,14 +1365,27 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                         <div className="text-slate-400">
                           <span className="mr-1.5">{htLabel}:</span>
                           {t('tariffs.tempoRatesSummary', {
-                            bHp: kwhTtcToHt(tariffItem.tempoConfig?.blueHpRateEur ?? DEFAULT_TEMPO_CONFIG.blueHpRateEur, vatPct, exciseEur).toFixed(4),
-                            bHc: kwhTtcToHt(tariffItem.tempoConfig?.blueHcRateEur ?? DEFAULT_TEMPO_CONFIG.blueHcRateEur, vatPct, exciseEur).toFixed(4),
-                            wHp: kwhTtcToHt(tariffItem.tempoConfig?.whiteHpRateEur ?? DEFAULT_TEMPO_CONFIG.whiteHpRateEur, vatPct, exciseEur).toFixed(4),
-                            wHc: kwhTtcToHt(tariffItem.tempoConfig?.whiteHcRateEur ?? DEFAULT_TEMPO_CONFIG.whiteHcRateEur, vatPct, exciseEur).toFixed(4),
-                            rHp: kwhTtcToHt(tariffItem.tempoConfig?.redHpRateEur ?? DEFAULT_TEMPO_CONFIG.redHpRateEur, vatPct, exciseEur).toFixed(4),
-                            rHc: kwhTtcToHt(tariffItem.tempoConfig?.redHcRateEur ?? DEFAULT_TEMPO_CONFIG.redHcRateEur, vatPct, exciseEur).toFixed(4),
+                            bHp: kwhTtcToHt(tariffItem.tempoConfig?.blueHpRateEur ?? DEFAULT_TEMPO_CONFIG.blueHpRateEur, vatPct).toFixed(4),
+                            bHc: kwhTtcToHt(tariffItem.tempoConfig?.blueHcRateEur ?? DEFAULT_TEMPO_CONFIG.blueHcRateEur, vatPct).toFixed(4),
+                            wHp: kwhTtcToHt(tariffItem.tempoConfig?.whiteHpRateEur ?? DEFAULT_TEMPO_CONFIG.whiteHpRateEur, vatPct).toFixed(4),
+                            wHc: kwhTtcToHt(tariffItem.tempoConfig?.whiteHcRateEur ?? DEFAULT_TEMPO_CONFIG.whiteHcRateEur, vatPct).toFixed(4),
+                            rHp: kwhTtcToHt(tariffItem.tempoConfig?.redHpRateEur ?? DEFAULT_TEMPO_CONFIG.redHpRateEur, vatPct).toFixed(4),
+                            rHc: kwhTtcToHt(tariffItem.tempoConfig?.redHcRateEur ?? DEFAULT_TEMPO_CONFIG.redHcRateEur, vatPct).toFixed(4),
                           })}
                         </div>
+                        {itemContribSummary.perKwhTtcEur > 0 && (
+                          <div className="text-amber-300">
+                            <span className="mr-1.5">{t('tariffs.allInShort')} {ttcLabel}:</span>
+                            {t('tariffs.tempoRatesSummary', {
+                              bHp: ((tariffItem.tempoConfig?.blueHpRateEur ?? DEFAULT_TEMPO_CONFIG.blueHpRateEur) + itemContribSummary.perKwhTtcEur).toFixed(4),
+                              bHc: ((tariffItem.tempoConfig?.blueHcRateEur ?? DEFAULT_TEMPO_CONFIG.blueHcRateEur) + itemContribSummary.perKwhTtcEur).toFixed(4),
+                              wHp: ((tariffItem.tempoConfig?.whiteHpRateEur ?? DEFAULT_TEMPO_CONFIG.whiteHpRateEur) + itemContribSummary.perKwhTtcEur).toFixed(4),
+                              wHc: ((tariffItem.tempoConfig?.whiteHcRateEur ?? DEFAULT_TEMPO_CONFIG.whiteHcRateEur) + itemContribSummary.perKwhTtcEur).toFixed(4),
+                              rHp: ((tariffItem.tempoConfig?.redHpRateEur ?? DEFAULT_TEMPO_CONFIG.redHpRateEur) + itemContribSummary.perKwhTtcEur).toFixed(4),
+                              rHc: ((tariffItem.tempoConfig?.redHcRateEur ?? DEFAULT_TEMPO_CONFIG.redHcRateEur) + itemContribSummary.perKwhTtcEur).toFixed(4),
+                            })}
+                          </div>
+                        )}
                       </div>
                       <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2 text-slate-300">
                         {t('tariffs.hcSlotsList')}{' '}
@@ -1038,12 +1403,24 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                         <span className="font-mono font-semibold text-white">
                           {formatKwhPair(tariffItem.hpRateEur ?? 0)}
                         </span>
+                        {itemContribSummary.perKwhTtcEur > 0 && (
+                          <span className="ml-2 font-mono text-[11px] text-amber-300">
+                            · {t('tariffs.allInShort')}{' '}
+                            {((tariffItem.hpRateEur ?? 0) + itemContribSummary.perKwhTtcEur).toFixed(4)} €
+                          </span>
+                        )}
                       </div>
                       <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2">
                         <span className="text-emerald-300">{t('tariffs.hcShort')} </span>
                         <span className="font-mono font-semibold text-white">
                           {formatKwhPair(tariffItem.hcRateEur ?? 0)}
                         </span>
+                        {itemContribSummary.perKwhTtcEur > 0 && (
+                          <span className="ml-2 font-mono text-[11px] text-amber-300">
+                            · {t('tariffs.allInShort')}{' '}
+                            {((tariffItem.hcRateEur ?? 0) + itemContribSummary.perKwhTtcEur).toFixed(4)} €
+                          </span>
+                        )}
                       </div>
                       <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2 text-slate-300">
                         {t('tariffs.hcSlotsList')}{' '}
@@ -1056,13 +1433,41 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
                   <div className="rounded-xl bg-slate-950/60 border border-slate-800 px-3.5 py-2 text-slate-400">
                     {t('tariffs.subscription')}{' '}
                     <span className="font-mono text-slate-200">
-                      {(tariffItem.monthlySubscriptionEur ?? 0).toFixed(2)} {t('common.perMonth')} {ttcLabel}
+                      {subTtc.toFixed(2)} {t('common.perMonth')} {ttcLabel}
                     </span>
                     <span className="ml-1.5 font-mono text-[11px] text-slate-400">
-                      ({subscriptionTtcToHt(tariffItem.monthlySubscriptionEur ?? 0, subVatPct).toFixed(2)} € {htLabel})
+                      ({subHt.toFixed(2)} € {htLabel})
                     </span>
+                    {itemContribSummary.monthlyTtcEur > 0 && (
+                      <span className="ml-2 font-mono text-[11px] text-sky-300">
+                        · {t('tariffs.allInShort')} {fixedMonthlyTotalTtc.toFixed(2)} {t('common.perMonth')}
+                      </span>
+                    )}
                   </div>
                 </div>
+
+                {itemContribs.length > 0 && (
+                  <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px]">
+                    <span className="text-slate-400 font-medium flex items-center gap-1">
+                      <Receipt className="h-3 w-3 text-amber-400" />
+                      {t('tariffs.contributionsCardTitle')}
+                    </span>
+                    {itemContribs.map((c) => {
+                      const cTtc = contributionHtToTtc(c.amountHtEur, c.vatRatePct);
+                      const unitSuffix = c.kind === 'monthly' ? t('common.perMonth') : '€/kWh';
+                      const dec = c.kind === 'monthly' ? 2 : 4;
+                      const htDec = c.kind === 'per_kwh' && c.amountHtEur < 0.1 ? 5 : dec;
+                      return (
+                        <span
+                          key={c.id}
+                          className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-1 font-mono text-amber-100"
+                        >
+                          {c.name} : {cTtc.toFixed(dec)} {unitSuffix} {ttcLabel} ({c.amountHtEur.toFixed(htDec)} € {htLabel} · {c.vatRatePct}%)
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1080,6 +1485,13 @@ export function TariffsTab({ data, onRefresh }: TariffsTabProps) {
               mode: comparator.exactFromBuckets ? t('tariffs.simExact') : t('tariffs.simEst35'),
             })}
           </p>
+          {(comparator.perKwhContribTtc > 0 || comparator.fixedPeriodTtc > 0) && (
+            <p className="text-[11px] text-amber-300/90">
+              {t('tariffs.simIncludesTaxesNote', {
+                fixed: comparator.fixedPeriodTtc.toFixed(2),
+              })}
+            </p>
+          )}
 
           <div className="space-y-2.5 text-xs">
             <div

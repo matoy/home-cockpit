@@ -1,6 +1,7 @@
 import zlib from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  computeBackupDataSha256,
   exportBackupArchive,
   importBackupArchive,
   parseAndValidateBackupBuffer,
@@ -135,13 +136,47 @@ describe('backup-service Gzip export, preview, and restore', () => {
       archiveOut.archive.data.meterReadings?.length ?? 0
     );
 
-    // Preserves tariff fiscal metadata (VAT, subscription VAT, excise) across export + import
+    // Preserves tariff fiscal metadata (VAT, subscription VAT, contributions) across export + import
     const exportedTariff = archiveOut.archive.data.tariffPeriods[0];
     expect(exportedTariff.vatRatePct).toBe(20);
     expect(exportedTariff.subscriptionVatRatePct).toBe(5.5);
-    expect(exportedTariff.exciseRateEur).toBe(0);
+    expect(exportedTariff.contributions?.length).toBeGreaterThanOrEqual(2);
     const restoredTariff = getDemoState().tariffs.find((t) => t.id === exportedTariff.id);
     expect(restoredTariff?.subscriptionVatRatePct).toBe(5.5);
+    expect(restoredTariff?.contributions?.length).toBe(exportedTariff.contributions?.length);
+
+    // Converts legacy exciseRateEur-only backup periods cleanly into a dedicated contribution line
+    const legacyArchive = structuredClone(archiveOut.archive);
+    legacyArchive.data.tariffPeriods = [
+      {
+        id: 99,
+        label: 'Legacy Excise Backup',
+        startDate: '2025-01-01',
+        endDate: null,
+        mode: 'BASE',
+        baseRateEur: 0.204,
+        hpRateEur: null,
+        hcRateEur: null,
+        hcSlots: [],
+        monthlySubscriptionEur: 14,
+        vatRatePct: 20,
+        subscriptionVatRatePct: 20,
+        exciseRateEur: 0.02,
+        createdAt: '2025-01-01T00:00:00.000Z',
+      },
+    ];
+    if (legacyArchive.integrity) {
+      legacyArchive.integrity.dataSha256 = computeBackupDataSha256(legacyArchive.data);
+    }
+    const legacyGz = zlib.gzipSync(Buffer.from(JSON.stringify(legacyArchive), 'utf8'));
+    const legacyRes = await importBackupArchive(legacyGz, { mode: 'replace', importMetrics: false });
+    expect(legacyRes.imported.tariffPeriods).toBe(1);
+    const migratedTariff = getDemoState().tariffs[0];
+    expect(migratedTariff.exciseRateEur).toBe(0);
+    expect(migratedTariff.baseRateEur).toBeCloseTo(0.18, 5);
+    expect(migratedTariff.contributions).toHaveLength(1);
+    expect(migratedTariff.contributions?.[0].kind).toBe('per_kwh');
+    expect(migratedTariff.contributions?.[0].amountHtEur).toBeCloseTo(0.02, 5);
 
     // Rejects invalid gzip or invalid JSON schema
     await expect(previewBackupArchive(Buffer.from('corrupt-bytes'))).rejects.toThrow();
