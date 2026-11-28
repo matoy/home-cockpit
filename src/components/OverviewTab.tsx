@@ -97,8 +97,14 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-baseline gap-2.5">
-            <span className="text-3xl font-bold tracking-tight text-white">
-              {kpis.periodCostEur.toFixed(2)} €
+            <span
+              className="text-3xl font-bold tracking-tight text-white"
+              title={t('energy.exclFixedTooltip')}
+            >
+              {kpis.periodCostEur.toFixed(2)} €{' '}
+              <span className="text-xs font-medium text-slate-400">
+                {t('tariffs.ttcShort')} ({t('energy.exclFixedShort')})
+              </span>
             </span>
             <span className="text-sm font-medium text-emerald-400">
               {kpis.periodEnergyKwh.toFixed(2)} kWh
@@ -322,8 +328,11 @@ export function OverviewTab({ data, onSelectRoom, onNavigateTab }: OverviewTabPr
                       <div className="mt-1 text-sm font-semibold text-white">
                         {rs.currentHumidityPct !== null ? `${rs.currentHumidityPct.toFixed(0)} %` : '—'}
                       </div>
-                      <div className="text-[11px] text-slate-500">
-                        {rs.periodCostEur.toFixed(2)} €
+                      <div
+                        className="text-[11px] text-slate-500"
+                        title={t('energy.exclFixedTooltip')}
+                      >
+                        {rs.periodCostEur.toFixed(2)} € {t('tariffs.ttcShort')}
                       </div>
                     </div>
                   </div>

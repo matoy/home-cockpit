@@ -16,7 +16,17 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Zap, Euro, Activity, Layers, Download, TrendingUp, Calendar, Gauge } from 'lucide-react';
+import {
+  Zap,
+  Euro,
+  Activity,
+  Layers,
+  Download,
+  TrendingUp,
+  Calendar,
+  Gauge,
+  Info,
+} from 'lucide-react';
 import { buildEnergyTimeSeriesCsv, triggerCsvDownload } from '@/lib/csv-export';
 import { useI18n } from '@/components/I18nProvider';
 import type { DashboardPayload } from '@/types';
@@ -87,69 +97,75 @@ export function EnergyTab({ data }: EnergyTabProps) {
   return (
     <div className="space-y-6">
       {/* Barre de contrôles */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-slate-400 mr-1 flex items-center gap-1.5">
-            <Activity className="h-3.5 w-3.5" /> {t('energy.metricLabel')}
-          </span>
-          {(
-            [
-              { id: 'energy', label: t('energy.metricEnergy') },
-              { id: 'power', label: t('energy.metricPower') },
-              { id: 'cost', label: t('energy.metricCost') },
-            ] as const
-          ).map((item) => (
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-slate-400 mr-1 flex items-center gap-1.5">
+              <Activity className="h-3.5 w-3.5" /> {t('energy.metricLabel')}
+            </span>
+            {(
+              [
+                { id: 'energy', label: t('energy.metricEnergy') },
+                { id: 'power', label: t('energy.metricPower') },
+                { id: 'cost', label: t('energy.metricCost') },
+              ] as const
+            ).map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setMetric(item.id)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                  metric === item.id
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-slate-400 mr-1 flex items-center gap-1.5">
+              <Layers className="h-3.5 w-3.5" /> {t('energy.breakdownLabel')}
+            </span>
             <button
-              key={item.id}
-              onClick={() => setMetric(item.id)}
+              onClick={() => setGroupBy('room')}
               className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                metric === item.id
-                  ? 'bg-indigo-600 text-white'
+                groupBy === 'room'
+                  ? 'bg-emerald-600 text-white'
                   : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
               }`}
             >
-              {item.label}
+              {t('energy.byRoom')}
             </button>
-          ))}
+            <button
+              onClick={() => setGroupBy('device')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                groupBy === 'device'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              {t('energy.byDevice')}
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                triggerCsvDownload(
+                  `home-cockpit-energy-${data.range}.csv`,
+                  buildEnergyTimeSeriesCsv(data)
+                )
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
+            >
+              <Download className="h-3.5 w-3.5 text-indigo-400" />
+              {t('energy.exportCsv')}
+            </button>
+          </div>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-slate-400 mr-1 flex items-center gap-1.5">
-            <Layers className="h-3.5 w-3.5" /> {t('energy.breakdownLabel')}
-          </span>
-          <button
-            onClick={() => setGroupBy('room')}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-              groupBy === 'room'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            {t('energy.byRoom')}
-          </button>
-          <button
-            onClick={() => setGroupBy('device')}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-              groupBy === 'device'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            {t('energy.byDevice')}
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              triggerCsvDownload(
-                `home-cockpit-energy-${data.range}.csv`,
-                buildEnergyTimeSeriesCsv(data)
-              )
-            }
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
-          >
-            <Download className="h-3.5 w-3.5 text-indigo-400" />
-            {t('energy.exportCsv')}
-          </button>
+        <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center gap-1.5 text-[11px] text-slate-400">
+          <Info className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+          <span>{t('energy.ttcLegend')}</span>
         </div>
       </div>
 
@@ -179,8 +195,11 @@ export function EnergyTab({ data }: EnergyTabProps) {
                 <span className="font-mono font-bold text-white">
                   {data.meter.periodMeterEnergyKwh.toFixed(2)} kWh
                 </span>
-                <span className="text-emerald-400 font-mono ml-1">
-                  ({data.meter.periodMeterCostEur.toFixed(2)} €)
+                <span
+                  className="text-emerald-400 font-mono ml-1"
+                  title={t('energy.exclFixedTooltip')}
+                >
+                  ({data.meter.periodMeterCostEur.toFixed(2)} € {t('tariffs.ttcShort')})
                 </span>
               </div>
               <div>
@@ -331,8 +350,13 @@ export function EnergyTab({ data }: EnergyTabProps) {
             {data.kpis.projectedMonthCostEur !== null &&
               data.kpis.projectedMonthCostEur !== undefined && (
                 <div className="text-right shrink-0">
-                  <div className="text-base font-bold text-white font-mono">
-                    {data.kpis.projectedMonthCostEur.toFixed(2)} €
+                  <div className="flex items-center justify-end gap-1.5">
+                    <span className="text-base font-bold text-white font-mono">
+                      {data.kpis.projectedMonthCostEur.toFixed(2)} € {t('tariffs.ttcShort')}
+                    </span>
+                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+                      {t('energy.allInBadge')}
+                    </span>
                   </div>
                   <div className="text-[11px] text-emerald-400 font-mono">
                     {(data.kpis.projectedMonthEnergyKwh ?? 0).toFixed(0)} kWh
@@ -365,7 +389,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
               {metric === 'energy'
                 ? `${data.kpis.periodEnergyKwh.toFixed(2)} kWh`
                 : metric === 'cost'
-                  ? `${data.kpis.periodCostEur.toFixed(2)} €`
+                  ? `${data.kpis.periodCostEur.toFixed(2)} € ${t('tariffs.ttcShort')} (${t('energy.exclFixedShort')})`
                   : t('energy.currentWatts', { watts: data.kpis.currentPowerW.toFixed(0) })}
             </div>
           </div>
@@ -421,7 +445,9 @@ export function EnergyTab({ data }: EnergyTabProps) {
                     }}
                     itemSorter={sortTooltipDesc}
                     formatter={(val) =>
-                      `${Number(val ?? 0).toFixed(metric === 'energy' ? 3 : 2)} ${unit}`
+                      metric === 'cost'
+                        ? `${Number(val ?? 0).toFixed(2)} € ${t('tariffs.ttcShort')}`
+                        : `${Number(val ?? 0).toFixed(3)} ${unit}`
                     }
                   />
                   <Legend wrapperStyle={{ fontSize: '12px' }} />
@@ -527,7 +553,9 @@ export function EnergyTab({ data }: EnergyTabProps) {
                     </div>
                     <div className="font-mono text-slate-300 shrink-0">
                       {item.energyKwh.toFixed(2)} kWh ·{' '}
-                      <span className="text-emerald-400">{item.costEur.toFixed(2)} €</span>
+                      <span className="text-emerald-400" title={t('energy.exclFixedTooltip')}>
+                        {item.costEur.toFixed(2)} € {t('tariffs.ttcShort')}
+                      </span>
                     </div>
                   </div>
                   <div className="h-1.5 w-full rounded-full bg-slate-800 overflow-hidden">
@@ -576,7 +604,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
                       </div>
                     </div>
                     <div className="text-sm font-bold text-amber-300">
-                      {data.kpis.hpCostEur.toFixed(2)} €
+                      {data.kpis.hpCostEur.toFixed(2)} € {t('tariffs.ttcShort')}
                     </div>
                   </div>
 
@@ -588,7 +616,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
                       </div>
                     </div>
                     <div className="text-sm font-bold text-emerald-300">
-                      {data.kpis.hcCostEur.toFixed(2)} €
+                      {data.kpis.hcCostEur.toFixed(2)} € {t('tariffs.ttcShort')}
                     </div>
                   </div>
                 </>
@@ -603,7 +631,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
                     </div>
                   </div>
                   <div className="text-sm font-bold text-indigo-300">
-                    {data.kpis.baseCostEur.toFixed(2)} €
+                    {data.kpis.baseCostEur.toFixed(2)} € {t('tariffs.ttcShort')}
                   </div>
                 </div>
               )}
@@ -628,29 +656,38 @@ export function EnergyTab({ data }: EnergyTabProps) {
               <div className="mt-4 pt-4 border-t border-slate-800 space-y-1.5 text-xs">
                 <div className="flex justify-between text-slate-400">
                   <span>{t('energy.effectiveRateLabel')}</span>
-                  <span className="font-mono text-white font-medium">
-                    {data.kpis.effectiveRateEurPerKwh.toFixed(4)} €/kWh
+                  <span
+                    className="font-mono text-white font-medium"
+                    title={t('energy.exclFixedTooltip')}
+                  >
+                    {data.kpis.effectiveRateEurPerKwh.toFixed(4)} €/kWh {t('tariffs.ttcShort')}
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-400">
                   <span>{t('energy.invoiceEnergyLabel')}</span>
                   <span className="font-mono text-slate-200">
-                    {energyCostEur.toFixed(2)} €{' '}
-                    <span className="text-slate-500">({energyCostHtEur.toFixed(2)} € HT)</span>
+                    {energyCostEur.toFixed(2)} € {t('tariffs.ttcShort')}{' '}
+                    <span className="text-slate-500">
+                      ({energyCostHtEur.toFixed(2)} € {t('tariffs.htShort')})
+                    </span>
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-400">
                   <span>{t('energy.proratedSubLabel')}</span>
                   <span className="font-mono text-slate-200">
-                    +{subCostEur.toFixed(2)} €{' '}
-                    <span className="text-slate-500">({subCostHtEur.toFixed(2)} € HT)</span>
+                    +{subCostEur.toFixed(2)} € {t('tariffs.ttcShort')}{' '}
+                    <span className="text-slate-500">
+                      ({subCostHtEur.toFixed(2)} € {t('tariffs.htShort')})
+                    </span>
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-400">
                   <span>{t('energy.invoiceContributionsLabel')}</span>
                   <span className="font-mono text-amber-300">
-                    +{contribsCostEur.toFixed(2)} €{' '}
-                    <span className="text-slate-500">({contribsCostHtEur.toFixed(2)} € HT)</span>
+                    +{contribsCostEur.toFixed(2)} € {t('tariffs.ttcShort')}{' '}
+                    <span className="text-slate-500">
+                      ({contribsCostHtEur.toFixed(2)} € {t('tariffs.htShort')})
+                    </span>
                   </span>
                 </div>
                 {contribsItems.length > 0 && (
@@ -661,7 +698,7 @@ export function EnergyTab({ data }: EnergyTabProps) {
                           {item.name} ({item.vatRatePct}%)
                         </span>
                         <span className="font-mono text-slate-300 shrink-0">
-                          +{item.costTtcEur.toFixed(2)} €
+                          +{item.costTtcEur.toFixed(2)} € {t('tariffs.ttcShort')}
                         </span>
                       </div>
                     ))}
@@ -681,7 +718,9 @@ export function EnergyTab({ data }: EnergyTabProps) {
                   <span className="flex items-center gap-1">
                     <Zap className="h-3.5 w-3.5 text-indigo-400" /> {t('energy.invoiceTotalTtcLabel')}
                   </span>
-                  <span className="text-emerald-400 font-mono">{totalTtcEur.toFixed(2)} €</span>
+                  <span className="text-emerald-400 font-mono">
+                    {totalTtcEur.toFixed(2)} € {t('tariffs.ttcShort')}
+                  </span>
                 </div>
               </div>
             );
